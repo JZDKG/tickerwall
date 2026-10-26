@@ -1,0 +1,24 @@
+{
+  "name": "tickerwall",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "A self-hosted market terminal: 20 global instruments, terminator world map, macro event stream and correlation matrix. Zero dependencies, one Node process.",
+  "keywords": [
+    "market",
+    "dashboard",
+    "finance",
+    "ticker",
+    "stock",
+    "crypto",
+    "macro",
+    "zero-dependency"
+  ],
+  "license": "MIT",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node --watch server.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
