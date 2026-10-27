@@ -166,20 +166,34 @@ describe('map.js：换算必须走 CTM', () => {
 
   it('屏幕 ↔ 地图坐标一律经由 getScreenCTM', () => {
     expect(MAP_JS).toMatch(/getScreenCTM/);
-    // 三个薄封装必须都在：屏幕点、地图点、屏幕位移
+    // 两个薄封装：屏幕点 → viewBox、viewBox → 屏幕
     expect(MAP_JS).toMatch(/function toViewBox\(/);
     expect(MAP_JS).toMatch(/function toClient\(/);
-    expect(MAP_JS).toMatch(/function deltaToViewBox\(/);
   });
 
-  it('缩放、气泡、节点卡、拖拽四处都用了封装，而不是各自手算', () => {
+  it('缩放、气泡、节点卡三处都用了封装，而不是各自手算', () => {
     for (const re of [
       /const p = toViewBox\(svg, clientX, clientY\)/,
       /const p = toClient\(svg, x \* mapView\.k \+ mapView\.tx/,
       /const p = toClient\(svg, mx \* mapView\.k \+ mapView\.tx/,
-      /const d = deltaToViewBox\(svg, e\.clientX - mapDrag\.x/,
     ]) {
       expect(MAP_JS, `缺少 ${re}`).toMatch(re);
     }
+  });
+
+  it('相机交给 d3-zoom，不再有手写的 wheel / pointermove 平移', () => {
+    // 手写版只有鼠标滚轮和指针拖拽，触屏没法缩放；边界靠事后 clamp 截断，
+    // 还会让相机状态与渲染短暂不一致。现在统一走 camera.js。
+    expect(MAP_JS).toMatch(/createCamera\(svg, \{/);
+    expect(MAP_JS).not.toMatch(/addEventListener\(\s*'wheel'/);
+    expect(MAP_JS).not.toMatch(/addEventListener\('pointermove'/);
+    // 平移边界由 d3 的 translateExtent 在变换过程中约束
+    expect(MAP_JS).not.toMatch(/function clampMapView\(/);
+    // 相机内部状态必须与当前视图对齐，否则聚焦状态下重建会被拉回 1×
+    expect(MAP_JS).toMatch(/syncCamera\(svg, mapView\)/);
+  });
+
+  it('deltaToViewBox 已随手写拖拽一起删除（位移缩放交给 d3）', () => {
+    expect(MAP_JS).not.toMatch(/function deltaToViewBox\(/);
   });
 });

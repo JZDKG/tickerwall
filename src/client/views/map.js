@@ -8,7 +8,7 @@
  * 全球市场地图 v2
  * 全屏 / 缩放平移 / 各地指数直接标注 / 新事件气泡 / 右侧滚动事件流
  * ================================================================== */
-import { geoGraticule10 } from 'geo-kit';
+import { geoGraticule10, select } from 'geo-kit';
 import * as GEO from './map/geo/cities.js';
 import * as REGIONS from './map/geo/regions.js';
 import {
@@ -17,12 +17,13 @@ import {
 } from './map/geo/projection.js';
 import { sunPosition, nightGeometry, twilightBands, terminatorGeometry } from './map/geo/astro.js';
 import { regionBounds, viewForBounds, toggleRegion } from './map/logic/focus.js';
+import { createCamera, destroyCamera, applyTransform, syncCamera } from './map/camera.js';
 import { mapEl } from '../shared/dom.js';
 import { dirOf, esc, fmtPrice } from '../shared/format.js';
 import { store } from '../shared/store.js';
 import { on } from '../shared/bus.js';
 import { loadCalendarCached } from '../shared/calendar.js';
-import { applyInverseDelta, applyInverseMatrix, applyMatrix } from '../shared/matrix.js';
+import { applyInverseMatrix, applyMatrix } from '../shared/matrix.js';
 
 /* ------------------------------------------------------------------ *
  * 屏幕坐标 ↔ SVG 用户坐标
@@ -48,10 +49,6 @@ function toClient(svg, x, y) {
   return applyMatrix(svgCTM(svg), x, y);
 }
 
-/** 屏幕位移 → viewBox 位移（拖拽用，平移项自行抵消） */
-function deltaToViewBox(svg, dx, dy) {
-  return applyInverseDelta(svgCTM(svg), dx, dy);
-}
 
 
 // 交易所坐标：同城多标的聚合到一个节点，纵向堆叠显示
@@ -204,26 +201,31 @@ export function impactArcs(items) {
 
 /* ---------- 平滑视图动画 ---------- */
 
-export let mapAnim = null;
+/** d3-zoom 相机实例（renderMap 时重建） */
+let mapCamera = null;
 
 /** ease-out cubic：起手快、收尾稳，比线性自然得多 */
+/**
+ * 平滑移动相机。
+ *
+ * 插值交给 d3-zoom 的 transition —— 它内部按缩放级别差插值（interpolateZoom），
+ * 跨越多个量级时比线性插值自然：线性在中途会显得突然加速，缩放感知插值则
+ * 先拉远再推近，像真正的镜头。
+ *
+ * 边界约束也交给 d3 的 translateExtent（在 tween 每帧生效），所以原来那套
+ * clampMapView 事后截断可以删掉了 —— 那会导致相机状态与实际渲染短暂不一致。
+ */
 export function animateMapView(target, dur = 420) {
-  if (mapAnim) cancelAnimationFrame(mapAnim);
-  const from = { ...mapView };
-  const t0 = performance.now();
-
-  const step = (t) => {
-    const p = Math.min(1, (t - t0) / Math.max(1, dur));
-    const e = 1 - (1 - p) ** 3;
-    mapView.k = from.k + (target.k - from.k) * e;
-    mapView.tx = from.tx + (target.tx - from.tx) * e;
-    mapView.ty = from.ty + (target.ty - from.ty) * e;
-    clampMapView();
+  const svg = document.querySelector('.world-svg');
+  if (!svg || !mapCamera) {
+    // 相机还没装（首帧渲染过程中）：直接落到终态，别让调用方等
+    mapView.k = target.k;
+    mapView.tx = target.tx;
+    mapView.ty = target.ty;
     applyMapView();
-    if (p < 1) mapAnim = requestAnimationFrame(step);
-    else mapAnim = null;
-  };
-  mapAnim = requestAnimationFrame(step);
+    return;
+  }
+  applyTransform(svg, mapCamera, target, dur);
 }
 
 /* ---------- LOD：同城标的按缩放级别展开 ---------- */
@@ -287,13 +289,6 @@ export function zoomAt(clientX, clientY, factor, dur = 240) {
     },
     dur,
   );
-}
-
-export function clampMapView() {
-  const overX = LOGICAL_WIDTH * (mapView.k - 1);
-  const overY = LOGICAL_HEIGHT * (mapView.k - 1);
-  mapView.tx = Math.min(0, Math.max(-overX, mapView.tx));
-  mapView.ty = Math.min(0, Math.max(-overY, mapView.ty));
 }
 
 export function resetMapView() {
@@ -626,38 +621,36 @@ export function bindMapEvents() {
   const canvas = document.getElementById('map-canvas');
   if (!svg || !canvas) return;
 
-  // 滚轮缩放
-  svg.addEventListener(
-    'wheel',
-    (e) => {
-      e.preventDefault();
-      zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.18 : 1 / 1.18);
+  /**
+   * 相机：滚轮 / 拖拽 / 双指 / 触摸全交给 d3-zoom。
+   * 手写版只有鼠标滚轮和指针拖拽，触屏上根本没法缩放；平移边界靠事后
+   * clamp 截断，还会让相机状态与渲染短暂不一致。
+   *
+   * 点击与拖拽的区分用 d3 的 start/end 对比位移（DRAG_SLOP = 2 个 viewBox 单位），
+   * 结果写进 mapDrag.moved，供下面的 click handler 判断 —— 拖完地图不会误触聚焦。
+   */
+  mapCamera = createCamera(svg, {
+    width: LOGICAL_WIDTH,
+    height: LOGICAL_HEIGHT,
+    onChange: (t) => {
+      mapView.k = t.k;
+      mapView.tx = t.x;
+      mapView.ty = t.y;
+      applyMapView();
     },
-    { passive: false },
-  );
-
-  // 拖拽平移
-  svg.addEventListener('pointerdown', (e) => {
-    mapDrag = { x: e.clientX, y: e.clientY, tx: mapView.tx, ty: mapView.ty, moved: false };
-    svg.setPointerCapture(e.pointerId);
-    canvas.classList.add('dragging');
+    onDragState: (on) => canvas.classList.toggle('dragging', on),
+    onDragEnd: (moved) => {
+      // click 紧跟 pointerup 同步触发，所以这条标志只需存活到本轮事件循环结束
+      mapDrag = { moved };
+      setTimeout(() => {
+        mapDrag = null;
+      }, 0);
+    },
   });
-  svg.addEventListener('pointermove', (e) => {
-    if (!mapDrag) return;
-    if (Math.abs(e.clientX - mapDrag.x) + Math.abs(e.clientY - mapDrag.y) > 3) mapDrag.moved = true;
-    const d = deltaToViewBox(svg, e.clientX - mapDrag.x, e.clientY - mapDrag.y);
-    if (!d) return;
-    mapView.tx = mapDrag.tx + d[0];
-    mapView.ty = mapDrag.ty + d[1];
-    clampMapView();
-    applyMapView();
-  });
-  const endDrag = () => {
-    mapDrag = null;
-    canvas.classList.remove('dragging');
-  };
-  svg.addEventListener('pointerup', endDrag);
-  svg.addEventListener('pointercancel', endDrag);
+  // 相机内部状态要对齐当前视图（聚焦状态下重建会被拉回 1×）
+  syncCamera(svg, mapView);
+  // 双击我们自己在下面实现（以指针为中心 1.8×），关掉 d3 的默认翻倍
+  select(svg).on('dblclick.zoom', null);
 
   // 点城市节点 → 就地浮出卡片（不跳页，保住心流）
   svg.querySelectorAll('[data-city]').forEach((g) => {
@@ -788,6 +781,8 @@ export function mountMap() {
 
 export function unmountMap() {
   stopMapTimer();
+  destroyCamera(mapEl.querySelector('.world-svg'));
+  mapCamera = null;
   unsubscribeQuotes?.();
   unsubscribeQuotes = null;
   mapBubbles.forEach((b) => b.remove());
