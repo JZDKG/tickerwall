@@ -315,6 +315,17 @@ describe('分层：五个服务齐全且拓扑单向', () => {
     }
   });
 
+  it('500 响应不把 err.message 发给客户端，但必须在服务端留日志', () => {
+    const code = fs.readFileSync(pathMod.join(REPO, 'server.mjs'), 'utf8');
+    // 对外只能是通用文案
+    expect(code).not.toMatch(/sendJson\(res,\s*500,\s*\{[^}]*error:\s*err\?\.message/);
+    expect(code).toContain('服务器内部错误');
+    // 但不能静默——完整错误得进日志，否则线上无从排查
+    expect(code).toMatch(/console\.error\(\s*'\[http\]/);
+    // 后台刷新同理：长期失败必须留痕
+    expect(code).toMatch(/console\.error\(\s*'\[bg\]/);
+  });
+
   it('入口 server.mjs 收敛成薄壳（< 200 行），只做路由与静态映射', () => {
     const code = fs.readFileSync(pathMod.join(REPO, 'server.mjs'), 'utf8');
     const lines = code.split('\n').length;

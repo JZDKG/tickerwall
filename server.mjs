@@ -167,14 +167,19 @@ const server = http.createServer(async (req, res) => {
     }
     return serveStatic(res, url.pathname);
   } catch (err) {
-    return sendJson(res, 500, { ok: false, error: err?.message ?? String(err) });
+    // 对外只给通用文案：err.message 常带路径 / 内部 URL，等于把实现细节发给浏览器
+    console.error('[http] 未处理异常', url.pathname, err);
+    return sendJson(res, 500, { ok: false, error: '服务器内部错误' });
   }
 });
 
 /* 后台定时刷新，保证走势连续（即使没有浏览器打开） */
 function startBackground() {
   setInterval(() => {
-    getQuotes().catch(() => {});
+    // 不能完全静默：上游长期失败时，没有任何日志就只剩「走势断了」这个现象
+    getQuotes().catch((err) => {
+      console.error('[bg] 后台报价刷新失败', err?.message ?? err);
+    });
   }, Math.max(CACHE_TTL_MS, 5000)).unref?.();
 }
 
@@ -186,6 +191,8 @@ await loadLlmStore();
 server.listen(PORT, HOST, () => {
   console.log(`市场看板已启动 → http://${HOST}:${PORT}`);
   console.log(`刷新间隔 ${CACHE_TTL_MS}ms，历史点上限 ${HISTORY_LIMIT}`);
-  getQuotes().catch(() => {});
+  getQuotes().catch((err) => {
+    console.error('[boot] 首轮报价刷新失败', err?.message ?? err);
+  });
   startBackground();
 });
