@@ -19,6 +19,11 @@ import { sunPosition, nightGeometry, twilightBands, terminatorGeometry } from '.
 import { regionBounds, viewForBounds, toggleRegion } from './map/logic/focus.js';
 import { createCamera, destroyCamera, applyTransform, syncCamera } from './map/camera.js';
 import { cityAnchorsHtml, lodClassFor } from './map/layers/markers.js';
+import { broadcastHtml } from './map/layers/broadcast.js';
+import {
+  createSpotlightState, buildSpotlightQueue, spotlightReducer,
+  currentSpotlightEvent, needsIdleTimer, STEP_MS,
+} from './map/logic/spotlight.js';
 import { mapEl } from '../shared/dom.js';
 import { dirOf, esc, fmtPrice } from '../shared/format.js';
 import { store } from '../shared/store.js';
@@ -204,6 +209,110 @@ export function impactArcs(items) {
 
 /** d3-zoom 相机实例（renderMap 时重建） */
 let mapCamera = null;
+
+/* ---------- 底部播报台 ---------- */
+
+/** 当前滤镜（all / high / fed / geo / china / precious），按钮接好后由点击切换 */
+let mapFilter = 'all';
+
+/** 巡航状态机。6 秒一步、队列随刷新重建，但正在播的那条不中断 */
+let bcState = createSpotlightState();
+/** 步进定时器 */
+let bcStepTimer = null;
+/** 闲置自动恢复的轮询（只有 Locked 才需要） */
+let bcIdleTimer = null;
+/** 上一次渲染的播报事件 id，用来判断要不要重启进度条动画 */
+let bcRenderedId = null;
+
+/**
+ * 重建队列。`hasTargets` 交给地理层判断：没有可挂靶点的事件不进队列，
+ * 否则地图上会出现「播报了一条但画面上什么都没动」的脱节。
+ */
+function refreshBroadcastQueue(items) {
+  const queue = buildSpotlightQueue(items, {
+    filterKey: mapFilter,
+    region: mapRegion,
+    hasTargets: (ev) => targetCitiesFor(ev).length > 0,
+  });
+  bcState = spotlightReducer(bcState, { type: 'setQueue', queue });
+  renderBroadcast();
+}
+
+/** 进度条要跟着「新的一条」重启；同一条重绘时保持当前进度，不要闪 */
+function renderBroadcast() {
+  const box = document.getElementById('map-broadcast');
+  if (!box) return;
+  const ev = currentSpotlightEvent(bcState);
+  const quotesById = new Map((store.quotes ?? []).filter((q) => q && q.ok).map((q) => [q.id, q]));
+  box.innerHTML = broadcastHtml(ev, quotesById);
+  box.dataset.mode = bcState.mode;
+  box.dataset.empty = ev ? '0' : '1';
+
+  const bar = box.querySelector('.bc-bar > i');
+  if (bar) {
+    if (ev && ev.id !== bcRenderedId) {
+      // 换了一条：强制重启 CSS 动画（改 animation 名不行，必须重排一次）
+      bar.style.animation = 'none';
+      void bar.offsetWidth;
+      bar.style.animation = '';
+    }
+    bar.style.animationPlayState = bcState.playing ? 'running' : 'paused';
+  }
+  bcRenderedId = ev ? ev.id : null;
+}
+
+/** 暂停 / 继续。播报台自己 hover 时用，切事件时进度停在原处 */
+function setBroadcastPlaying(playing) {
+  if (bcState.playing === Boolean(playing)) return;
+  bcState = spotlightReducer(bcState, { type: 'setPlaying', playing });
+  renderBroadcast();
+}
+
+function startBroadcast() {
+  stopBroadcast();
+  bcStepTimer = setInterval(() => {
+    bcState = spotlightReducer(bcState, { type: 'tick' });
+    renderBroadcast();
+  }, STEP_MS);
+  // Locked 之后 20 秒无操作自动回到巡航；没有锁定就不必轮询
+  bcIdleTimer = setInterval(() => {
+    if (!needsIdleTimer(bcState, Date.now())) return;
+    const next = spotlightReducer(bcState, { type: 'idle', now: Date.now() });
+    if (next !== bcState) {
+      bcState = next;
+      renderBroadcast();
+    }
+  }, 1000);
+}
+
+/**
+ * 窄屏时把播报台从画布内搬出来，作为 .map-body 的独立一行。
+ *
+ * 390px 宽的地图画布只有 200px 高，浮在底部的播报台会直接压住东南亚一串
+ * 城市标签 —— 那不是「浮层」，那是遮挡。
+ */
+function placeBroadcast() {
+  const bar = document.getElementById('map-broadcast');
+  const canvas = document.getElementById('map-canvas');
+  const body = mapEl.querySelector('.map-body');
+  const feed = mapEl.querySelector('#map-feed');
+  if (!bar || !canvas || !body) return;
+
+  if (window.innerWidth > 720) {
+    if (bar.parentElement !== canvas) canvas.appendChild(bar);
+    return;
+  }
+  // 窄屏插在画布与事件流之间 —— append 到 .map-body 末尾的话它会落到
+  // 事件流下面，整条被挤出首屏。
+  if (bar.parentElement !== body || bar.nextElementSibling !== feed) {
+    body.insertBefore(bar, feed ?? null);
+  }
+}
+
+function stopBroadcast() {
+  if (bcStepTimer) { clearInterval(bcStepTimer); bcStepTimer = null; }
+  if (bcIdleTimer) { clearInterval(bcIdleTimer); bcIdleTimer = null; }
+}
 
 /** ease-out cubic：起手快、收尾稳，比线性自然得多 */
 /**
@@ -546,6 +655,7 @@ export function renderMap() {
           </g>
         </svg>
         <div class="map-anchors lod-0" id="map-anchors" data-lod="lod-0">${anchorsHtml}</div>
+        <div class="map-broadcast" id="map-broadcast"></div>
         <div class="map-bubbles" id="map-bubbles"></div>
       </div>
       <aside class="map-feed" id="map-feed">
@@ -564,6 +674,8 @@ export function renderMap() {
     liveBubbles.forEach((b) => layerNow.appendChild(b));
   }
 
+  placeBroadcast();
+  refreshBroadcastQueue(visibleItems);
   applyMapView();
   updateAnchors();
   applyRegionClasses();
@@ -709,6 +821,19 @@ export function bindMapEvents() {
     b.addEventListener('click', openCity(b.dataset.city));
   });
 
+  // 播报台：悬停暂停进度、点击跳详情。用 on* 赋值而不是 addEventListener ——
+  // bindMapEvents 每轮 renderMap 都会跑，而播报台是同一个常驻元素，
+  // addEventListener 会把监听器叠起来（悬停一次触发 N 次）。
+  const bc = document.getElementById('map-broadcast');
+  if (bc) {
+    bc.onpointerenter = () => setBroadcastPlaying(false);
+    bc.onpointerleave = () => setBroadcastPlaying(true);
+    bc.onclick = () => {
+      const ev = currentSpotlightEvent(bcState);
+      if (ev?.id) location.hash = `#/d/${encodeURIComponent(ev.id)}`;
+    };
+  }
+
   // 点国家 → 聚焦该赛区（再点一次同一个国家即复位）
   // 命中区是国家多边形，未归属赛区的国家没有 data-region，点了不响应。
   svg.querySelectorAll('.world-land path[data-region]').forEach((p) => {
@@ -770,6 +895,7 @@ export function bindMapEvents() {
 }
 
 export function stopMapTimer() {
+  stopBroadcast();
   if (mapTimer) {
     clearInterval(mapTimer);
     mapTimer = null;
@@ -821,6 +947,7 @@ let unsubscribeQuotes = null;
  */
 function onMapResize() {
   scheduleAnchorUpdate();
+  placeBroadcast();
 }
 
 export function mountMap() {
@@ -829,6 +956,7 @@ export function mountMap() {
   window.addEventListener('resize', onMapResize);
   loadMap();
   mapTimer = setInterval(() => loadMap(), 30000);
+  startBroadcast();
   // 列表每轮拿到新报价后顺带刷新地图节点（原来由 list 直接调 renderMap）
   unsubscribeQuotes?.();
   unsubscribeQuotes = on('quotes', () => {
@@ -838,6 +966,7 @@ export function mountMap() {
 
 export function unmountMap() {
   stopMapTimer();
+  stopBroadcast();
   window.removeEventListener('resize', onMapResize);
   destroyCamera(mapEl.querySelector('.world-svg'));
   mapCamera = null;

@@ -339,6 +339,194 @@
   cursor: pointer;
 }
 
+/* ------------------------------------------------------------------ *
+ * 底部播报台
+ *
+ * 一条事件停留 6 秒。和地图上的弧线、赛区高亮共用同一条事件，
+ * 所以读者不用在事件流里找「现在讲到哪」。
+ * ------------------------------------------------------------------ */
+.map-broadcast {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-areas: "src title marks spark";
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  background: rgba(7, 11, 17, 0.82);
+  backdrop-filter: blur(8px);
+  font-size: 11.5px;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+/* 高影响事件给一条左侧色条，余光就能看出重要度 */
+.map-broadcast[data-mode="locked"] {
+  border-color: rgba(120, 176, 255, 0.5);
+}
+
+.bc-src {
+  grid-area: src;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(160, 174, 194, 0.9);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.bc-src.high {
+  color: #ffb454;
+}
+
+.bc-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
+}
+
+.map-broadcast[data-mode="auto"] .bc-dot {
+  animation: bcPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes bcPulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
+.bc-topic {
+  padding: 0 5px;
+  border-radius: 3px;
+  background: rgba(255, 180, 84, 0.14);
+  color: #ffb454;
+  font-size: 9.5px;
+}
+
+.bc-title {
+  grid-area: title;
+  min-width: 0;
+  color: rgba(232, 238, 246, 0.95);
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bc-marks {
+  grid-area: marks;
+  display: inline-flex;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.bc-mark {
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+
+.bc-mark.up { color: var(--up); }
+.bc-mark.down { color: var(--down); }
+.bc-mark.flat { color: #8a8f99; }
+
+.bc-spark {
+  grid-area: spark;
+  width: 60px;
+  height: 16px;
+  display: block;
+  overflow: visible;
+}
+
+.bc-spark-line {
+  fill: none;
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.bc-spark-line.up { stroke: var(--up); }
+.bc-spark-line.down { stroke: var(--down); }
+.bc-spark-line.flat { stroke: #7e8899; }
+
+.bc-spark-area { opacity: 0.16; }
+.bc-spark-area.up { fill: var(--up); }
+.bc-spark-area.down { fill: var(--down); }
+.bc-spark-area.flat { fill: #7e8899; }
+
+/* 进度条横贯底边，长度与 6 秒步进对齐 */
+.bc-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.bc-bar > i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, rgba(90, 150, 255, 0.75), rgba(150, 200, 255, 0.35));
+  transform-origin: 0 50%;
+  animation: bcProgress 6s linear forwards;
+}
+
+@keyframes bcProgress {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+/* 锁定后进度条停住并压暗：提示「不再自动走」 */
+.map-broadcast[data-mode="locked"] .bc-bar > i {
+  background: rgba(120, 176, 255, 0.55);
+}
+
+.bc-empty {
+  grid-area: 1 / 1 / -1 / -1;
+  color: rgba(140, 152, 170, 0.7);
+  font-size: 11px;
+  text-align: center;
+  padding: 2px 0;
+}
+
+/* 窄屏：来源与火花线让位给标题 */
+@media (max-width: 720px) {
+  .map-broadcast {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "src src"
+      "title marks";
+    row-gap: 1px;
+    column-gap: 8px;
+    padding: 5px 9px 7px;
+  }
+
+  .bc-topic,
+  .bc-spark {
+    display: none;
+  }
+
+  .bc-title {
+    font-size: 11.5px;
+  }
+
+  /* 搬到画布外面（placeBroadcast 会把它 append 到 .map-body），
+     所以取消绝对定位，让它占正常一行。 */
+  .map-broadcast {
+    position: static;
+    margin-top: 8px;
+  }
+}
+
 /* 指数标签 */
 .map-city {
   cursor: pointer;

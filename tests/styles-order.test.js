@@ -108,11 +108,13 @@ describe('样式分片：层叠前提', () => {
 
   it('拆分前后规则数守恒：11 个文件里没有丢失 @media / @keyframes', () => {
     const all = EXPECTED.map(read).join('\n');
-    // @media 仍是拆分时的 13 个 —— 这个数字只会因为真的新增响应式规则而变。
-    expect((all.match(/@media/g) ?? []).length).toBe(13);
-    // @keyframes：拆分时 16 个。地图 v2 加了 sunPulse（太阳直射点呼吸）
-    // 与 maBreath（城市锚点开市呼吸），所以是 18。改这个数字时请确认是
-    // 「新增动画」而不是「拆分时丢了又补回来」—— 下面那条唯一性断言会拦住重名。
-    expect((all.match(/@keyframes/g) ?? []).length).toBe(18);
+    // @media 拆分时 13 个。地图 v2 加了第 14 条（播报台在 ≤720px 让位给
+    // 标题）——这个数字只会因为真的新增响应式规则而变。
+    expect((all.match(/@media/g) ?? []).length).toBe(14);
+    // @keyframes：拆分时 16 个。地图 v2 加了 sunPulse（太阳直射点呼吸）、
+    // maBreath（城市锚点开市呼吸）、bcPulse/bcProgress（播报台呼吸灯与 6s
+    // 进度条），所以是 20。改这个数字时请确认是「新增动画」而不是
+    // 「拆分时丢了又补回来」—— 下面那条唯一性断言会拦住重名。
+    expect((all.match(/@keyframes/g) ?? []).length).toBe(20);
   });
 });
