@@ -350,84 +350,95 @@ const LLM_SYSTEM = `你是金融市场的新闻分类器。输入是一批编号
 /**
  * 从 dsh 的 web profile 里提取 cline 网关配置，而不是硬编码。
  * 这样 dsh 换了 provider / 模型，这边会跟着走。
+ *
+ * 只在 `LLM_CONFIG_SOURCE` 不是 `env` 时被调用；读不到就返回全 null。
  */
-/**
- * LLM 复核的配置来源。
- *
- * 优先级：环境变量 > （可选的）外部工具配置。
- *
- * 为什么要有 `LLM_CONFIG_SOURCE` 这个开关：默认行为会去读 `~/.dsh` 下另一个
- * 工具（dsh）的私有 YAML 与明文凭据。这不理想 —— 一旦 dsh 改了格式我们就
- * 静默失效，而且等于读了本项目之外的密钥。所以：
- *
- *   LLM_CONFIG_SOURCE=env   只认环境变量，绝不碰外部文件（推荐用于部署）
- *   LLM_CONFIG_SOURCE=auto  环境变量优先，缺失才回落读 ~/.dsh（默认，兼容现状）
- *
- * 无论走哪条路，配置来源都会记在 cfg.source 里，便于排查「为什么没在复核」。
- */
-const ENV_LLM = {
-  baseURL: 'LLM_BASE_URL',
-  apiKey: 'LLM_API_KEY',
-  model: 'LLM_MODEL',
-};
-
-export function readDshLlmConfig() {
-  const sourceMode = String(process.env.LLM_CONFIG_SOURCE ?? 'auto').toLowerCase();
-  const cfg = { baseURL: null, apiKeyEnv: 'CLINE_API_KEY', models: [], model: null, apiKey: null, source: null };
-
-  // ---- 1) 环境变量（最高优先级，不依赖任何外部文件）----
-  cfg.baseURL = process.env[ENV_LLM.baseURL] || null;
-  cfg.apiKey = process.env[ENV_LLM.apiKey] || null;
-  const envModel = process.env[ENV_LLM.model] || null;
-  if (cfg.baseURL || cfg.apiKey || envModel) {
-    cfg.source = 'env';
-    if (envModel) cfg.models = [envModel];
-    if (!cfg.baseURL) cfg.baseURL = 'https://api.cline.bot/api/v1';
-    cfg.model = envModel ?? 'cline-pass/deepseek-v4.1-flash-1017';
-    return cfg;
-  }
-
-  // ---- 2) 显式要求只用环境变量：到此为止，不再读外部文件 ----
-  if (sourceMode === 'env') {
-    cfg.source = 'env:missing';
-    return cfg;
-  }
-
-  // ---- 3) 回落：读 dsh 的配置（兼容现状，仅在 auto 下发生）----
+function readDshConfig() {
   const home = process.env.DSH_HOME || `${process.env.HOME}/.dsh`;
+  const out = { baseURL: null, apiKeyEnv: 'CLINE_API_KEY', models: [], apiKey: null, source: null };
 
   try {
     const patch = readFileSync(`${home}/profiles/web/cordis.patch.yml`, 'utf8');
     const idx = patch.indexOf('cline:');
     if (idx >= 0) {
       const seg = patch.slice(idx, idx + 2500);
-      cfg.baseURL = /baseURL:\s*(\S+)/.exec(seg)?.[1] ?? null;
-      cfg.apiKeyEnv = /apiKeyEnv:\s*(\S+)/.exec(seg)?.[1] ?? 'CLINE_API_KEY';
-      cfg.models = [...seg.matchAll(/-\s*id:\s*(cline-pass\/[A-Za-z0-9._-]+)/g)].map((m) => m[1]);
-      cfg.source = 'dsh:profiles/web';
+      out.baseURL = /baseURL:\s*(\S+)/.exec(seg)?.[1] ?? null;
+      out.apiKeyEnv = /apiKeyEnv:\s*(\S+)/.exec(seg)?.[1] ?? 'CLINE_API_KEY';
+      out.models = [...seg.matchAll(/-\s*id:\s*(cline-pass\/[A-Za-z0-9._-]+)/g)].map((m) => m[1]);
+      out.source = 'dsh:profiles/web';
     }
   } catch {
-    /* 用默认值兜底 */
+    /* 读不到就算了 */
   }
 
-  if (!cfg.baseURL) cfg.baseURL = 'https://api.cline.bot/api/v1';
-
-  cfg.apiKey = process.env[cfg.apiKeyEnv] || null;
-  if (!cfg.apiKey) {
+  out.apiKey = process.env[out.apiKeyEnv] || null;
+  if (!out.apiKey) {
     try {
       const cred = readFileSync(`${home}/.credentials.yaml`, 'utf8');
-      cfg.apiKey = new RegExp(`${cfg.apiKeyEnv}:\\s*(\\S+)`).exec(cred)?.[1] ?? null;
-      if (cfg.apiKey) cfg.source = `${cfg.source ?? 'dsh'}:credentials.yaml`;
+      out.apiKey = new RegExp(`${out.apiKeyEnv}:\\s*(\\S+)`).exec(cred)?.[1] ?? null;
+      if (out.apiKey) out.source = `${out.source ?? 'dsh'}:credentials.yaml`;
     } catch {
       /* 无凭据 */
     }
   }
+  return out;
+}
 
-  // 模型名不再唯独硬编码：LLM_MODEL 已在上面处理，这里只做「在已知模型里
-  // 挑一个」，挑不到就用第一个，最后才是兜底常量
-  const preferred = ['cline-pass/deepseek-v4.1-flash-1017', 'cline-pass/glm-5.3-flash'];
-  cfg.model = preferred.find((m) => cfg.models.includes(m)) ?? cfg.models[0] ?? 'cline-pass/deepseek-v4.1-flash-1017';
-  return cfg;
+/**
+ * LLM 复核的配置来源：环境变量与 dsh 配置**逐字段合并**。
+ *
+ * 优先级按字段算，不是按整体算 —— 这一点最初写错了：只要任何一个 LLM_*
+ * 变量存在就提前 return，于是「只想换模型名」的人会连密钥一起丢掉，
+ * LLM 复核静默失效（实测 source='env'、apiKey=null）。现在每个字段各自
+ * 取环境变量，缺什么再在 auto 模式下从 dsh 补什么。
+ *
+ *   LLM_CONFIG_SOURCE=env   完全不读外部文件（推荐用于部署）
+ *   LLM_CONFIG_SOURCE=auto  逐字段回落（默认，兼容现状）
+ *
+ * cfg.source 会写明实际用了哪几路，便于排查「为什么没在复核」。
+ */
+const ENV_LLM = { baseURL: 'LLM_BASE_URL', apiKey: 'LLM_API_KEY', model: 'LLM_MODEL' };
+const FALLBACK_BASE_URL = 'https://api.cline.bot/api/v1';
+const FALLBACK_MODEL = 'cline-pass/deepseek-v4.1-flash-1017';
+
+export function readDshLlmConfig() {
+  const useEnvOnly = String(process.env.LLM_CONFIG_SOURCE ?? 'auto').toLowerCase() === 'env';
+
+  const envBase = process.env[ENV_LLM.baseURL] || null;
+  const envKey = process.env[ENV_LLM.apiKey] || null;
+  const envModel = process.env[ENV_LLM.model] || null;
+
+  // 三个字段都在环境变量里给全了，就没有任何理由再碰外部文件 ——
+  // 少一次 IO，也少一处凭据暴露面。只在缺字段时才回落去读 dsh。
+  const envComplete = Boolean(envBase && envKey && envModel);
+  const dsh = useEnvOnly || envComplete ? null : readDshConfig();
+
+  // 逐字段：有了就用，没有才回落
+  const apiKey = envKey ?? dsh?.apiKey ?? null;
+  // baseURL 取决于**有没有密钥**，而不是「有没有配置」：
+  // 有 key 却没网关地址，请求根本发不出去 —— 这比「用默认地址」更难排查。
+  // 反过来没有 key 时给 null，让 env:missing 一眼看出「压根没配」。
+  const baseURL = envBase ?? dsh?.baseURL ?? (apiKey ? FALLBACK_BASE_URL : null);
+  const models = envModel ? [envModel] : (dsh?.models ?? []);
+
+  let model = envModel;
+  if (!model) {
+    const preferred = ['cline-pass/deepseek-v4.1-flash-1017', 'cline-pass/glm-5.3-flash'];
+    model = preferred.find((m) => models.includes(m)) ?? models[0] ?? FALLBACK_MODEL;
+  }
+
+  const from = [];
+  if (envBase || envKey || envModel) from.push('env');
+  if (dsh?.source) from.push(dsh.source);
+
+  return {
+    baseURL,
+    apiKey,
+    apiKeyEnv: dsh?.apiKeyEnv ?? 'CLINE_API_KEY',
+    models,
+    model,
+    source: from.length ? from.join('+') : 'env:missing',
+  };
 }
 
 /** LLM 常返回同义词（原油供应 / wti / 纳指），做一次归一 */

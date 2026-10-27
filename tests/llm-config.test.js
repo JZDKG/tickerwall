@@ -83,3 +83,69 @@ describe('readDshLlmConfig：来源优先级', () => {
     expect(readDshLlmConfig().model).toBe('whatever-model');
   });
 });
+
+/* ================================================================== *
+ * 字段级合并（曾经写错成「整体覆盖」）
+ *
+ * 旧实现只要任何一个 LLM_* 变量存在就提前 return，于是「只想换模型名」的人
+ * 连密钥一起丢掉 —— LLM 复核静默失效，而界面上看不出来。这里锁住：
+ * 每个字段各自回落。
+ * ================================================================== */
+describe('环境变量与 dsh 配置逐字段合并', () => {
+  it('只设 LLM_MODEL 时，密钥仍从 dsh 补上（这是最初的真 bug）', () => {
+    process.env.LLM_MODEL = 'my-model';
+    const cfg = readDshLlmConfig();
+    expect(cfg.model).toBe('my-model');
+    // 关键：密钥必须仍然拿得到
+    expect(cfg.apiKey).toBe('sk-STOLEN'); // 假 HOME 里的密钥，证明回落生效
+    expect(cfg.source).toContain('env');
+    expect(cfg.source).toContain('dsh');
+  });
+
+  it('只设 LLM_BASE_URL 时，密钥与模型都回落', () => {
+    process.env.LLM_BASE_URL = 'https://mine.example/v1';
+    const cfg = readDshLlmConfig();
+    expect(cfg.baseURL).toBe('https://mine.example/v1');
+    expect(cfg.apiKey).toBe('sk-STOLEN');
+    expect(cfg.model).toBe('cline-pass/evil-model');
+  });
+
+  it('环境变量齐全时全部采用，不再走 dsh', () => {
+    process.env.LLM_BASE_URL = 'https://mine.example/v1';
+    process.env.LLM_API_KEY = 'sk-mine';
+    process.env.LLM_MODEL = 'my-model';
+    const cfg = readDshLlmConfig();
+    expect(cfg).toMatchObject({ baseURL: 'https://mine.example/v1', apiKey: 'sk-mine', model: 'my-model' });
+    expect(JSON.stringify(cfg)).not.toContain('sk-STOLEN');
+  });
+
+  it('环境变量齐全时确实没读文件：把 DSH_HOME 指向不存在的目录，结果不变', () => {
+    process.env.LLM_BASE_URL = 'https://mine.example/v1';
+    process.env.LLM_API_KEY = 'sk-mine';
+    process.env.LLM_MODEL = 'my-model';
+    process.env.DSH_HOME = '/nonexistent-dsh-home-for-this-test';
+    const cfg = readDshLlmConfig();
+    // 若实现偷偷读了 dsh，这里会变成 env+dsh:… 或拿到 evil 地址
+    expect(cfg.source).toBe('env');
+    expect(cfg.baseURL).toBe('https://mine.example/v1');
+    expect(cfg.apiKey).toBe('sk-mine');
+  });
+
+  it('只设 LLM_API_KEY 时，网关地址回落到默认值（有 key 就必须有地址）', () => {
+    process.env.LLM_API_KEY = 'sk-mine';
+    process.env.DSH_HOME = '/nonexistent-dsh-home-for-this-test';
+    const cfg = readDshLlmConfig();
+    expect(cfg.apiKey).toBe('sk-mine');
+    // 有密钥却没有 baseURL 会让请求直接失败，所以这里必须是默认网关而不是 null
+    expect(cfg.baseURL).toBe('https://api.cline.bot/api/v1');
+  });
+
+  it('LLM_CONFIG_SOURCE=env 时即使只设模型也不读文件（无法回落）', () => {
+    process.env.LLM_CONFIG_SOURCE = 'env';
+    process.env.LLM_MODEL = 'my-model';
+    const cfg = readDshLlmConfig();
+    expect(cfg.model).toBe('my-model');
+    expect(cfg.apiKey).toBeNull(); // 明说了只用环境变量，就不给密钥
+    expect(JSON.stringify(cfg)).not.toContain('sk-STOLEN');
+  });
+});
