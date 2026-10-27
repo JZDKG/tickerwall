@@ -303,6 +303,29 @@ function renderBroadcast() {
   }
   bcRenderedId = ev ? ev.id : null;
   renderImpact(ev);
+  syncFeedTo(ev?.id ?? null);
+}
+
+/**
+ * 把当前播报的那条滚进事件流视野，并给它加一道高亮。
+ *
+ * 手算 scrollTop 而不用 scrollIntoView：后者会连带把整个页面滚起来 ——
+ * 播报台自己在地图底部，视觉上不该把页面推走。只在 AUTO 时滚，用户正在
+ * 翻列表（Preview / Locked）时不该动他的视野。
+ */
+function syncFeedTo(id) {
+  const list = mapEl.querySelector('.mf-list');
+  if (!list) return;
+  mapEl.querySelectorAll('.mf-item.is-current').forEach((r) => r.classList.remove('is-current'));
+  if (!id) return;
+  const row = list.querySelector(`.mf-item[data-id="${CSS.escape(id)}"]`);
+  if (!row) return;
+  row.classList.add('is-current');
+  if (bcState.mode !== 'auto') return;
+
+  const rel = row.getBoundingClientRect().top - list.getBoundingClientRect().top + list.scrollTop;
+  const want = rel - list.clientHeight / 2 + row.offsetHeight / 2;
+  list.scrollTo({ top: Math.max(0, want), behavior: 'smooth' });
 }
 
 /**
@@ -344,14 +367,15 @@ function startBroadcast() {
     bcState = spotlightReducer(bcState, { type: 'tick' });
     renderBroadcast();
   }, STEP_MS);
-  // Locked 之后 20 秒无操作自动回到巡航；没有锁定就不必轮询
+  // Locked 之后 20 秒无操作自动回到巡航。
+  // 注意 needsIdleTimer 的语义是「还需等多久」，返回 0 表示不用再等 ——
+  // 不是「不用管」。把它当 falsy 直接 return 的话，恰好在该恢复的那一刻跳过，
+  // 锁定就再也回不到巡航了（实测 22 秒后仍是 locked）。
   bcIdleTimer = setInterval(() => {
-    if (!needsIdleTimer(bcState, Date.now())) return;
-    const next = spotlightReducer(bcState, { type: 'idle', now: Date.now() });
-    if (next !== bcState) {
-      bcState = next;
-      renderBroadcast();
-    }
+    if (bcState.mode !== 'locked') return;
+    if (needsIdleTimer(bcState, Date.now()) > 0) return;
+    bcState = spotlightReducer(bcState, { type: 'idle', now: Date.now() });
+    renderBroadcast();
   }, 1000);
 }
 
@@ -645,8 +669,14 @@ export function renderMap() {
   // ---- 右侧事件流 ----
   // 滤镜与赛区是「与」关系：聚焦中东后再点「地缘/能源」，在该赛区内继续收窄。
   const visibleItems = filterMapEvents(items, { filterKey: mapFilter, region: mapRegion });
+  // 事件流只渲染前 40 条，但当前播报的那条必须在内 —— 否则「同步滚动」
+  // 找不到行，高亮也挂不上（实测锁定恢复后 is-current 为 null 就是这个原因）。
+  // 位置靠后就临时把窗口扩到它为止，上限 120 行。
+  const curId = spotlightEvent()?.id;
+  const curIdx = curId ? visibleItems.findIndex((ev) => ev.id === curId) : -1;
+  const feedEnd = Math.min(120, Math.max(40, curIdx + 1));
   const feedRows = visibleItems
-    .slice(0, 40)
+    .slice(0, feedEnd)
     .map((ev) => {
       const a = REGION_ANCHORS[ev.region] ?? REGION_ANCHORS.global;
       const hot = mapSeenIds && !mapSeenIds.has(ev.id) ? ' is-new' : '';

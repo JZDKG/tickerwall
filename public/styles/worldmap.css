@@ -190,6 +190,13 @@
   background: rgba(120, 176, 255, 0.08);
 }
 
+/* 当前播报的那条。用左侧色条 + 背景，不动字号行高 —— 否则每次推进都会
+   重排，列表会跳一下。 */
+.mf-item.is-current {
+  background: rgba(120, 176, 255, 0.1);
+  box-shadow: inset 2px 0 0 rgba(120, 176, 255, 0.85);
+}
+
 .map-body {
   position: relative;
   min-height: 0;
@@ -197,6 +204,10 @@
   grid-template-columns: minmax(0, 1fr) 320px;
   gap: 12px;
   align-items: stretch;
+}
+
+.map:fullscreen .map-feed {
+  max-height: none;
 }
 
 .map:fullscreen .map-body {
@@ -773,6 +784,10 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  /* 和 .map-canvas 同一条高度钳制。少了它，事件流内容会把 grid 行撑到
+     2500px+，.mf-list 的 overflow-y 永远不触发，变成整页滚动 —— 那样
+     「播报推进时把当前条滚进视野」就会带着页面一起跳。 */
+  max-height: clamp(420px, calc(100vh - 322px), 900px);
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.11);
   background: rgba(8, 11, 16, 0.72);
