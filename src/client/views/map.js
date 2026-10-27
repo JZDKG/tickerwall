@@ -16,6 +16,7 @@ import {
   lonLatToLogical,
 } from './map/geo/projection.js';
 import { sunPosition, nightGeometry, twilightBands, terminatorGeometry } from './map/geo/astro.js';
+import { regionBounds, viewForBounds, toggleRegion } from './map/logic/focus.js';
 import { mapEl } from '../shared/dom.js';
 import { dirOf, esc, fmtPrice } from '../shared/format.js';
 import { store } from '../shared/store.js';
@@ -63,6 +64,11 @@ export const REGION_ANCHORS = REGIONS.REGION_ANCHORS;
 // 视图状态：缩放 + 平移。
 // 事件流改成独立 grid 列之后，地图不再被面板遮住，初始不需要偏移。
 export let mapView = { k: 1, tx: 0, ty: 0 };
+
+/** 赛区聚焦：null = 全部。点国家或赛区点进入，点空白复位 */
+export let mapRegion = null;
+
+export { regionBounds, viewForBounds } from './map/logic/focus.js';
 export let mapTimer = null;
 export let mapBubbles = []; // 当前显示的气泡
 export let mapSeenIds = null; // 上一轮事件 id，用于判断「新事件」
@@ -137,6 +143,22 @@ function landPaths() {
     })
     .join('');
   return landCache;
+}
+
+/* ---------- 赛区聚焦：包围盒与视口拟合在 map/logic/focus.js（纯函数，可单测） ---------- */
+
+/** 进入/退出赛区聚焦。传 null 或同一个赛区即复位 */
+export function focusRegion(region) {
+  mapRegion = toggleRegion(mapRegion, region);
+  renderMap();
+  if (mapRegion) {
+    const b = regionBounds(mapRegion);
+    if (b) {
+      animateMapView(viewForBounds(b), 520);
+      return;
+    }
+  }
+  animateMapView({ k: 1, tx: 0, ty: 0 }, 460);
 }
 
 /* ---------- 事件影响弧线 ---------- */
@@ -233,6 +255,11 @@ export function applyMapView() {
   const vp = document.getElementById('map-viewport');
   if (!vp) return;
   vp.setAttribute('transform', `translate(${mapView.tx.toFixed(2)},${mapView.ty.toFixed(2)}) scale(${mapView.k.toFixed(3)})`);
+
+  // 屏幕空间保持恒定的那些东西（标签字号、城市点、赛区点）靠 CSS 里的
+  // scale(calc(1 / var(--map-k))) 反向缩放。这样不用每帧改几十个 font-size，
+  // 也不用等缩放结束再重排 —— 只是一次变量赋值。
+  vp.style.setProperty('--map-k', mapView.k.toFixed(4));
   const label = document.getElementById('zoom-label');
   if (label) label.textContent = `${mapView.k.toFixed(1)}×`;
 
@@ -369,10 +396,10 @@ export function renderMap() {
     const rowsShift = (-(members.length - 1) * lineH) / 2;
     citySvg += `<g class="map-city${openNow ? ' is-open' : ' is-closed'}" transform="translate(${x.toFixed(1)},${y.toFixed(1)})"
         data-city="${esc(city.key)}" data-open="${openNow ? 1 : 0}">
-      <circle class="city-halo" r="8" fill="${color}" />
-      <circle class="city-dot" r="2.8" fill="${color}" />
+      <circle class="city-halo scene-fixed" r="8" fill="${color}" />
+      <circle class="city-dot scene-fixed" r="2.8" fill="${color}" />
       <line class="city-link" x1="0" y1="0" x2="${dx}" y2="${(dy + rowsShift).toFixed(1)}" />
-      <g transform="translate(${dx},${(dy + rowsShift).toFixed(1)})">${rows}</g>
+      <g transform="translate(${dx},${(dy + rowsShift).toFixed(1)})"><g class="scene-fixed">${rows}</g></g>
     </g>`;
   }
 
@@ -392,9 +419,9 @@ export function renderMap() {
     const fresh = Math.max(...evs.slice(0, 5).map((e) => freshnessOf(e.time)));
     const r = 2.5 + Math.min(7, evs.length * 0.9);
     const color = high > 0 ? '#f5455c' : '#e0a83c';
-    regionSvg += `<g class="map-region${fresh > 0.7 ? ' hot' : ''}" transform="translate(${x.toFixed(1)},${y.toFixed(1)})">
-      <circle class="rg-pulse" r="${(r + 5).toFixed(1)}" fill="none" stroke="${color}" stroke-width="0.9" opacity="${(fresh * 0.55).toFixed(2)}" />
-      <circle class="rg-core" r="${r.toFixed(1)}" fill="${color}" opacity="${(0.2 + fresh * 0.6).toFixed(2)}" />
+    regionSvg += `<g class="map-region${fresh > 0.7 ? ' hot' : ''}" data-region-anchor="${esc(region)}" transform="translate(${x.toFixed(1)},${y.toFixed(1)})">
+      <circle class="rg-pulse scene-fixed" r="${(r + 5).toFixed(1)}" fill="none" stroke="${color}" stroke-width="0.9" opacity="${(fresh * 0.55).toFixed(2)}" />
+      <circle class="rg-core scene-fixed" r="${r.toFixed(1)}" fill="${color}" opacity="${(0.2 + fresh * 0.6).toFixed(2)}" />
       <title>${esc(a.label)} · ${evs.length} 条 · 最新 ${esc(evs[0]?.title?.slice(0, 40) ?? '')}</title>
     </g>`;
   }
@@ -406,15 +433,16 @@ export function renderMap() {
     const d = dirOf(btc.changePct);
     const c = d === 'up' ? '#f5455c' : d === 'down' ? '#0ecb81' : '#7e8899';
     btcSvg = `<g class="map-sat" transform="translate(196,296)" data-goto="btc">
-      <circle class="sat-ring" r="15" fill="none" stroke="${c}" stroke-width="0.9" opacity="0.5" />
-      <circle r="5" fill="${c}" />
-      <text x="22" y="-2" class="tag-name">BTC</text>
-      <text x="22" y="9" class="tag-pct" fill="${c}">${fmtPrice(btc.price, 0)} ${btc.changePct >= 0 ? '+' : ''}${btc.changePct.toFixed(2)}%</text>
+      <circle class="sat-ring scene-fixed" r="15" fill="none" stroke="${c}" stroke-width="0.9" opacity="0.5" />
+      <circle class="scene-fixed" r="5" fill="${c}" />
+      <g transform="translate(22,-2)"><g class="scene-fixed"><text x="0" y="0" class="tag-name">BTC</text></g></g>
+      <g transform="translate(22,9)"><g class="scene-fixed"><text x="0" y="0" class="tag-pct" fill="${c}">${fmtPrice(btc.price, 0)} ${btc.changePct >= 0 ? '+' : ''}${btc.changePct.toFixed(2)}%</text></g></g>
     </g>`;
   }
 
-  // ---- 右侧事件流 ----
-  const feedRows = items
+  // ---- 右侧事件流（赛区聚焦时只留该赛区）----
+  const visibleItems = mapRegion ? items.filter((ev) => ev.region === mapRegion) : items;
+  const feedRows = visibleItems
     .slice(0, 40)
     .map((ev) => {
       const a = REGION_ANCHORS[ev.region] ?? REGION_ANCHORS.global;
@@ -433,7 +461,11 @@ export function renderMap() {
     <div class="map-top">
       <div class="map-title">
         <h2>全球市场地图</h2>
-        <p>${quotes.length} 个标的 · ${items.length} 条实时事件 · 滚轮缩放 / 拖拽平移</p>
+        <p>${
+          mapRegion
+            ? `聚焦 ${esc(REGIONS.REGION_ANCHORS[mapRegion].label)} · ${visibleItems.length} 条事件 · <button type="button" class="map-region-clear" id="map-region-clear">显示全部</button>`
+            : `${quotes.length} 个标的 · ${items.length} 条实时事件 · 点国家或赛区点聚焦，滚轮缩放 / 拖拽平移`
+        }</p>
       </div>
       <div class="map-tools">
         <button type="button" class="map-btn" id="map-zoom-out" title="缩小">−</button>
@@ -482,7 +514,7 @@ export function renderMap() {
       <aside class="map-feed" id="map-feed">
         <div class="mf-head">
           <span>实时事件</span>
-          <em>${items.filter((i) => i.level === 'high').length} 条高影响</em>
+          <em>${visibleItems.filter((i) => i.level === 'high').length} 条高影响</em>
           <button type="button" class="mf-fold" id="mf-fold" title="收起面板">⟩</button>
         </div>
         <div class="mf-list">${feedRows}</div>
@@ -496,7 +528,22 @@ export function renderMap() {
   }
 
   applyMapView();
+  applyRegionClasses();
   bindMapEvents();
+}
+
+/**
+ * 赛区聚焦时给国家加高亮/压暗 class。
+ * 底图 path 字符串有缓存（landPaths），class 不能写进缓存里 —— 每帧按状态重加。
+ */
+function applyRegionClasses() {
+  const svg = mapEl.querySelector('.world-svg');
+  if (!svg) return;
+  for (const p of svg.querySelectorAll('.world-land path')) {
+    const hit = mapRegion && p.dataset.region === mapRegion;
+    p.classList.toggle('is-active', Boolean(hit));
+    p.classList.toggle('is-dim', Boolean(mapRegion && !hit));
+  }
 }
 
 /* ---------- 节点详情卡（就地展开，不跳页） ---------- */
@@ -621,8 +668,36 @@ export function bindMapEvents() {
     });
   });
 
-  // 点空白处收起卡片
-  svg.addEventListener('click', () => closeNodeCard());
+  // 点国家 → 聚焦该赛区（再点一次同一个国家即复位）
+  // 命中区是国家多边形，未归属赛区的国家没有 data-region，点了不响应。
+  svg.querySelectorAll('.world-land path[data-region]').forEach((p) => {
+    p.addEventListener('click', (e) => {
+      if (mapDrag?.moved) return;
+      e.stopPropagation();
+      focusRegion(p.dataset.region);
+    });
+  });
+
+  // 点赛区脉冲点 → 同上
+  svg.querySelectorAll('[data-region-anchor]').forEach((g) => {
+    g.addEventListener('click', (e) => {
+      if (mapDrag?.moved) return;
+      e.stopPropagation();
+      focusRegion(g.dataset.regionAnchor);
+    });
+  });
+
+  // 顶栏「显示全部」
+  document.getElementById('map-region-clear')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    focusRegion(null);
+  });
+
+  // 点空白处：收起卡片 + 退出赛区聚焦
+  svg.addEventListener('click', () => {
+    closeNodeCard();
+    if (mapRegion) focusRegion(null);
+  });
 
   // 双击放大（GIS 的标准手势）
   svg.addEventListener('dblclick', (e) => {

@@ -448,3 +448,73 @@ describe('弧线路径', () => {
     expect(d.includes('NaN')).toBe(false);
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * 赛区聚焦：包围盒 → 视口
+ * ------------------------------------------------------------------ */
+
+describe('赛区聚焦', () => {
+  it('每个有国家的赛区都能算出包围盒，且落在画布内', async () => {
+    const { regionBounds } = await import('../src/client/views/map/logic/focus.js');
+    for (const region of REGION_ORDER) {
+      const b = regionBounds(region);
+      expect(b, `${region} 没有包围盒`).not.toBeNull();
+      const [[x0, y0], [x1, y1]] = b;
+      expect(x1).toBeGreaterThan(x0);
+      expect(y1).toBeGreaterThan(y0);
+      expect(x0).toBeGreaterThanOrEqual(-60);
+      expect(x1).toBeLessThanOrEqual(LOGICAL_WIDTH + 60);
+    }
+  });
+
+  it('俄罗斯不参与包围盒计算（否则欧元区会退化成全球视图）', async () => {
+    const { regionBounds, BBOX_EXCLUDE } = await import('../src/client/views/map/logic/focus.js');
+    expect(BBOX_EXCLUDE.has('643')).toBe(true);
+    const euNoRu = regionBounds('eu');
+    const width = euNoRu[1][0] - euNoRu[0][0];
+    // 若把俄罗斯算进来，宽度会接近整个画布
+    expect(width).toBeLessThan(LOGICAL_WIDTH * 0.75);
+  });
+
+  it('小赛区放大、大赛区不放大；k 始终落在 1–8', async () => {
+    const { regionBounds, viewForBounds } = await import('../src/client/views/map/logic/focus.js');
+    const kOf = (r) => viewForBounds(regionBounds(r)).k;
+    expect(kOf('cn')).toBeGreaterThan(1.5);
+    expect(kOf('uk')).toBeGreaterThan(kOf('eu'));
+    for (const r of REGION_ORDER) {
+      const k = kOf(r);
+      expect(k).toBeGreaterThanOrEqual(1);
+      expect(k).toBeLessThanOrEqual(8);
+    }
+  });
+
+  it('拟合后包围盒中心落在视口中心', async () => {
+    const { regionBounds, viewForBounds } = await import('../src/client/views/map/logic/focus.js');
+    for (const r of ['cn', 'us', 'jp']) {
+      const b = regionBounds(r);
+      const t = viewForBounds(b);
+      const cx = (b[0][0] + b[1][0]) / 2;
+      const cy = (b[0][1] + b[1][1]) / 2;
+      // 应用 transform 后，中心应映射到画布中心
+      expect(cx * t.k + t.tx).toBeCloseTo(LOGICAL_WIDTH / 2, 6);
+      expect(cy * t.k + t.ty).toBeCloseTo(LOGICAL_HEIGHT / 2, 6);
+    }
+  });
+
+  it('包围盒为 null 时退回初始视图，不产生 NaN', async () => {
+    const { viewForBounds } = await import('../src/client/views/map/logic/focus.js');
+    const t = viewForBounds(null);
+    expect(t).toEqual({ k: 1, tx: 0, ty: 0 });
+    for (const v of Object.values(t)) expect(Number.isFinite(v)).toBe(true);
+  });
+
+  it('点击语义：重复点同一赛区即退出，global 不接受聚焦', async () => {
+    const { toggleRegion } = await import('../src/client/views/map/logic/focus.js');
+    expect(toggleRegion(null, 'cn')).toBe('cn');
+    expect(toggleRegion('cn', 'cn')).toBeNull();
+    expect(toggleRegion('cn', 'us')).toBe('us');
+    expect(toggleRegion('cn', null)).toBeNull();
+    expect(toggleRegion('cn', 'global')).toBeNull();
+    expect(toggleRegion('cn', 'nope')).toBeNull();
+  });
+});

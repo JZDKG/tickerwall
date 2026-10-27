@@ -144,6 +144,18 @@
   fill: rgba(150, 170, 200, 0.17);
 }
 
+/* 屏幕空间恒定层：城市点、赛区点、标签字号都不该随缩放变大变小。
+   SVG 里的 font-size / r 处于用户坐标系，会跟着 <g> 的 scale 一起放大 ——
+   3.4× 时「日经」两个字能糊满半屏。这里统一用 CSS 反向缩放抵消：
+   父层写入 --map-k，这些元素各自 scale(1/k)，锚点仍停在被标注的坐标上。 */
+.scene-fixed {
+  /* SVG 元素上 CSS transform 的参考系是自身用户坐标系，原点即局部 (0,0)，
+     transform-origin 默认就是 0 0 —— 不要再设 transform-box，那会把参考系
+     换成 viewBox，缩放中心跑到画布左上角去。 */
+  transform-origin: 0 0;
+  transform: scale(calc(1 / var(--map-k, 1)));
+}
+
 /* 指数标签 */
 .map-city {
   cursor: pointer;
@@ -512,6 +524,36 @@
 
 .world-land path.is-hot {
   fill: rgba(150, 170, 200, 0.2);
+}
+
+/* 赛区聚焦：命中区高亮，区外压暗但保留轮廓（不能整块抹掉，
+   否则看不出「聚焦的是地球上哪一块」） */
+.world-land path.is-active {
+  fill: rgba(91, 156, 248, 0.26);
+  stroke: rgba(120, 176, 255, 0.6);
+}
+
+.world-land path.is-dim {
+  fill: rgba(150, 170, 200, 0.03);
+  stroke: rgba(150, 180, 220, 0.1);
+}
+
+/* 顶栏里的「显示全部」：做成行内小按钮，不另起一行 */
+.map-region-clear {
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(120, 176, 255, 0.5);
+  background: rgba(91, 156, 248, 0.14);
+  color: #a8c8ff;
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.map-region-clear:hover {
+  background: rgba(91, 156, 248, 0.26);
+  color: #dce8ff;
 }
 
 /* 事件冲击弧线：从发生地连到受影响市场，光点沿弧流动 */
