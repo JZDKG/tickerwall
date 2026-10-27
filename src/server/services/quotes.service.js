@@ -320,24 +320,29 @@ export function fredQuote(seriesId, cacheId) {
  * ------------------------------------------------------------------ */
 
 /** 全球主要股指：本地源优先（更快更实时），Yahoo 兜底 */
-export const GLOBAL_CNBC_SYMBOLS = ['.GDAXI', '.FCHI', '.KS11', '.NSEI', '.AXJO', '.GSPTSE', '.TWII', 'US10Y'];
+// 一次批量取回所有 CNBC 全球指数，避免逐个请求。新增标的必须同时登记在这里，
+// 否则 cnbcQuote() 查缓存必然落空（表现为该标的静默 ok:false）。
+export const GLOBAL_CNBC_SYMBOLS = [
+  '.GDAXI', '.FCHI', '.KS11', '.NSEI', '.AXJO', '.GSPTSE', '.TWII', 'US10Y',
+  '.N225', '.FTSE', '.DJI', '.BVSP',
+];
 
 export const GLOBAL_INDEX_DEFS = [
   // 亚太（最早开盘，北京时间 08:00–15:00）
-  { id: 'hsi', name: '恒生指数', sub: '香港恒生指数', market: 'hk-index', yahoo: '^HSI', em: '100.HSI', sina: 'int_hangseng', tx: 'hkHSI' },
-  { id: 'n225', name: '日经225', sub: '东京日经225指数', market: 'jp-index', yahoo: '^N225', em: '100.N225', sina: 'int_nikkei' },
+  { id: 'hsi', name: '恒生指数', sub: '香港恒生指数', market: 'hk-index', yahoo: '^HSI', em: '100.HSI', tx: 'hkHSI' },
+  { id: 'n225', name: '日经225', sub: '东京日经225指数', market: 'jp-index', cnbc: '.N225', yahoo: '^N225', em: '100.N225' },
   { id: 'kospi', name: '韩国KOSPI', sub: '首尔KOSPI指数', market: 'kr-index', yahoo: '^KS11', cnbc: '.KS11' },
   { id: 'twii', name: '台湾加权', sub: '台湾加权股价指数', market: 'tw-index', yahoo: '^TWII', cnbc: '.TWII' },
   { id: 'asx', name: '澳洲ASX200', sub: '悉尼ASX 200指数', market: 'au-index', yahoo: '^AXJO', cnbc: '.AXJO' },
   { id: 'nifty', name: '印度NIFTY', sub: '印度NIFTY 50指数', market: 'in-index', yahoo: '^NSEI', cnbc: '.NSEI' },
   // 欧洲（北京时间 15:00–23:30）
   { id: 'dax', name: '德国DAX', sub: '法兰克福DAX指数', market: 'eu-index', yahoo: '^GDAXI', cnbc: '.GDAXI' },
-  { id: 'ftse', name: '英国富时100', sub: '伦敦富时100指数', market: 'uk-index', yahoo: '^FTSE', em: '100.FTSE', sina: 'int_ftse' },
+  { id: 'ftse', name: '英国富时100', sub: '伦敦富时100指数', market: 'uk-index', cnbc: '.FTSE', yahoo: '^FTSE', em: '100.FTSE' },
   { id: 'cac', name: '法国CAC40', sub: '巴黎CAC40指数', market: 'eu-index', yahoo: '^FCHI', cnbc: '.FCHI' },
   // 美洲（北京时间 21:30–04:00）
-  { id: 'dji', name: '道琼斯', sub: '道琼斯工业平均指数', market: 'us-index', yahoo: '^DJI', sina: 'int_dji', em: '100.DJIA' },
+  { id: 'dji', name: '道琼斯', sub: '道琼斯工业平均指数', market: 'us-index', cnbc: '.DJI', yahoo: '^DJI', em: '100.DJIA' },
   { id: 'tsx', name: '加拿大TSX', sub: '多伦多S&P/TSX指数', market: 'ca-index', yahoo: '^GSPTSE', cnbc: '.GSPTSE' },
-  { id: 'bvsp', name: '巴西Bovespa', sub: '圣保罗Bovespa指数', market: 'br-index', yahoo: '^BVSP', sina: 'int_bovespa' },
+  { id: 'bvsp', name: '巴西Bovespa', sub: '圣保罗Bovespa指数', market: 'br-index', cnbc: '.BVSP', yahoo: '^BVSP' },
 ];
 
 /** 标记跨合约兜底源（如现货金降级到期货金）：报价可应急展示，但禁止混写进现货分时缓冲 */
@@ -509,6 +514,9 @@ export const INSTRUMENTS = [
     sources: [
       ...(d.cnbc ? [cnbcQuote(d.cnbc)] : []),
       ...(d.em ? [eastmoney(d.em)] : []),
+      // 腾讯行情：hkHSI 这类只有它有活源。此前 tx 仅作为元数据暴露，从未参与
+      // sources 组装，等于配了却不用 —— 恒生一旦东财断连就只剩 yahoo 一条腿。
+      ...(d.tx ? [tencentQuote(d.tx)] : []),
       ...(d.sina ? [sinaInt(d.sina)] : []),
       yahooQuote(d.yahoo),
     ],

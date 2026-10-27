@@ -558,4 +558,6 @@ diffs (非时间字段)  : 0
 **治读**：`buildBriefing` 拦下 `|movePct| > MOVE_SUSPECT_PCT[id] ?? 12` 的行，记入 `dropped`。
 
 **验证**：265 passed（+7）；金标准仅新增 `dropped` 字段，业务叶子全等；真实库 briefing 23 项全在 ±1%。
-**遗留**：三个停更 `sina:int_*` 源仍在降级链里，建议单独一次改动摘除以治本（会改 fallback 链，需重设基线）。
+**治本（独立提交）**：摘掉整族 `sina:int_*`（5 个），`n225/ftse/dji/bvsp` 改走 CNBC、`hsi` 接上 `tencentQuote`。三处根因：僵尸源秒回 200 致永不降级（`bvsp` 因此整年挂旧价）、`tx` 配了未参与 `sources` 组装、新 CNBC 符号未登记批量清单（静默 ok:false）。
+
+同时修掉护栏自身缺陷：待定状态原在内存，进程重启即清零、换挡永远确认不了 → 落 kv 表，跨进程一致（实测第 1 轮挂起 4 个、第 2 轮写回 23 标的）。

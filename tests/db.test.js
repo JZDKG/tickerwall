@@ -30,6 +30,7 @@ import {
   snapshotCount,
   resetSnapshotGuard,
   SNAPSHOT_ANCHOR_WINDOW,
+  getDb,
   writeJsonAtomic,
   readJson,
   appendJsonl,
@@ -427,6 +428,18 @@ describe('快照跳变护栏', () => {
       await takeSnapshot(Q('usdcny', 7.5), { at: at(35), maxJumpPctById: { usdcny: 3 }, onSkip: (s) => skips.push(s) }),
     ).toBe(0);
     expect(skips[0].reason).toBe('jump-pending');
+  });
+
+  it('待定状态落库：跨进程（新连接）也能完成第二次确认', async () => {
+    for (const m of [0, 5, 10, 15, 20, 25]) await takeSnapshot(Q('n225', 44946.64), { at: at(m) });
+    // 第一次遇到真实价 → 挂起，且状态必须落库而非只在内存
+    expect(await takeSnapshot(Q('n225', 63268.37), { at: at(30) })).toBe(0);
+    const pend = getDb().prepare("SELECT COUNT(*) n FROM kv WHERE k = 'snapshot:pending:n225' AND v <> 'null'").get();
+    expect(pend.n, '待定状态应落 kv，否则重启即清零、永远等不到第二次确认').toBe(1);
+    // 模拟另一个进程（同一份库）：状态仍在 → 第二次确认放行
+    expect(await takeSnapshot(Q('n225', 63270.1), { at: at(35) })).toBe(1);
+    const cleared = getDb().prepare("SELECT COUNT(*) n FROM kv WHERE k = 'snapshot:pending:n225' AND v <> 'null'").get();
+    expect(cleared.n, '确认后应清空待定').toBe(0);
   });
 
   it('锚点窗口是最近 6 个刻度', () => {

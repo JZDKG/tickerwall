@@ -31,6 +31,23 @@ maybe('端点契约：/api/quotes', () => {
     expect(bad.map((i) => `${i.id}: ${i.error}`)).toEqual([]);
   });
 
+  it('全球股指走活源：不得回落到停更的 sina:int_*', () => {
+    const byId = new Map(data.items.map((i) => [i.id, i]));
+    // hsi 走腾讯（东财断连时它才是活的那条腿）；其余四个走 CNBC
+    expect(byId.get('hsi').source).toBe('tencent:hkHSI');
+    for (const id of ['n225', 'ftse', 'dji', 'bvsp']) {
+      expect(byId.get(id).source, `${id} 应走 cnbc`).toMatch(/^cnbc:/);
+    }
+    const zombie = data.items.filter((i) => /sina:int_/.test(String(i.source)));
+    expect(zombie.map((i) => i.id), '这些源已停更一年，返回值是僵尸价').toEqual([]);
+  });
+
+  it('日经价格落在真实区间（僵尸价 44946.64 与真实价 6.3 万差 40%）', () => {
+    const n225 = data.items.find((i) => i.id === 'n225');
+    expect(n225.price).toBeGreaterThan(50_000);
+    expect(n225.price).toBeLessThan(80_000);
+  });
+
   it('每个标的都有来源与分时序列', () => {
     for (const it of data.items) {
       expect(it.source, `${it.id} 缺 source`).toBeTruthy();

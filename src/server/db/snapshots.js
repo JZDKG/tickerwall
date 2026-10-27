@@ -5,7 +5,7 @@
  * 节流在调用方（server.mjs 的 SNAPSHOT_MIN_GAP_MS），这里只负责读写。
  * ================================================================== */
 
-import { getDb } from './sqlite.js';
+import { getDb, kvGetJson, kvSetJson } from './sqlite.js';
 
 /** 单次快照最多取多少个时间刻度（足够覆盖数日） */
 export const SNAPSHOT_READ_LIMIT = 4000;
@@ -14,18 +14,27 @@ export const SNAPSHOT_READ_LIMIT = 4000;
 export const SNAPSHOT_ANCHOR_WINDOW = 6;
 
 /**
- * 跳变两次确认的待定表：id -> { price, count }
+ * 跳变两次确认的待定价位
  *
  * 为什么需要它：库里现有的最新刻度可能本身就是脏值（例如 sina:int_nikkei
  * 停更后写进去的僵尸价）。如果只做「相对上一刻度跳变超阈值就拒写」，等真实
  * 行情回来时反而会被当成 +40% 的脏数据永远拒之门外 —— 脏锚点死锁。
  * 这里改成「连续两次都指向同一新价位才算真换挡」：跳变第一次挂起、第二次确认。
+ *
+ * 状态必须持久化（落 kv 表），不能只放内存：getQuotes 每个进程只落一条刻度，
+ * 纯内存状态会在重启后清零，导致每次都算「第一次」而永不确认 —— 护栏上线后
+ * 首次遇到换挡就永久少几个标的。落 kv 后跨进程一致。
  */
-const pending = new Map();
+const PENDING_KEY = (id) => `snapshot:pending:${id}`;
 
-/** 仅供测试：清空待定表 */
+/** 仅供测试：清空待定状态 */
 export function resetSnapshotGuard() {
-  pending.clear();
+  try {
+    const db = getDb();
+    db.exec("DELETE FROM kv WHERE k LIKE 'snapshot:pending:%'");
+  } catch {
+    /* 无库时忽略 */
+  }
 }
 
 /** 取中位数（空数组返回 null） */
@@ -86,19 +95,19 @@ export async function takeSnapshot(
       const jumped = base != null && base > 0 && Math.abs(c.price - base) / base > limit / 100;
 
       if (jumped) {
-        const pend = pending.get(c.id);
-        const sameRegime = pend && Math.abs(c.price - pend.price) / pend.price <= limit / 100;
+        const pend = kvGetJson(PENDING_KEY(c.id));
+        const sameRegime = pend?.price > 0 && Math.abs(c.price - pend.price) / pend.price <= limit / 100;
         if (!sameRegime) {
           // 第一次看到这个突变：挂起，不写库（避免把僵尸价/跨源错位写进去）
-          pending.set(c.id, { price: c.price, count: 1 });
+          kvSetJson(PENDING_KEY(c.id), { price: c.price, at });
           onSkip?.({ id: c.id, price: c.price, anchor: base, reason: 'jump-pending' });
           continue;
         }
         // 连续第二次都停在新价位 → 认定真的换挡，放行
-        pending.delete(c.id);
+        kvSetJson(PENDING_KEY(c.id), null);
         onSkip?.({ id: c.id, price: c.price, anchor: base, reason: 'regime-confirmed' });
       } else {
-        pending.delete(c.id);
+        kvSetJson(PENDING_KEY(c.id), null);
       }
       rows.push(c);
     }
