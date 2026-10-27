@@ -53,7 +53,9 @@ async function serveStatic(res, pathname) {
   const { root, rel, full } = resolved;
   try {
     const st = await fsp.stat(full);
-    if (st.isDirectory()) return serveStatic(res, path.posix.join(rel, 'index.html'));
+    // 递归要传**原始 pathname**。传 rel 的话，/src/client/views/ 的 rel 已被
+    // 截成 /views/，再进一次 resolveStaticPath 就会被当成 public/views/ → 404
+    if (st.isDirectory()) return serveStatic(res, path.posix.join(pathname, '/index.html'));
     const buf = await fsp.readFile(full);
     res.writeHead(200, {
       'Content-Type': MIME[path.extname(full).toLowerCase()] ?? 'application/octet-stream',
@@ -82,6 +84,12 @@ function sendJson(res, status, obj) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+  // 405 必须在任何分发之前判：原来它只挡静态资源，于是 POST /api/quotes
+  // 会一路落到 /api/quotes 的 GET 分支被当成正常请求处理
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.writeHead(405, { Allow: 'GET, HEAD' });
+    return res.end();
+  }
   try {
     if (url.pathname === '/api/quotes') {
       const force = takeForce(url);
@@ -150,10 +158,6 @@ const server = http.createServer(async (req, res) => {
         local: p ? localClock(p.tz ?? 'Asia/Shanghai', t) : null,
         open: isMarketOpen(p, t),
       });
-    }
-    if (req.method !== 'GET' && req.method !== 'HEAD') {
-      res.writeHead(405, { Allow: 'GET, HEAD' });
-      return res.end();
     }
     return serveStatic(res, url.pathname);
   } catch (err) {

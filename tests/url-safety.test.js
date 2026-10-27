@@ -84,22 +84,36 @@ describe('takeForce：强制刷新的预算', () => {
 
   it('不带 force 直接放行成 false，且不消耗预算', async () => {
     const { takeForce } = await import('../src/server/http.js');
-    expect(takeForce(u('/t1', false))).toBe(false);
-    expect(takeForce(u('/t1', false))).toBe(false);
+    expect(takeForce(u('/api/quotes', false))).toBe(false);
+    expect(takeForce(u('/api/quotes', false))).toBe(false);
     // 预算没被消耗：紧接着的 force 仍然允许
-    expect(takeForce(u('/t1', true))).toBe(true);
+    expect(takeForce(u('/api/quotes', true))).toBe(true);
   });
 
   it('同一端点第二次 force 被拒（静默退回缓存）', async () => {
     const { takeForce } = await import('../src/server/http.js');
-    expect(takeForce(u('/t2', true))).toBe(true);
-    expect(takeForce(u('/t2', true))).toBe(false);
+    expect(takeForce(u('/api/briefing', true))).toBe(true);
+    expect(takeForce(u('/api/briefing', true))).toBe(false);
   });
 
   it('不同端点各有自己的预算', async () => {
     const { takeForce } = await import('../src/server/http.js');
-    expect(takeForce(u('/t3', true))).toBe(true);
-    expect(takeForce(u('/t4', true))).toBe(true);
+    expect(takeForce(u('/api/macro', true))).toBe(true);
+    expect(takeForce(u('/api/calendar', true))).toBe(true);
+  });
+
+  it('带无限 id 的路径归到同一端点，Map 不会无限增长', async () => {
+    const { takeForce } = await import('../src/server/http.js');
+    // 第一次允许，之后全被拒 —— 说明它们共享同一个 key，而不是每个 id 一个
+    expect(takeForce(u('/api/events/abc', true))).toBe(true);
+    expect(takeForce(u('/api/events/def', true))).toBe(false);
+    expect(takeForce(u('/api/events/ghi', true))).toBe(false);
+  });
+
+  it('不在白名单的路径不消耗也不放行', async () => {
+    const { takeForce } = await import('../src/server/http.js');
+    expect(takeForce(u('/api/_market', true))).toBe(false);
+    expect(takeForce(u('/whatever', true))).toBe(false);
   });
 });
 
@@ -203,5 +217,30 @@ describe('events.service 的 url 出口全部经 sanitizeUrl', () => {
       if (!rhs.startsWith('sanitizeUrl(')) bad.push(line.trim());
     }
     expect(bad, `以下 url 赋值没有清洗：\n${bad.join('\n')}`).toEqual([]);
+  });
+});
+
+/* ================================================================== *
+ * 静态目录回退必须传原始 pathname
+ *
+ * 原实现递归时传的是已被截掉 `/src/client` 前缀的 `rel`，于是
+ * /src/client/views/ 会被再解析一次成 public/views/ → 404。
+ *
+ * 当前仓库里没有「子目录 + index.html」的组合，这个 bug 无法从 HTTP 侧
+ * 观察到（改前改后都是 404），所以用静态断言锁住修法本身。
+ * ================================================================== */
+describe('serveStatic 目录回退与 405 顺序', () => {
+  it('递归传原始 pathname 而不是已截断的 rel', () => {
+    const code = readFileSync(new URL('../server.mjs', import.meta.url), 'utf8');
+    expect(code).toContain("path.posix.join(pathname, '/index.html')");
+    expect(code).not.toContain("path.posix.join(rel, 'index.html')");
+  });
+
+  it('405 在任何分发之前判，不会把 POST /api/* 当成 GET', () => {
+    const code = readFileSync(new URL('../server.mjs', import.meta.url), 'utf8');
+    const i405 = code.indexOf('405');
+    const iQuotes = code.indexOf("url.pathname === '/api/quotes'");
+    expect(i405).toBeGreaterThan(0);
+    expect(i405).toBeLessThan(iQuotes);
   });
 });

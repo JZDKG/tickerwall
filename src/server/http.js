@@ -10,7 +10,20 @@ const CLIENT_SRC_DIR = path.join(ROOT, 'src', 'client');
 /* force=1 跳过缓存直打上游，多个端点都支持 —— 不设限就成了对上游的放大器。
    同一端点 5 秒一次；超预算静默退回缓存，对点「刷新」的人透明。 */
 const FORCE_MIN_INTERVAL_MS = 5000;
+
+/**
+ * 只对这几个固定端点计预算。
+ *
+ * 不能拿 url.pathname 直接当 key：/api/detail/<任意 id> 的 pathname 有无限
+ * 多种，Map 会一直长（而且是在校验 id 之前就写进去）。按端点归类，长度有界。
+ */
+const FORCE_KEYS = ['/api/quotes', '/api/briefing', '/api/macro', '/api/events', '/api/eventstudy', '/api/calendar'];
 const lastForceAt = new Map();
+
+/** 归到白名单里的某个端点；归不上返回 null（不计预算，也不放行） */
+function forceKey(pathname) {
+  return FORCE_KEYS.find((k) => pathname === k || pathname.startsWith(`${k}/`)) ?? null;
+}
 
 /**
  * 取本次请求是否允许强制刷新。超预算返回 false（调用方自然走缓存），
@@ -18,8 +31,9 @@ const lastForceAt = new Map();
  */
 export function takeForce(url) {
   if (url.searchParams.get('force') !== '1') return false;
+  const key = forceKey(url.pathname);
+  if (!key) return false;
   const now = Date.now();
-  const key = url.pathname;
   if (now - (lastForceAt.get(key) ?? 0) < FORCE_MIN_INTERVAL_MS) return false;
   lastForceAt.set(key, now);
   return true;
