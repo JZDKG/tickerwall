@@ -456,17 +456,52 @@
   vector-effect: non-scaling-stroke;
 }
 
-/* 晨昏线：昼夜分界。这条线让「现在哪个市场在交易时段」一眼可见 */
-.terminator {
-  stroke-width: 1.1;
+/* 昼夜层：黑夜是闭合球冠，外面叠三层晨昏带。
+   从外到内 108° → 102° → 96° → 90°，越往外越亮，最内层才是纯黑。
+   底色用深蓝而非纯黑 —— 纯黑会把陆地轮廓吃掉，「哪边是夜里」反而看不清。 */
+.night-layer {
+  pointer-events: none;
+}
+
+.night-band {
+  fill: none;
+  stroke: rgba(120, 168, 255, 0.20);
+  stroke-width: 0.8;
   vector-effect: non-scaling-stroke;
-  opacity: 0.9;
+}
+
+/* 三层晨昏带只用描边标出高度角，避免三块半透明面叠出脏色 */
+.night-band.band-civil { stroke-opacity: 0.55; }
+.night-band.band-nautical { stroke-opacity: 0.36; stroke-dasharray: 3 4; }
+.night-band.band-astronomical { stroke-opacity: 0.2; stroke-dasharray: 1.5 5; }
+
+/* 黑夜面片本体：与 .world-land 同层但压在上面，给陆地再加一层暗 */
+.night-core {
+  fill: rgba(2, 5, 12, 0.5);
+  stroke: rgba(120, 168, 255, 0.32);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
   animation: termBreath 8s ease-in-out infinite;
 }
 
 @keyframes termBreath {
-  0%, 100% { opacity: 0.62; }
-  50% { opacity: 0.95; }
+  0%, 100% { stroke-opacity: 0.55; }
+  50% { stroke-opacity: 0.95; }
+}
+
+/* 国家底图：可悬停、可点击，是「地 - 事」联动的命中区。
+   未归属赛区的国家也有 data-iso，但点下去不聚焦。 */
+.world-land path {
+  cursor: default;
+  transition: fill 0.16s ease;
+}
+
+.world-land path[data-region] {
+  cursor: pointer;
+}
+
+.world-land path.is-hot {
+  fill: rgba(150, 170, 200, 0.2);
 }
 
 /* 事件冲击弧线：从发生地连到受影响市场，光点沿弧流动 */

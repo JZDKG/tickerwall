@@ -11,7 +11,6 @@
 import { macroEl } from '../shared/dom.js';
 import { store } from '../shared/store.js';
 import { clockText, dirOf, esc } from '../shared/format.js';
-import { WORLD_COUNTRIES, MAP_SIZE } from '/worldmap.js';
 import { macroGraphSectionHTML, findEdge, EDGE_BY_ID } from '/macro-graph.js';
 
 /* ------------------------------------------------------------------ *

@@ -8,9 +8,14 @@
  * 全球市场地图 v2
  * 全屏 / 缩放平移 / 各地指数直接标注 / 新事件气泡 / 右侧滚动事件流
  * ================================================================== */
-import { WORLD_COUNTRIES, MAP_SIZE } from '/worldmap.js';
+import { geoGraticule10 } from 'geo-kit';
 import * as GEO from './map/geo/cities.js';
 import * as REGIONS from './map/geo/regions.js';
+import {
+  LOGICAL_WIDTH, LOGICAL_HEIGHT, worldFeatures, pathOf,
+  lonLatToLogical,
+} from './map/geo/projection.js';
+import { sunPosition, nightGeometry, twilightBands } from './map/geo/astro.js';
 import { mapEl } from '../shared/dom.js';
 import { dirOf, esc, fmtPrice } from '../shared/format.js';
 import { store } from '../shared/store.js';
@@ -63,85 +68,70 @@ export let mapBubbles = []; // 当前显示的气泡
 export let mapSeenIds = null; // 上一轮事件 id，用于判断「新事件」
 export let mapDrag = null;
 
+/**
+ * 经纬度 → 逻辑画布坐标。
+ * Step 1 起真正的换算在 geo/projection.js（Natural Earth 投影），这里只是
+ * 保留原函数名，让几十处调用点不用改。等 L3 换成 HTML 锚点后再统一改名。
+ */
 export function mapProject(lon, lat) {
-  return [
-    ((lon + 180) / 360) * MAP_SIZE.width,
-    ((MAP_SIZE.latMax - lat) / (MAP_SIZE.latMax - MAP_SIZE.latMin)) * MAP_SIZE.height,
-  ];
+  return lonLatToLogical(lon, lat);
 }
 
-/* ---------- 天文：晨昏线 ---------- */
+/* ---------- 经纬网与昼夜：都是 d3-geo 生成 ---------- */
 
-/** 太阳直射点（赤纬 + 经度）。低精度公式，误差 < 0.01°，够画昼夜分界 */
-export function sunPosition(now) {
-  const jd = now.getTime() / 86400000 + 2440587.5;
-  const n = jd - 2451545.0;
-  const L = (280.46 + 0.9856474 * n) % 360;
-  const g = (((357.528 + 0.9856003 * n) % 360) * Math.PI) / 180;
-  const lambda = ((L + 1.915 * Math.sin(g) + 0.02 * Math.sin(2 * g)) * Math.PI) / 180;
-  const eps = ((23.439 - 0.0000004 * n) * Math.PI) / 180;
-  const decl = Math.asin(Math.sin(eps) * Math.sin(lambda));
-  const ra = Math.atan2(Math.cos(eps) * Math.sin(lambda), Math.cos(lambda));
-  const gmst = (18.697374558 + 24.06570982441908 * n) % 24;
-  let lon = (ra * 180) / Math.PI - gmst * 15;
-  lon = ((lon + 540) % 360) - 180;
-  return { decl: (decl * 180) / Math.PI, lon };
+const GRATICULE_PATH = pathOf(geoGraticule10());
+
+/** 经纬网（每 10°），一次性生成成一条 <path> */
+export function graticulePath() {
+  return GRATICULE_PATH;
 }
 
 /**
- * 晨昏线路径
- * 对每个纬度解 cos(天顶角)=0：cosH = -tan(lat)·tan(decl)，得到昼夜分界的经度。
- * |cosH|>1 表示极昼/极夜，整条纬线都在同一侧。
+ * 昼夜层：三层晨昏带 + 黑夜球冠，由外向内叠。
+ *
+ * 手写版本是「对每个纬度解 cosH 画两条曲线」，在极昼极夜附近要特判、
+ * 跨日界线还得断开重连，极区会出现横穿整图的缝。现在黑夜就是
+ * 「以太阳对跖点为中心、半径 90° 的球冠」，geoCircle 出 GeoJSON、
+ * projection 自动做球面裁剪，极区和日界线都由库处理。
  */
-/** 经纬网格（每 30° / 20°），密度感全靠它 */
-export function graticulePaths() {
-  const segs = [];
-  for (let lon = -180; lon <= 180; lon += 30) {
-    const [x1, y1] = mapProject(lon, MAP_SIZE.latMax);
-    const [x2, y2] = mapProject(lon, MAP_SIZE.latMin);
-    segs.push(`M${x1.toFixed(1)},${y1.toFixed(1)}L${x2.toFixed(1)},${y2.toFixed(1)}`);
-  }
-  for (let lat = -40; lat <= 80; lat += 20) {
-    const [x1, y1] = mapProject(-180, lat);
-    const [x2, y2] = mapProject(180, lat);
-    segs.push(`M${x1.toFixed(1)},${y1.toFixed(1)}L${x2.toFixed(1)},${y2.toFixed(1)}`);
-  }
-  return segs.map((d) => `<path d="${d}" />`).join('');
+export function nightLayerPaths(now = new Date()) {
+  const sun = sunPosition(now);
+  const bands = twilightBands(sun);
+  // 由外向内：天文档位最高（半径最大）的先铺，最内层才是纯黑夜
+  // 必须走项目自己的投影。geoPath() 不传投影时是恒等变换 —— 经纬度会被
+  // 当成像素直接画，svg 里「有 path」但整块面片缩在左上角一小片，极易漏看。
+  const outer = [...bands].reverse().map((b) => ({
+    key: b.key,
+    d: pathOf(b.geometry) ?? '',
+  }));
+  return { sun, outer, core: pathOf(nightGeometry(sun)) ?? '' };
 }
 
-export function terminatorPath(sun) {
-  const d = Math.PI / 180;
+/* ---------- 国家底图 ---------- */
 
-  // 晨昏圈在地图上表现为一对对称弧（+H 与 −H 两支），只画一支会看着像被切了一半
-  const build = (sign) => {
-    const segs = [];
-    let cur = [];
-    let prevX = null;
+let landCache = null;
 
-    for (let lat = -88; lat <= 88; lat += 1.5) {
-      const cosH = -Math.tan(lat * d) * Math.tan(sun.decl * d);
-      let lon;
-      if (cosH >= 1) lon = sun.lon;             // 极夜
-      else if (cosH <= -1) lon = sun.lon + 180; // 极昼
-      else lon = sun.lon + (sign * Math.acos(cosH)) / d;
-
-      const [x, y] = mapProject(lon, lat);
-      // 跨日界线断开，避免横穿整图
-      if (prevX !== null && Math.abs(x - prevX) > MAP_SIZE.width / 2) {
-        if (cur.length > 1) segs.push(cur);
-        cur = [];
-      }
-      cur.push([x, y]);
-      prevX = x;
-    }
-    if (cur.length > 1) segs.push(cur);
-
-    return segs
-      .map((sg) => `M${sg.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join('L')}`)
-      .join('');
-  };
-
-  return build(1) + build(-1);
+/**
+ * 177 个国家（含 3 个无 ISO 的争议地区）。
+ * renderMap 每 15 秒重建一次 DOM，path 字符串重算 177 次不值得，缓存住。
+ * data-region 是「地 - 事」联动的锚点：悬停高亮、点击聚焦赛区都靠它。
+ */
+function landPaths() {
+  if (landCache) return landCache;
+  landCache = worldFeatures
+    .map((f) => {
+      const iso = REGIONS.normalizeIso(f.id);
+      const meta = iso ? REGIONS.COUNTRY_META[iso] : null;
+      const region = meta?.region ?? '';
+      const label = meta?.cn ?? f.properties?.name ?? '';
+      const suffix = region ? REGIONS.REGION_ANCHORS[region].label : '未归属赛区';
+      const d = pathOf(f) ?? '';
+      return `<path d="${d}" data-iso="${esc(iso ?? '')}" data-name="${esc(label)}"${
+        region ? ` data-region="${region}"` : ''
+      }><title>${esc(label)} · ${esc(suffix)}</title></path>`;
+    })
+    .join('');
+  return landCache;
 }
 
 /* ---------- 事件影响弧线 ---------- */
@@ -271,8 +261,8 @@ export function zoomAt(clientX, clientY, factor, dur = 240) {
 export const MAP_PANEL_GUTTER = 260;
 
 export function clampMapView() {
-  const overX = MAP_SIZE.width * (mapView.k - 1) + MAP_PANEL_GUTTER;
-  const overY = MAP_SIZE.height * (mapView.k - 1);
+  const overX = LOGICAL_WIDTH * (mapView.k - 1) + MAP_PANEL_GUTTER;
+  const overY = LOGICAL_HEIGHT * (mapView.k - 1);
   mapView.tx = Math.min(0, Math.max(-overX, mapView.tx));
   mapView.ty = Math.min(0, Math.max(-overY, mapView.ty));
 }
@@ -434,6 +424,9 @@ export function renderMap() {
     })
     .join('');
 
+  // 昼夜每小时才需要重算一次的量级，但这里跟着重建走，成本可以忽略
+  const night = nightLayerPaths(new Date());
+
   mapEl.innerHTML = `
     <div class="map-top">
       <div class="map-title">
@@ -450,7 +443,7 @@ export function renderMap() {
     </div>
     <div class="map-body">
       <div class="map-canvas" id="map-canvas">
-        <svg class="world-svg" viewBox="0 0 ${MAP_SIZE.width} ${MAP_SIZE.height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="全球市场地图">
+        <svg class="world-svg" viewBox="0 0 ${LOGICAL_WIDTH} ${LOGICAL_HEIGHT}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="全球市场地图">
           <defs>
             <radialGradient id="oceanGlow" cx="50%" cy="42%" r="62%">
               <stop offset="0%" stop-color="#0d1a2c" />
@@ -467,11 +460,14 @@ export function renderMap() {
               <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
             </filter>
           </defs>
-          <rect class="map-ocean" width="${MAP_SIZE.width}" height="${MAP_SIZE.height}" fill="url(#oceanGlow)" />
+          <rect class="map-ocean" width="${LOGICAL_WIDTH}" height="${LOGICAL_HEIGHT}" fill="url(#oceanGlow)" />
           <g id="map-viewport">
-            <g class="map-graticule">${graticulePaths()}</g>
-            <g class="world-land">${WORLD_COUNTRIES.map((c) => `<path d="${c.d}" />`).join('')}</g>
-            <path class="terminator" d="${terminatorPath(sunPosition(new Date()))}" fill="none" stroke="url(#terminatorStroke)" filter="url(#softGlow)" />
+            <g class="map-graticule"><path d="${graticulePath()}" /></g>
+            <g class="world-land">${landPaths()}</g>
+            <g class="night-layer">
+              ${night.outer.map((b) => `<path class="night-band band-${b.key}" d="${b.d}" />`).join('')}
+              <path class="night-core" d="${night.core}" />
+            </g>
             <g class="impact-layer">${impactArcs(items)}</g>
             <g class="map-regions">${regionSvg}</g>
             <g class="map-cities">${citySvg}</g>
@@ -635,7 +631,7 @@ export function bindMapEvents() {
   // 直接取 svg 的 rect 中心也行（xMidYMid 下两者重合），但那样就把
   // 「留白对称」当成了前提；走 CTM 投影 viewBox 中心，换成别的对齐方式也不会错位。
   const zoomAtCenter = (factor) => {
-    const c = toClient(svg, MAP_SIZE.width / 2, MAP_SIZE.height / 2);
+    const c = toClient(svg, LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2);
     if (c) zoomAt(c[0], c[1], factor);
   };
   document.getElementById('map-zoom-in')?.addEventListener('click', () => zoomAtCenter(1.35));
