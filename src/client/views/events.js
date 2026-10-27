@@ -9,7 +9,7 @@
  * ================================================================== */
 import { loadCalendarCached } from '../shared/calendar.js';
 import { eventsEl } from '../shared/dom.js';
-import { clockText, esc, safeHref } from '../shared/format.js';
+import { clockText, esc, html, safeHref } from '../shared/format.js';
 import { PLACEHOLDER, store } from '../shared/store.js';
 
 
@@ -46,47 +46,50 @@ export function calendarBlockHTML(cal) {
 }
 
 export function eventItemHTML(ev) {
-  const topicChips = ev.topics
-    .map((t) => `<span class="ev-topic${t.strong ? ' strong' : ''}">${esc(t.label)}</span>`)
-    .join('');
-  const symChips = ev.symbols
-    .slice(0, 5)
-    .map((s) => {
-      const meta = PLACEHOLDER.find((p) => p.id === s);
-      return meta ? `<span class="ev-sym">${esc(meta.short ?? meta.name)}</span>` : '';
-    })
-    .join('');
+  // 迁移到 html`` 后不再手写 esc()：插入即转义，嵌套的 html`` 结果原样拼入。
+  // 静态片段（徽标、分隔符）一律再用一层 html`` 包，而不是 raw() ——
+  // raw 是绕过转义的后门，白名单为空时就不该为静态字面量开口子。
+  const topicChips = ev.topics.map(
+    (t) => html`<span class="ev-topic${t.strong ? ' strong' : ''}">${t.label}</span>`,
+  );
+  const symChips = ev.symbols.slice(0, 5).map((s) => {
+    const meta = PLACEHOLDER.find((p) => p.id === s);
+    return meta ? html`<span class="ev-sym">${meta.short ?? meta.name}</span>` : '';
+  });
   // safeHref 返回 '' 就整段不渲染 —— 宁可没有「原文」入口，也不给一条
   // javascript: 链接。服务端已清过一遍，这是第二道。
   const href = safeHref(ev.url);
   const link = href
-    ? `<a class="ev-link" href="${esc(href)}" target="_blank" rel="noreferrer noopener">原文 ↗</a>`
+    ? html`<a class="ev-link" href="${href}" target="_blank" rel="noreferrer noopener">原文 ↗</a>`
     : '';
   const isNew = store.events?.newIds?.has(ev.id);
   // 有多源时「谁发的」比「哪个通道抓的」有用得多：日经的稿子经 Google 聚合
   // 转手，读者要看到的是「日本経済新聞」而不是「日文财经」。
   const byline = ev.publisher && ev.publisher !== ev.source ? ev.publisher : ev.source;
   const channelNote = ev.publisher && ev.publisher !== ev.source ? ev.source : '';
-  const oneHand = ev.origin === 'direct'
-    ? `<span class="ev-origin direct" title="媒体/机构自己发布的feed，链接直达原文域名">一手</span>`
-    : ev.origin === 'aggregate'
-      ? `<span class="ev-origin agg" title="${esc(channelNote || '聚合索引')}｜经 Google News 索引转手，标题与出处由聚合方提供">索引</span>`
-      : '';
-  const langChip = ev.lang && ev.lang !== 'zh' ? `<span class="ev-lang">${esc(ev.lang)}</span>` : '';
-  return `<article class="event lv-${ev.level}${isNew ? ' is-new' : ''}" data-id="${esc(ev.id)}">
-    <div class="ev-time">${esc(ev.time.slice(11, 16))}<em>${esc(ev.time.slice(5, 10))}</em></div>
+  const oneHand =
+    ev.origin === 'direct'
+      ? html`<span class="ev-origin direct" title="媒体/机构自己发布的feed，链接直达原文域名">一手</span>`
+      : ev.origin === 'aggregate'
+        ? html`<span class="ev-origin agg" title="${channelNote || '聚合索引'}｜经 Google News 索引转手，标题与出处由聚合方提供">索引</span>`
+        : '';
+  const langChip = ev.lang && ev.lang !== 'zh' ? html`<span class="ev-lang">${ev.lang}</span>` : '';
+  // 原来是 join('') 后判空：只要有一个符号命中就显示分隔符
+  const symsExist = symChips.some((x) => x !== '');
+  return html`<article class="event lv-${ev.level}${isNew ? ' is-new' : ''}" data-id="${ev.id}">
+    <div class="ev-time">${ev.time.slice(11, 16)}<em>${ev.time.slice(5, 10)}</em></div>
     <div class="ev-main">
       <div class="ev-tags">
-        ${ev.level === 'high' ? '<span class="ev-badge high">重要</span>' : ev.level === 'mid' ? '<span class="ev-badge mid">关注</span>' : ''}
-        ${ev.llm ? '<span class="ev-ai" title="已由 LLM 做语义判定">AI</span>' : ''}
-        ${isNew ? '<span class="ev-new">NEW</span>' : ''}
+        ${ev.level === 'high' ? html`<span class="ev-badge high">重要</span>` : ev.level === 'mid' ? html`<span class="ev-badge mid">关注</span>` : ''}
+        ${ev.llm ? html`<span class="ev-ai" title="已由 LLM 做语义判定">AI</span>` : ''}
+        ${isNew ? html`<span class="ev-new">NEW</span>` : ''}
         ${topicChips}
       </div>
-      <h4 class="ev-title">${esc(ev.title)}</h4>
-      ${ev.body && ev.body !== ev.title ? `<p class="ev-body">${esc(ev.body)}</p>` : ''}
-      <div class="ev-meta">${oneHand}${langChip}<span class="ev-pub"${channelNote ? ` title="经 ${esc(channelNote)} 采集"` : ''}>${esc(byline)}</span>${symChips ? `<span class="ev-sep">·</span>${symChips}` : ''}${link}</div>
+      <h4 class="ev-title">${ev.title}</h4>
+      ${ev.body && ev.body !== ev.title ? html`<p class="ev-body">${ev.body}</p>` : ''}
+      <div class="ev-meta">${oneHand}${langChip}<span class="ev-pub"${channelNote ? html` title="经 ${channelNote} 采集"` : ''}>${byline}</span>${symsExist ? html`<span class="ev-sep">·</span>${symChips}` : ''}${link}</div>
     </div>
-  </article>`;
+  </article>`.toString();
 }
 
 export function renderEvents(opts = {}) {

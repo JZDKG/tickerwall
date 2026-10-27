@@ -73,6 +73,89 @@ export function safeHref(raw) {
   }
 }
 
+/* ------------------------------------------------------------------ *
+ * 带转义的标签模板
+ *
+ * 为什么要有它：全站有几十处 `innerHTML = \`…${x}…\``，而转义靠人手写
+ * `esc()`。漏一处就是一个注入口，而「漏了」在代码里看起来完全正常 ——
+ * 没有类型错误、没有测试红灯、UI 也照常显示。
+ *
+ * 用法：
+ *   el.innerHTML = html`<b>${userInput}</b>`;        // 自动转义
+ *   el.innerHTML = html`<b>${raw(safeSnippet)}</b>`; // 显式放行
+ *
+ * 注意 html 的返回值不是普通字符串，而是一个 marked 对象 —— 这样嵌套时
+ * 内层结果不会被再转一次（否则 `<ul>${items.map(x => html`<li>${x}</li>`)}`
+ * 会得到 `&amp;lt;li&amp;gt;`）。普通字符串、数字一律转义。
+ * ------------------------------------------------------------------ */
+
+/** 已转义（或由 raw 显式放行）的片段。对外只暴露 toString。 */
+export class SafeHtml {
+  constructor(value) {
+    this.value = value;
+  }
+
+  toString() {
+    return this.value;
+  }
+}
+
+/**
+ * 显式放行一段原样 HTML。
+ *
+ * 这是个「我知道自己在做什么」的出口，所以只允许出现在白名单文件里
+ * （tests/html-template.test.js 守着），否则它就变成绕过转义的后门。
+ */
+export function raw(value) {
+  return new SafeHtml(String(value ?? ''));
+}
+
+/** 值 → HTML 串。数组递归拼接，null/undefined/false 输出空。 */
+function renderValue(value) {
+  if (value == null || value === false) return '';
+  if (value instanceof SafeHtml) return value.value;
+  if (Array.isArray(value)) return value.map(renderValue).join('');
+  return esc(String(value));
+}
+
+/**
+ * 未加引号的属性插值检测。
+ *
+ * `<a href=${x}>` 靠 HTML 转义防不住 —— 空格会把 `javascript:alert(1) foo`
+ * 拆成两个属性，转义后的 `&quot;` 在无引号语境里也不还原。这类写法一律
+ * 拒绝，逼调用方写成 `<a href="${x}">`（或干脆用 attrHref）。
+ */
+function assertQuotedAttribute(strings, index) {
+  const before = strings[index] ?? '';
+  // 插值紧跟在 `=` 之后（允许中间有空格）就是在无引号属性里
+  if (/=\s*$/.test(before) && !/["'][^"']*=\s*$/.test(before)) {
+    throw new Error(
+      `html\`\` 不允许未加引号的属性插值：...${before.slice(-24)}\${…}。` +
+        '请写成 attr="…"，或用 attrHref()。',
+    );
+  }
+}
+
+export function html(strings, ...values) {
+  let out = strings[0];
+  for (let i = 0; i < values.length; i += 1) {
+    assertQuotedAttribute(strings, i);
+    out += renderValue(values[i]) + strings[i + 1];
+  }
+  return new SafeHtml(out);
+}
+
+/**
+ * href/src 专用：转义之外还要过 safeHref。
+ *
+ * 两件事是正交的 —— 转义只防 HTML 注入，挡不住 `javascript:` 协议。
+ * 被拒时返回空串，调用方据此整段不渲染（不要退化成空的 href=""）。
+ */
+export function attrHref(rawUrl) {
+  const href = safeHref(rawUrl);
+  return href ? esc(href) : '';
+}
+
 export function dirOf(v) {
   if (v == null || !Number.isFinite(v) || v === 0) return 'flat';
   return v > 0 ? 'up' : 'down';
