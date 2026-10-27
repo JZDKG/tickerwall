@@ -220,6 +220,7 @@ describe('分层：跨层符号必须导入（防静默降级）', () => {
     'src/server/domain/market-hours.js',
     'src/server/domain/history-ring.js',
     'src/server/domain/news-lexicon.js',
+    'src/server/domain/clock.js',
     'src/server/db/sqlite.js',
     'src/server/db/daily-cache.js',
     'src/server/db/snapshots.js',

@@ -6,6 +6,15 @@
  * ================================================================== */
 
 import { fetchRaw } from '../providers/index.js';
+import {
+  BEIJING_TZ,
+  EASTERN_TZ,
+  beijingToday,
+  normalizeTimeZone,
+  zonedParts,
+  toBeijingRelease,
+  zonedTimeToUtc,
+} from '../domain/clock.js';
 import { MACRO_UNIVERSE, fetchMacroSeries, toChanges } from './macro.service.js';
 
 /* ------------------------------------------------------------------ *
@@ -22,11 +31,10 @@ export const MONTH_IDX = {
   july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
 };
 
-/** 美东 08:30 发布 → 北京时间（夏令时 20:30 / 冬令时 21:30），这里给个近似值并标注时区 */
-export function blsReleaseBeijingTime(month) {
-  // 美国夏令时 3 月第二个周日 ~ 11 月第一个周日
-  const dst = month >= 3 && month <= 10;
-  return dst ? '20:30' : '21:30';
+/** 美东 08:30 发布 → 北京时间。夏令时 20:30 / 冬令时 21:30，由 ICU 判定，不按月粗算。 */
+export function blsReleaseBeijing(year, month, day) {
+  const utcMs = zonedTimeToUtc(year, month, day, 8, 30, EASTERN_TZ);
+  return utcMs == null ? null : toBeijingRelease(utcMs);
 }
 
 /**
@@ -39,7 +47,12 @@ export async function fetchFomcMeetings() {
     'https://r.jina.ai/https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm',
     { headers: { 'User-Agent': 'Mozilla/5.0' } },
   );
-  const lines = text.split('\n').map((l) => l.trim());
+  return parseFomcCalendar(text);
+}
+
+/** 纯解析：文本代理读到的日历 markdown → 事件列表（抓取与解析分开，才能离线钉住日期换算） */
+export function parseFomcCalendar(text) {
+  const lines = String(text ?? '').split('\n').map((l) => l.trim());
   const out = [];
   const pad = (n) => String(n).padStart(2, '0');
   let year = null;
@@ -81,10 +94,20 @@ export async function fetchFomcMeetings() {
         endYear += 1;
       }
     }
+
+    // 决议在会议最后一天美东 14:00 发布（EDT 18:00Z / EST 19:00Z）。
+    // 换成北京时间必然跨到次日凌晨，所以 date 不能直接用会议结束日，
+    // 时刻也不能写死 02:00 —— 冬令时是 03:00。
+    const releaseUtc = zonedTimeToUtc(endYear, endMonth, endDay, 14, 0, EASTERN_TZ);
+    const bj = releaseUtc == null ? null : toBeijingRelease(releaseUtc);
+    if (!bj) continue;
+
     out.push({
-      date: `${endYear}-${pad(endMonth)}-${pad(endDay)}`,
+      date: bj.date,
+      time: bj.time,
+      releaseAt: bj.releaseAt,
       startDate: `${year}-${pad(month)}-${pad(startDay)}`,
-      time: '02:00',
+      meetingEnd: `${endYear}-${pad(endMonth)}-${pad(endDay)}`,
       kind: 'fomc',
       title: `美联储 FOMC 利率决议（${startDay}-${endDay} 日会议）`,
       note: isProjection ? '含经济预测摘要 SEP 与点阵图' : null,
@@ -106,7 +129,11 @@ export async function fetchBlsIcsEvents() {
   const text = await fetchRaw('https://r.jina.ai/https://www.bls.gov/schedule/news_release/bls.ics', {
     headers: { 'User-Agent': 'Mozilla/5.0' },
   });
+  return parseBlsIcs(text);
+}
 
+/** 纯解析：BLS 官方 ICS → 事件列表 */
+export function parseBlsIcs(text) {
   const ICS_KINDS = [
     { re: /^Consumer Price Index$/i, kind: 'cpi', title: '美国 CPI 消费者物价指数', importance: 3, symbols: ['us10y', 'gold-intl', 'dxy', 'sp500'] },
     { re: /^Employment Situation$/i, kind: 'nfp', title: '美国非农就业报告', importance: 3, symbols: ['us10y', 'dxy', 'sp500', 'ndx100'] },
@@ -115,7 +142,6 @@ export async function fetchBlsIcsEvents() {
     { re: /^Gross Domestic Product$/i, kind: 'gdp', title: '美国 GDP', importance: 2, symbols: ['sp500', 'dxy'] },
   ];
 
-  const pad = (n) => String(n).padStart(2, '0');
   const out = [];
 
   for (const block of text.split('BEGIN:VEVENT').slice(1)) {
@@ -134,26 +160,20 @@ export async function fetchBlsIcsEvents() {
     const hh = Number(timeStr.slice(0, 2));
     const mi = Number(timeStr.slice(2, 4));
 
-    // 美东 → 北京：夏令时 +12、冬令时 +13
-    const isEastern = !tzid || /Eastern/i.test(tzid);
-    const dst = isEastern && mo >= 3 && mo <= 10;
-    const shift = isEastern ? (dst ? 12 : 13) : 8;
-    let bh = hh + shift;
-    let dayShift = 0;
-    while (bh >= 24) {
-      bh -= 24;
-      dayShift += 1;
-    }
-
-    const dt = new Date(Date.UTC(y, mo - 1, d + dayShift));
-    const bjDate = `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())}`;
+    // ICS 给的是发布方当地墙钟（BLS 一律美东）。按 TZID 反解成绝对时间，
+    // 再投成北京日期/时刻——原先按月份粗判夏令时，3 月上旬与 11 月初各差 1 小时。
+    const tz = normalizeTimeZone(tzid, EASTERN_TZ);
+    const utcMs = zonedTimeToUtc(y, mo, d, hh, mi, tz);
+    const bj = utcMs == null ? null : toBeijingRelease(utcMs);
+    if (!bj) continue;
 
     // 同一天同一指标可能重复（如完整版/初值），保留第一条
-    if (out.some((e) => e.date === bjDate && e.kind === kind.kind)) continue;
+    if (out.some((e) => e.date === bj.date && e.kind === kind.kind)) continue;
 
     out.push({
-      date: bjDate,
-      time: `${pad(bh)}:${pad(mi)}`,
+      date: bj.date,
+      time: bj.time,
+      releaseAt: bj.releaseAt,
       kind: kind.kind,
       title: kind.title,
       importance: kind.importance,
@@ -206,15 +226,19 @@ export async function fetchBlsMonth(year, month) {
       prevDay = day;
       for (const k of KINDS) {
         if (!k.re.test(cell)) continue;
-        const date = `${curYear}-${String(curMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        if (out.some((e) => e.date === date && e.kind === k.kind)) continue;
+        // 日程页给的是美东日期，发布时刻美东 08:30 —— 换成北京要在 UTC 上算，
+        // 不能按月粗判夏令时（3 月上旬 / 11 月初会差 1 小时）。
+        const rel = blsReleaseBeijing(curYear, curMonth, day);
+        if (!rel) continue;
+        if (out.some((e) => e.date === rel.date && e.kind === k.kind)) continue;
         // 同一指标一个月可能出现两次（如政府停摆后补发上月数据），
         // 所以把「数据所属月份」写进标题，否则用户会以为是重复条目
         const refMatch = /(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})/i.exec(cell);
         const refLabel = refMatch ? `${refMatch[2]} 年 ${MONTH_IDX[refMatch[1].toLowerCase()]} 月` : null;
         out.push({
-          date,
-          time: blsReleaseBeijingTime(curMonth),
+          date: rel.date,
+          time: rel.time,
+          releaseAt: rel.releaseAt,
           kind: k.kind,
           title: refLabel ? `${k.title}（${refLabel}数据）` : k.title,
           importance: k.importance,
@@ -227,13 +251,34 @@ export async function fetchBlsMonth(year, month) {
   return out;
 }
 
+/**
+ * 把缓存里的原始事件列表投影成响应。
+ *
+ * 「今天」和「即将发布」必须每次请求现算：缓存活 6 小时，而北京凌晨
+ * 00:00–08:00 这段时间 UTC 还停在昨天——如果连 today 一起缓存，日历会整夜
+ * 把已经发布的事件标成「即将发布」，过了 08:00 还要再错几小时。
+ */
+function calendarView(entry) {
+  const today = beijingToday();
+  return {
+    ok: entry.events.length > 0,
+    generatedAt: new Date().toISOString(),
+    fetchedAt: new Date(entry.at).toISOString(),
+    today,
+    events: entry.events,
+    upcoming: entry.events.filter((e) => e.date >= today).slice(0, 30),
+    errors: entry.errors,
+    coverage: entry.coverage,
+  };
+}
+
 export async function getCalendar({ force = false } = {}) {
   const cached = calCache.get('cal');
-  if (!force && cached && Date.now() - cached.at < CAL_CACHE_TTL_MS) return cached.data;
+  if (!force && cached && Date.now() - cached.at < CAL_CACHE_TTL_MS) return calendarView(cached);
 
   const now = new Date();
-  const bjYear = Number(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric' }).format(now));
-  const bjMonth = Number(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', month: 'numeric' }).format(now));
+  const bjYear = Number(new Intl.DateTimeFormat('en-CA', { timeZone: BEIJING_TZ, year: 'numeric' }).format(now));
+  const bjMonth = Number(new Intl.DateTimeFormat('en-CA', { timeZone: BEIJING_TZ, month: 'numeric' }).format(now));
 
   // 抓本月 + 未来 4 个月的 BLS 日程（跨年处理）
   const months = [];
@@ -268,19 +313,15 @@ export async function getCalendar({ force = false } = {}) {
   }
 
   events.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-  const today = new Date().toISOString().slice(0, 10);
 
-  const data = {
-    ok: events.length > 0,
-    generatedAt: new Date().toISOString(),
-    today,
+  const entry = {
+    at: Date.now(),
     events,
-    upcoming: events.filter((e) => e.date >= today).slice(0, 30),
     errors,
     coverage: { monthsFetched: months.map((m) => `${m.year}-${String(m.month).padStart(2, '0')}`) },
   };
-  calCache.set('cal', { at: Date.now(), data });
-  return data;
+  calCache.set('cal', entry);
+  return calendarView(entry);
 }
 
 /* ------------------------------------------------------------------ *
@@ -323,20 +364,52 @@ export function shiftDate(dates, i, lag) {
  * lag=0：事件日当天
  * lag=1：事件后一个交易日（美股在北京次日收盘，这一步能看出是提前还是滞后反应）
  */
+
+/**
+ * 各市场的「日界」：日线用的是交易所本地日期，收盘之后发布的美国数据
+ * 不可能被当日行情消化。事件研究必须按这个口径把发布瞬间投影成交易日，
+ * 否则 FOMC 这种「北京已是次日凌晨」的事件会整体错位一天。
+ */
+const MARKET_SESSIONS = {
+  us: { tz: EASTERN_TZ, closeHour: 16 },  // 美股 16:00 收盘（含 FRED / COMEX / ICE 的日线口径）
+  cn: { tz: BEIJING_TZ, closeHour: 15 },  // A 股 15:00、沪金日盘 15:30，用 15 点统一
+  utc: { tz: 'UTC', closeHour: 24 },      // 加密 24 小时连续，日界就是 UTC 零点
+};
+
+/** 品种 → 市场口径。没列出的按美股算（多数是美东定价的品种） */
+const SESSION_OF = { sh000001: 'cn', 'gold-cn': 'cn', btc: 'utc' };
+
+/**
+ * 事件在某个市场的交易日。
+ * 发布日当天若已收盘，行情只能等到下一个交易日 —— 这一步替代了原先那套
+ * 「按品种写死 autoLag」的经验补偿，因为现在有了精确的发布瞬间。
+ */
+export function eventTradingDate(ev, session, dates) {
+  const ts = Date.parse(ev?.releaseAt ?? '');
+  const fallback = ev?.date ?? null;
+  if (!Number.isFinite(ts) || !Array.isArray(dates) || !dates.length) return fallback;
+  const p = zonedParts(ts, session.tz);
+  if (!p) return fallback;
+  const local = `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
+  const afterClose = p.hour >= session.closeHour;
+  if (afterClose) return dates.find((d) => d > local) ?? null;
+  return dates.find((d) => d >= local) ?? null;
+}
+
 export async function buildEventStudy() {
   const cal = await getCalendar();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = beijingToday();
 
-  // 只统计已经发生的事件
-  const kindDates = new Map();
+  // 只统计已经发生的事件。
+  // 这里保留原始事件（需要 releaseAt 才能按各市场日界投影），不再按北京日期预先聚合。
+  const eventsByKind = new Map();
   for (const e of cal.events) {
     if (!e.date || e.date > today) continue;
-    if (!kindDates.has(e.kind)) kindDates.set(e.kind, new Map());
-    const m = kindDates.get(e.kind);
-    m.set(e.date, (m.get(e.date) ?? 0) + 1);
+    if (!eventsByKind.has(e.kind)) eventsByKind.set(e.kind, []);
+    eventsByKind.get(e.kind).push(e);
   }
 
-  const kinds = [...kindDates.keys()];
+  const kinds = [...eventsByKind.keys()];
   if (!kinds.length) return { ok: false, kinds: [], rows: [], error: '没有历史事件可供统计' };
 
   const rows = [];
@@ -355,17 +428,25 @@ export async function buildEventStudy() {
 
     const absReturns = chg.values.map((v) => Math.abs(v));
 
-    /**
-     * 时区自动对齐：美国宏观数据公布时，北京时间落在凌晨或前夜。
-     * FOMC 美东 14:00 公布 ≈ 北京次日 02:00/03:00，A 股次日开盘才交易；
-     * CPI/非农美东 08:30 公布 ≈ 北京 20:30/21:30，A 股当日 15:00 已收盘。
-     * 所以对上证与沪金，真实反应落在「事件后第一个交易日」，其余资产当日即反应。
-     * （沪金标的取上金所 Au99.99，日盘 09:00–15:30，与 A 股同属白盘。）
-     */
-    const autoLag = def.id === 'sh000001' || def.id === 'gold-cn' ? 1 : 0;
+    // 该品种用哪个市场的日界（日线日期是交易所本地日期，不是北京日期）
+    const session = MARKET_SESSIONS[SESSION_OF[def.id] ?? 'us'];
 
     for (const kind of kinds) {
-      const dateSet = kindDates.get(kind);
+      /**
+       * 事件日按「该品种的市场」投影：
+       *   FOMC 美东 14:00 发布 → 美股当日收盘前 → 事件交易日 = 美东当天；
+       *   CPI 北京 20:30 发布 → A 股已收盘 → 事件交易日 = 北京次日；
+       *   加密日界是 UTC 零点，发布当天即当日。
+       * 之前是把北京日期直接当事件日，于是美股一遇到「北京已是次日」的 FOMC 就错位一天。
+       */
+      const dateSet = new Set();
+      for (const e of eventsByKind.get(kind)) {
+        const d = eventTradingDate(e, session, chg.dates);
+        if (d) dateSet.add(d);
+      }
+      // 事件日已经对齐到该市场的交易日，lag=0 就是「事件交易日当天」；
+      // lag=1 保留下来看「滞后一天还有没有余波」，不再承担时区补偿的职责。
+      const autoLag = 0;
       for (const lag of [0, 1]) {
         const ev = [];
         const base = [];
@@ -407,7 +488,7 @@ export async function buildEventStudy() {
     ok: rows.length > 0,
     generatedAt: new Date().toISOString(),
     today,
-    kinds: kinds.map((k) => ({ kind: k, count: kindDates.get(k).size })),
+    kinds: kinds.map((k) => ({ kind: k, count: eventsByKind.get(k).length })),
     coverage,
     rows,
     note: '事件日波动通常天然偏高（事件本身就在波动时被关注），这里做的是统计对照，不是因果推断',

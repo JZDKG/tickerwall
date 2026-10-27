@@ -302,9 +302,11 @@ export function eventStudyHTML(study, mode = 'auto') {
 
   /**
    * 选行口径：
-   * auto —— 用后端算好的时区智能对齐（美国晚间发布的 FOMC/CPI/非农，对上证、沪金
-   *          取 T+1 交易日；中国白盘数据对所有标的都是 T+0）
-   * 0/1  —— 强制全市场统一口径，用于对照「忽略时区错配会看到什么」
+   * auto —— 用后端算好的对齐结果。事件日已经按「该品种所在市场的交易时段」投影过：
+   *          FOMC 在美股算当日（美东 14:00 收盘前）、在上证/沪金算北京次日凌晨；
+   *          CPI/非农在美股算当日、在 A 股要等到次日（北京 20:30 已收盘）。
+   *          所以对齐之后格内统一是 T+0 —— 它表示「这个市场开始消化这条消息的那一天」。
+   * 0/1  —— 强制全市场统一口径，用于对照「忽略交易时段错配会看到什么」
    */
   const pickRow = (symbol, kind) => {
     const pool = study.rows.filter((r) => r.symbol === symbol && r.kind === kind);
@@ -347,8 +349,11 @@ export function eventStudyHTML(study, mode = 'auto') {
       const sig = r.significant ? '*' : '';
       const lagTag = mode === 'auto' ? `T+${r.lag}` : '';
       const medRatio = r.medianRatio ?? r.ratio;
+      const lagLabel = r.lag
+        ? '事件后第 1 个交易日'
+        : mode === 'auto' ? '该市场开始消化消息的交易日' : '事件当日';
       const title =
-        `${s.name} · ${STUDY_KIND_LABEL[k]}：${r.lag ? '事件后第 1 个交易日' : '事件当日'}` +
+        `${s.name} · ${STUDY_KIND_LABEL[k]}：${lagLabel}` +
         `平均波动 ${r.eventMeanPct.toFixed(2)}%，普通日 ${r.baseMeanPct.toFixed(2)}%，` +
         `倍数 ${r.ratio.toFixed(2)}x（中位数口径 ${medRatio.toFixed(2)}x），` +
         `t=${r.t == null ? '—' : r.t.toFixed(2)}，样本 ${r.eventDays}`;
@@ -370,9 +375,9 @@ export function eventStudyHTML(study, mode = 'auto') {
 
   return `<div class="study-toolbar">
     <div class="seg" id="study-lag">
-      ${modeBtn('auto', '智能对齐', '美国晚间发布的宏观数据对亚太日盘资产自动取 T+1 交易日')}
-      ${modeBtn('0', 'T+0', '全部按事件当日口径')}
-      ${modeBtn('1', 'T+1', '全部按事件后一个交易日口径')}
+      ${modeBtn('auto', '智能对齐', '事件日已按各品种所在市场的交易时段投影：FOMC 对美股是当日、对上证/沪金是北京次日凌晨；CPI/非农对 A 股要等次日')}
+      ${modeBtn('0', 'T+0', '全部按事件当日口径（不区分市场）')}
+      ${modeBtn('1', 'T+1', '全部按事件后一个交易日口径（不区分市场）')}
     </div>
   </div>
   <div class="matrix-wrap">
@@ -383,8 +388,11 @@ export function eventStudyHTML(study, mode = 'auto') {
     悬停看具体数值与中位数口径。<br>
     ${
       mode === 'auto'
-        ? '智能对齐：FOMC / CPI / 非农在北京时间凌晨或晚间公布时，上证与沪金当日已收盘，真实反应落在次一交易日，所以自动取 T+1（格内标注）。中国 PMI / 社融等白盘数据对所有标的都是 T+0。'
-        : `当前强制统一为 <b>T+${mode}</b> 口径。跨时区资产在此口径下会混入「消息发布时该市场尚未开盘」的错配，仅作对照参考。`
+        ? '智能对齐：事件日按各品种所在市场的交易时段换算，不是拿同一个日历日期套所有标的。' +
+          'FOMC 在美东 14:00 公布（收盘前）→ 美股算当日，北京时间已是次日凌晨 → 上证/沪金也算当日；' +
+          'CPI / 非农在美东 08:30 公布 → 美股算当日，而北京 20:30 已经收盘 → A 股要等到次日。' +
+          '所以对齐之后格内统一标 <b>T+0</b>，含义是「这个市场开始消化这条消息的那一天」，不是「发布那一刻所在的那一天」。'
+        : `当前强制统一为 <b>T+${mode}</b> 口径，即所有标的共用同一个日历日期。跨市场资产在此口径下会混入「消息发布时该市场尚未开盘 / 已经收盘」的错配，仅作对照参考。`
     }
   </p>
   ${
