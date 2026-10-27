@@ -9,7 +9,7 @@
  */
 import { MARKET_PROFILES, localClock, isMarketOpen } from './src/server/domain/market-hours.js';
 import { takeForce, resolveStaticPath } from './src/server/http.js';
-import { PORT, HOST, DEBUG_API } from './src/server/config.js';
+import { PORT, HOST, DEBUG_API, DISABLE_BACKGROUND } from './src/server/config.js';
 import { getEvents, getEventHistory, loadLlmStore } from './src/server/services/events.service.js';
 import {
   CACHE_TTL_MS,
@@ -183,10 +183,14 @@ await seedHistory();
 await loadLlmStore();
 
 server.listen(PORT, HOST, () => {
-  console.log(`市场看板已启动 → http://${HOST}:${PORT}`);
+  // 用实际监听地址：PORT=0 时打印配置值「:0」是错的。LISTENING 那行给程序
+  // 消费（集成测试据此拿端口），改中文文案不该让测试挂。
+  const a = server.address();
+  const port = a && typeof a === 'object' ? a.port : PORT;
+  console.log(`市场看板已启动 → http://${HOST}:${port}`);
+  console.log(`LISTENING ${port}`);
+  if (DISABLE_BACKGROUND) return console.log('后台抓取已禁用');
   console.log(`刷新间隔 ${CACHE_TTL_MS}ms，历史点上限 ${HISTORY_LIMIT}`);
-  getQuotes().catch((err) => {
-    console.error('[boot] 首轮报价刷新失败', err?.message ?? err);
-  });
+  getQuotes().catch((err) => console.error('[boot] 首轮报价刷新失败', err?.message ?? err));
   startBackground();
 });
