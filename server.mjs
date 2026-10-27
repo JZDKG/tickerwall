@@ -32,7 +32,15 @@ import path from 'node:path';
 /* 不发 Access-Control-Allow-Origin：前端同源，不需要 CORS；一旦为 `*`，
    任何网页都能跨域读本机 API（HOST=0.0.0.0 时更糟）。跨域需求走反向代理。 */
 
-const server = http.createServer(async (req, res) => {
+/**
+ * 请求处理。抽成独立函数是为了让入口只负责兜底：
+ *
+ * `async` 回调里抛出的异常会变成未处理的 Promise 拒绝，Node 20+ 直接让
+ * **进程退出**。之前 `new URL` 写在 try 外，一个 `GET //% HTTP/1.1` 就能
+ * 打挂看板 —— 只补那一处不够，任何一处漏接的异常都会重演。所以这里是
+ * 唯一的接住点：同步与异步异常都落到 .catch。
+ */
+async function handle(req, res) {
   // 必须在 try 里：`GET //% HTTP/1.1` 会让 new URL 抛 ERR_INVALID_URL，
   // 而它在外面会穿过 handler 把整个进程带崩（客户端错误 → 400，不是 500）
   let url;
@@ -123,6 +131,15 @@ const server = http.createServer(async (req, res) => {
     console.error('[http] 未处理异常', url.pathname, err);
     return sendJson(res, 500, { ok: false, error: '服务器内部错误' });
   }
+}
+
+const server = http.createServer((req, res) => {
+  handle(req, res).catch((err) => {
+    console.error('[http] 未处理异常', req.method, req.url, err);
+    // 头已经发出去就没法再改状态码了，只能断开，别让半截响应吊着
+    if (res.headersSent) return res.destroy();
+    sendText(res, 500, '服务器内部错误');
+  });
 });
 
 /* 后台定时刷新，保证走势连续（即使没有浏览器打开） */
@@ -134,6 +151,15 @@ function startBackground() {
     });
   }, Math.max(CACHE_TTL_MS, 5000)).unref?.();
 }
+
+/* 进程级兜底：这是本地看板，宁可带着错误继续服务，也不要因为一次未处理
+   的拒绝就整站消失。日志必须留，否则只剩「页面打不开」这一个现象。 */
+process.on('unhandledRejection', (err) => {
+  console.error('[process] 未处理的 Promise 拒绝', err);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[process] 未捕获异常', err);
+});
 
 await migrateLegacyStorage();
 await loadPersistedHistory();

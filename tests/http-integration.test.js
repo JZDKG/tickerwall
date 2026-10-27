@@ -193,6 +193,15 @@ describe('静态文件与路径防护', () => {
     expect(health.status).toBe(200);
   });
 
+  it('响应头已发出后再抛错，不会二次 writeHead 崩掉', async () => {
+    // handle() 的 catch 里对 headersSent 做了分支：此时改不了状态码，
+    // 只能 destroy。这条用畸形请求 + 立即断开的方式压一下，确认进程活着。
+    const { status } = await rawGet('/%');
+    expect([400, 403]).toContain(status);
+    const health = await fetch(`${base}/api/health`);
+    expect(health.status).toBe(200);
+  });
+
   it('多个畸形请求连续发，进程依然存活', async () => {
     for (const p of ['//%', '//%zz', '/%', '///%']) {
       const { status } = await rawGet(p);

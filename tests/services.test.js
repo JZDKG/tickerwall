@@ -336,3 +336,39 @@ describe('分层：五个服务齐全且拓扑单向', () => {
     }
   });
 });
+
+/* ================================================================== *
+ * 异常兜底（崩溃根因）
+ *
+ * 曾出过一个事故：`new URL` 写在 try 外，`GET //% HTTP/1.1` 让它抛错，
+ * async handler 的异常变成未处理的 Promise 拒绝，Node 20+ 直接退出进程 ——
+ * 一个畸形请求就能打挂整个看板。
+ *
+ * 只补那一处不够。这里锁住「唯一的接住点」这个结构约束。
+ * ================================================================== */
+describe('入口的异常兜底结构', () => {
+  const code = () => require('node:fs').readFileSync(path.join(REPO, 'server.mjs'), 'utf8');
+
+  it('createServer 的回调不是 async，异常统一由 handle().catch 接住', () => {
+    const src = code();
+    // 回调必须同步（async 回调里 throw 会变成 unhandledRejection）
+    expect(src).not.toMatch(/createServer\(async\s*\(/);
+    expect(src).toMatch(/handle\(req, res\)\.catch\(/);
+    // 处理逻辑在独立的 async 函数里
+    expect(src).toMatch(/async function handle\(req, res\)/);
+  });
+
+  it('catch 里区分 headersSent —— 已发头时不能二次 writeHead', () => {
+    const src = code();
+    expect(src).toContain('res.headersSent');
+    expect(src).toContain('res.destroy()');
+  });
+
+  it('进程级对未处理拒绝与未捕获异常都留日志，且不退出', () => {
+    const src = code();
+    expect(src).toContain("process.on('unhandledRejection'");
+    expect(src).toContain("process.on('uncaughtException'");
+    // 不许出现「记完就退出」的写法
+    expect(src).not.toMatch(/uncaughtException'[\s\S]{0,200}process\.exit/);
+  });
+});
