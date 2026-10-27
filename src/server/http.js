@@ -12,17 +12,45 @@ const CLIENT_SRC_DIR = path.join(ROOT, 'src', 'client');
 const FORCE_MIN_INTERVAL_MS = 5000;
 
 /**
- * 只对这几个固定端点计预算。
+ * 只对白名单端点计预算。
  *
- * 不能拿 url.pathname 直接当 key：/api/detail/<任意 id> 的 pathname 有无限
- * 多种，Map 会一直长（而且是在校验 id 之前就写进去）。按端点归类，长度有界。
+ * 不能无脑拿 url.pathname 当 key 且不设上限：`/api/detail/<任意 id>` 的
+ * pathname 由外部输入决定，Map 会一直长（而且是在校验 id 之前就写入）。
+ * 所以两层防护：先按端点白名单过滤，再给 Map 设硬顶。
  */
-const FORCE_KEYS = ['/api/quotes', '/api/briefing', '/api/macro', '/api/events', '/api/eventstudy', '/api/calendar'];
+const FORCE_ENDPOINTS = [
+  '/api/quotes',
+  '/api/briefing',
+  '/api/macro',
+  '/api/events',
+  '/api/eventstudy',
+  '/api/calendar',
+  // detail 带 id 维度：5 秒内连刷两个不同标的，第二个不该被前一个的预算连累
+  '/api/detail',
+];
 const lastForceAt = new Map();
 
-/** 归到白名单里的某个端点；归不上返回 null（不计预算，也不放行） */
+/** key 数量上限。detail 的 id 集合有限，但仍是外部输入，兜一层硬顶 */
+const MAX_FORCE_KEYS = 128;
+
+/**
+ * 归到某个端点（带 id 的端点连同 id 一起计）。
+ * 归不上返回 null —— 不在白名单的路径不计预算，也不放行。
+ *
+ * 注意这里**不能**只写固定端点而不含 `/api/detail`：客户端详情页的手动刷新
+ * 会发 `?force=1`，漏掉它会让刷新静默退回缓存，而且一声不响。
+ */
 function forceKey(pathname) {
-  return FORCE_KEYS.find((k) => pathname === k || pathname.startsWith(`${k}/`)) ?? null;
+  const ep = FORCE_ENDPOINTS.find((k) => pathname === k || pathname.startsWith(`${k}/`));
+  if (!ep) return null;
+  return pathname.length > ep.length ? pathname : ep;
+}
+
+/** Map 有界：超上限时丢掉最早插入的一半（Map 保持插入顺序，天然是 FIFO） */
+function trimForceKeys() {
+  if (lastForceAt.size <= MAX_FORCE_KEYS) return;
+  const drop = [...lastForceAt.keys()].slice(0, Math.ceil(MAX_FORCE_KEYS / 2));
+  for (const k of drop) lastForceAt.delete(k);
 }
 
 /**
@@ -36,6 +64,7 @@ export function takeForce(url) {
   const now = Date.now();
   if (now - (lastForceAt.get(key) ?? 0) < FORCE_MIN_INTERVAL_MS) return false;
   lastForceAt.set(key, now);
+  trimForceKeys();
   return true;
 }
 
@@ -68,4 +97,9 @@ export function resolveStaticPath(pathname) {
   const full = path.join(root, path.normalize(rel));
   if (full !== root && !full.startsWith(root + path.sep)) return null;
   return { root, rel, full };
+}
+
+/** 仅供测试观测 Map 规模，不参与生产逻辑 */
+export function __forceKeyCount() {
+  return lastForceAt.size;
 }

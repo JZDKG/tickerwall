@@ -102,12 +102,30 @@ describe('takeForce：强制刷新的预算', () => {
     expect(takeForce(u('/api/calendar', true))).toBe(true);
   });
 
-  it('带无限 id 的路径归到同一端点，Map 不会无限增长', async () => {
+  it('带 id 的路径各自计账，但与同 id 的重复请求共享预算', async () => {
     const { takeForce } = await import('../src/server/http.js');
-    // 第一次允许，之后全被拒 —— 说明它们共享同一个 key，而不是每个 id 一个
     expect(takeForce(u('/api/events/abc', true))).toBe(true);
-    expect(takeForce(u('/api/events/def', true))).toBe(false);
-    expect(takeForce(u('/api/events/ghi', true))).toBe(false);
+    // 同 id 第二次被拒
+    expect(takeForce(u('/api/events/abc', true))).toBe(false);
+    // 不同 id 有各自预算（Map 规模由 MAX_FORCE_KEYS 兜底）
+    expect(takeForce(u('/api/events/def', true))).toBe(true);
+  });
+
+  it('/api/detail 的强制刷新不会被丢（客户端详情页手动刷新在用）', async () => {
+    const { takeForce } = await import('../src/server/http.js');
+    // 首次必须放行 —— 漏掉这条的后果是刷新静默退回缓存、一声不响
+    expect(takeForce(u('/api/detail/sp500', true))).toBe(true);
+    // 同一标的下一次被拒
+    expect(takeForce(u('/api/detail/sp500', true))).toBe(false);
+    // 但不同标的各有各的预算，不被连累
+    expect(takeForce(u('/api/detail/gold-intl', true))).toBe(true);
+  });
+
+  it('detail 的 key 有硬顶，不会随 id 无限增长', async () => {
+    const { takeForce, __forceKeyCount } = await import('../src/server/http.js');
+    for (let i = 0; i < 400; i += 1) takeForce(u(`/api/detail/id-${i}`, true));
+    // 上限 128，超出后丢掉最早的一半
+    expect(__forceKeyCount()).toBeLessThanOrEqual(128);
   });
 
   it('不在白名单的路径不消耗也不放行', async () => {
