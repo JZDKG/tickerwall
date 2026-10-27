@@ -110,9 +110,9 @@ describe('样式分片：层叠前提', () => {
     const all = EXPECTED.map(read).join('\n');
     // @media 仍是拆分时的 13 个 —— 这个数字只会因为真的新增响应式规则而变。
     expect((all.match(/@media/g) ?? []).length).toBe(13);
-    // @keyframes：拆分时 16 个。地图 v2 加了 sunPulse（太阳直射点的呼吸），
-    // 所以是 17。改这个数字时请确认是「新增动画」而不是「拆分时丢了又补回来」——
-    // 下面那条唯一性断言会拦住重名。
-    expect((all.match(/@keyframes/g) ?? []).length).toBe(17);
+    // @keyframes：拆分时 16 个。地图 v2 加了 sunPulse（太阳直射点呼吸）
+    // 与 maBreath（城市锚点开市呼吸），所以是 18。改这个数字时请确认是
+    // 「新增动画」而不是「拆分时丢了又补回来」—— 下面那条唯一性断言会拦住重名。
+    expect((all.match(/@keyframes/g) ?? []).length).toBe(18);
   });
 });

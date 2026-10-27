@@ -18,6 +18,7 @@ import {
 import { sunPosition, nightGeometry, twilightBands, terminatorGeometry } from './map/geo/astro.js';
 import { regionBounds, viewForBounds, toggleRegion } from './map/logic/focus.js';
 import { createCamera, destroyCamera, applyTransform, syncCamera } from './map/camera.js';
+import { cityAnchorsHtml, lodClassFor } from './map/layers/markers.js';
 import { mapEl } from '../shared/dom.js';
 import { dirOf, esc, fmtPrice } from '../shared/format.js';
 import { store } from '../shared/store.js';
@@ -228,14 +229,7 @@ export function animateMapView(target, dur = 420) {
   applyTransform(svg, mapCamera, target, dur);
 }
 
-/* ---------- LOD：同城标的按缩放级别展开 ---------- */
-
-/** 低缩放时每个城市只留前两个标的，放大后全展开；否则纽约 5 行永远挤成一坨 */
-export function tagLimitFor(k) {
-  if (k >= 2.2) return 99;
-  if (k >= 1.5) return 4;
-  return 2;
-}
+/* LOD 阈值与档位在 map/layers/markers.js（lodClassFor），这里不再重复一份 */
 
 export function freshnessOf(isoTime) {
   if (!isoTime) return 0;
@@ -250,8 +244,7 @@ export function freshnessOf(isoTime) {
 
 /** 把当前缩放/平移应用到 viewport */
 // 上一次渲染用的 LOD 档位，缩放跨档时才需要重建标签
-export let renderedTagLimit = null;
-export let lodTimer = null;
+/* LOD 已改为「只切 class」，不再需要渲染档位与重建定时器 */
 
 export function applyMapView() {
   const vp = document.getElementById('map-viewport');
@@ -265,11 +258,70 @@ export function applyMapView() {
   const label = document.getElementById('zoom-label');
   if (label) label.textContent = `${mapView.k.toFixed(1)}×`;
 
-  // 缩放跨越 LOD 阈值时重建标签；等动画停下再重建，否则每帧重绘会卡
-  clearTimeout(lodTimer);
-  lodTimer = setTimeout(() => {
-    if (renderedTagLimit !== null && tagLimitFor(mapView.k) !== renderedTagLimit) renderMap();
-  }, 240);
+  // 锚点跟着相机走：位置每帧更新（rAF 合并），LOD 只切一个 class
+  applyLodClass();
+  scheduleAnchorUpdate();
+}
+
+/**
+ * LOD 只改容器上的一个 class，14 个锚点共享 —— 不用逐元素遍历，
+ * 也不重建 DOM。所以跨档位时城市卡片的节点数与布局都不变。
+ */
+function applyLodClass() {
+  const host = mapEl.querySelector('.map-anchors');
+  if (!host) return;
+  const cls = lodClassFor(mapView.k);
+  // 以 class 为准判断是否需要改：dataset 只是给调试看的镜像，
+  // 拿它当早退条件会让「首次设置」被跳过（初始 DOM 里 class 可能还没同步）。
+  if (host.classList.contains(cls)) return;
+  host.dataset.lod = cls;
+  host.classList.remove('lod-0', 'lod-1', 'lod-2');
+  host.classList.add(cls);
+}
+
+let anchorRaf = null;
+
+/**
+ * 逻辑坐标 → 屏幕坐标，写进每个锚点的 translate3d。
+ *
+ * 用 rAF 合并：d3 的 zoom 事件每帧都来，14 个元素逐帧写 transform 会产生
+ * 大量样式重算，合并到一帧只做一次。视口外的直接 visibility: hidden，
+ * 省掉合成开销（放大到 8× 时大多数城市都在画布外）。
+ */
+function scheduleAnchorUpdate() {
+  if (anchorRaf) return;
+  anchorRaf = requestAnimationFrame(() => {
+    anchorRaf = null;
+    updateAnchors();
+  });
+}
+
+/** 立刻更新（renderMap 后首帧用，不等下一帧） */
+export function updateAnchors() {
+  const svg = mapEl.querySelector('.world-svg');
+  const canvas = mapEl.querySelector('.map-canvas');
+  const host = document.getElementById('map-anchors');
+  if (!svg || !canvas || !host) return;
+  const ctm = svgCTM(svg);
+  if (!ctm) return;
+
+  const cr = canvas.getBoundingClientRect();
+  for (const el of host.children) {
+    const lx = Number(el.dataset.lx);
+    const ly = Number(el.dataset.ly);
+    if (!Number.isFinite(lx) || !Number.isFinite(ly)) continue;
+    const p = applyMatrix(ctm, lx * mapView.k + mapView.tx, ly * mapView.k + mapView.ty);
+    if (!p) continue;
+    const x = p[0] - cr.left;
+    const y = p[1] - cr.top;
+    el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0)`;
+    const off = x < -200 || y < -100 || x > cr.width + 200 || y > cr.height + 100;
+    const flag = off ? '1' : '0';
+    if (el.dataset.off !== flag) {
+      el.dataset.off = flag;
+      el.style.visibility = off ? 'hidden' : '';
+    }
+  }
 }
 
 /** 以某点为中心缩放（屏幕坐标 → svg 坐标） */
@@ -348,55 +400,31 @@ export function renderMap() {
   const items = store.events?.data?.items ?? [];
   const quoteOf = (id) => quotes.find((q) => q.id === id);
 
-  // ---- 城市节点（按缩放级别决定展开多少个标的）----
-  const limit = tagLimitFor(mapView.k);
-  renderedTagLimit = limit;
+  // ---- 城市节点：SVG 只画点与光环，标签交给 HTML 锚点层 ----
+  const quotesById = new Map(quotes.filter((q) => q && q.ok).map((q) => [q.id, q]));
   let citySvg = '';
   for (const city of MAP_CITIES) {
     const [x, y] = mapProject(city.lon, city.lat);
-    const all = city.ids.map(quoteOf).filter((q) => q && q.ok);
+    if (!x && !y) continue;
+    const all = city.ids.map((id) => quotesById.get(id)).filter(Boolean);
     if (!all.length) continue;
 
-    const members = all.slice(0, limit);
-    const hidden = all.length - members.length;
-    const lead = members[0];
-
+    const lead = all[0];
     // 交易中的市场光环亮，已收盘的压暗 —— 配合晨昏线读「谁在开着」
     const openNow = Boolean(lead.marketStatus?.open);
     const ldir = dirOf(lead.changePct);
     const color = ldir === 'up' ? '#f5455c' : ldir === 'down' ? '#0ecb81' : '#7e8899';
 
-    const lineH = 15;
-    const isRight = city.side !== 'left';
-    const anchorX = isRight ? 9 : -9;
-    const textAnchor = isRight ? 'start' : 'end';
-
-    let rows = members
-      .map((m, i) => {
-        const d = dirOf(m.changePct);
-        const c = d === 'up' ? '#f5455c' : d === 'down' ? '#0ecb81' : '#7e8899';
-        const pct = m.changePct == null ? '—' : `${m.changePct >= 0 ? '+' : ''}${m.changePct.toFixed(2)}%`;
-        const yy = i * lineH;
-        return `<text class="tag-name" x="${anchorX}" y="${yy}" text-anchor="${textAnchor}">${esc(MAP_TAG[m.id] ?? m.name)}</text>
-          <text class="tag-pct" x="${anchorX + (isRight ? 1 : -1) * 46}" y="${yy}" text-anchor="${textAnchor}" fill="${c}">${pct}</text>`;
-      })
-      .join('');
-    // 折叠提示：还有 N 个标的没展开
-    if (hidden > 0) {
-      rows += `<text class="tag-more" x="${anchorX}" y="${members.length * lineH}" text-anchor="${textAnchor}">+${hidden} 放大可见</text>`;
-    }
-
-    const dx = city.dx ?? 12;
-    const dy = city.dy ?? 0;
-    const rowsShift = (-(members.length - 1) * lineH) / 2;
     citySvg += `<g class="map-city${openNow ? ' is-open' : ' is-closed'}" transform="translate(${x.toFixed(1)},${y.toFixed(1)})"
         data-city="${esc(city.key)}" data-open="${openNow ? 1 : 0}">
       <circle class="city-halo scene-fixed" r="8" fill="${color}" />
       <circle class="city-dot scene-fixed" r="2.8" fill="${color}" />
-      <line class="city-link" x1="0" y1="0" x2="${dx}" y2="${(dy + rowsShift).toFixed(1)}" />
-      <g transform="translate(${dx},${(dy + rowsShift).toFixed(1)})"><g class="scene-fixed">${rows}</g></g>
+      <circle class="city-hit scene-fixed" r="10" />
     </g>`;
   }
+
+  // 标签与火花线：全部行都渲染，超出当前 LOD 的用 CSS 隐藏（跨档不重建 DOM）
+  const anchorsHtml = cityAnchorsHtml(MAP_CITIES, quotesById);
 
   // ---- 事件区域 ----
   const byRegion = new Map();
@@ -517,6 +545,7 @@ export function renderMap() {
             ${btcSvg}
           </g>
         </svg>
+        <div class="map-anchors lod-0" id="map-anchors" data-lod="lod-0">${anchorsHtml}</div>
         <div class="map-bubbles" id="map-bubbles"></div>
       </div>
       <aside class="map-feed" id="map-feed">
@@ -536,6 +565,7 @@ export function renderMap() {
   }
 
   applyMapView();
+  updateAnchors();
   applyRegionClasses();
   bindMapEvents();
 }
@@ -665,13 +695,18 @@ export function bindMapEvents() {
   // 双击我们自己在下面实现（以指针为中心 1.8×），关掉 d3 的默认翻倍
   select(svg).on('dblclick.zoom', null);
 
-  // 点城市节点 → 就地浮出卡片（不跳页，保住心流）
-  svg.querySelectorAll('[data-city]').forEach((g) => {
-    g.addEventListener('click', (e) => {
-      if (mapDrag?.moved) return;
-      e.stopPropagation();
-      openNodeCard(g.dataset.city);
-    });
+  // 点城市节点（SVG 上的点，或 HTML 锚点上的城市名）→ 就地浮出卡片。
+  // 两条路径都留着：点是地图上的定位感，城市名是更好按的命中区。
+  const openCity = (key) => (e) => {
+    if (mapDrag?.moved) return;
+    e.stopPropagation();
+    openNodeCard(key);
+  };
+  svg.querySelectorAll('.map-city[data-city]').forEach((g) => {
+    g.addEventListener('click', openCity(g.dataset.city));
+  });
+  mapEl.querySelectorAll('.map-anchors .ma-head').forEach((b) => {
+    b.addEventListener('click', openCity(b.dataset.city));
   });
 
   // 点国家 → 聚焦该赛区（再点一次同一个国家即复位）
@@ -780,9 +815,18 @@ export async function loadMap() {
  * ------------------------------------------------------------------ */
 let unsubscribeQuotes = null;
 
+/**
+ * 窗口尺寸变化会改变 viewBox 的 letterbox 比例，锚点的屏幕坐标得重算。
+ * 用 rAF 合并 —— resize 事件在拖窗口时能一秒来几十次。
+ */
+function onMapResize() {
+  scheduleAnchorUpdate();
+}
+
 export function mountMap() {
   mapEl.hidden = false;
   window.scrollTo({ top: 0 });
+  window.addEventListener('resize', onMapResize);
   loadMap();
   mapTimer = setInterval(() => loadMap(), 30000);
   // 列表每轮拿到新报价后顺带刷新地图节点（原来由 list 直接调 renderMap）
@@ -794,6 +838,7 @@ export function mountMap() {
 
 export function unmountMap() {
   stopMapTimer();
+  window.removeEventListener('resize', onMapResize);
   destroyCamera(mapEl.querySelector('.world-svg'));
   mapCamera = null;
   unsubscribeQuotes?.();

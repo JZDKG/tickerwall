@@ -156,6 +156,189 @@
   transform: scale(calc(1 / var(--map-k, 1)));
 }
 
+/* ------------------------------------------------------------------ *
+ * L3 · Screen-Space HTML 锚点层
+ *
+ * 城市标签不再是 SVG <text>，而是一层绝对定位的 HTML。好处：
+ *   · 字号天然恒定，不需要 scale(1/k) 反向补偿；
+ *   · Sparkline、呼吸灯、悬停态用普通 HTML 就能做；
+ *   · LOD 只切容器上那一个 class，跨档位不重建 DOM。
+ *
+ * 容器 pointer-events: none —— 否则整层会盖住地图，d3 的拖拽就失效了。
+ * 只有城市名按钮单独打开命中。
+ * ------------------------------------------------------------------ */
+.map-anchors {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.map-anchor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  will-change: transform;
+  /* translate3d 由 map.js 的 updateAnchors 写，这里不要写 transform */
+}
+
+.map-anchor .ma-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  /* 错位量来自每个城市手工标定的 dx/dy（cities.js），不是统一居中 ——
+     伦敦/巴黎/法兰克福、上海/台北/首尔/东京这种挤成一团的簇，靠它错开。 */
+  transform: translate(var(--dx, 8px), var(--dy, 0px));
+}
+
+.map-anchor.side-left .ma-inner {
+  /* 左置的对齐边是标签右缘，所以基准是 -100% 再加上负的 dx */
+  transform: translate(calc(-100% + var(--dx, -8px)), var(--dy, 0px));
+  align-items: flex-end;
+}
+
+.ma-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  margin: 0 0 1px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(8, 12, 18, 0.72);
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.25;
+  cursor: pointer;
+  pointer-events: auto;
+  backdrop-filter: blur(6px);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.ma-head:hover {
+  border-color: rgba(120, 176, 255, 0.55);
+  background: rgba(20, 32, 52, 0.9);
+}
+
+.ma-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #7e8899;
+  box-shadow: 0 0 5px currentColor;
+}
+
+.ma-dot.up { background: var(--up); color: var(--up); }
+.ma-dot.down { background: var(--down); color: var(--down); }
+
+/* 交易中的市场让点呼吸一下，已收盘的保持静止 —— 静态画面里也能读出谁开着 */
+.map-anchor.is-open .ma-dot {
+  animation: maBreath 2.6s ease-in-out infinite;
+}
+
+@keyframes maBreath {
+  0%, 100% { transform: scale(0.85); opacity: 0.6; }
+  50% { transform: scale(1.3); opacity: 1; }
+}
+
+.ma-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* 行内不放背景块。伦敦/巴黎/法兰克福在地球尺度上几乎同点，任何色块都会
+   互相盖住糊成一片；纯文字 + 文字阴影在重叠时仍然逐字可读。 */
+.ma-row {
+  display: grid;
+  grid-template-columns: 36px 30px 44px;
+  align-items: center;
+  gap: 3px;
+  font-size: 9.5px;
+  line-height: 1.45;
+  white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95), 0 0 3px rgba(0, 0, 0, 0.9);
+}
+
+/* 镜像只改列序与对齐，不用 direction: rtl —— 后者会连 grid 自动放置
+   和标点在内在方向一起翻，把行内容甩到标签外面去。 */
+.side-left .ma-row {
+  grid-template-columns: 44px 30px 36px;
+}
+
+.ma-tag {
+  color: rgba(222, 230, 242, 0.92);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.side-left .ma-tag {
+  text-align: right;
+}
+
+.ma-pct {
+  font-family: var(--mono);
+  text-align: right;
+  font-size: 9.5px;
+}
+
+.side-left .ma-pct {
+  text-align: left;
+}
+
+.ma-pct.up { color: var(--up); }
+.ma-pct.down { color: var(--down); }
+.ma-pct.flat { color: #8a8f99; }
+
+.ma-spark {
+  width: 30px;
+  height: 9px;
+  display: block;
+  overflow: visible;
+}
+
+.ma-line {
+  fill: none;
+  stroke-width: 1.1;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.ma-line.up { stroke: var(--up); }
+.ma-line.down { stroke: var(--down); }
+.ma-line.flat { stroke: #7e8899; }
+
+.ma-area { opacity: 0.16; }
+
+.ma-area.up { fill: var(--up); }
+.ma-area.down { fill: var(--down); }
+.ma-area.flat { fill: #7e8899; }
+
+.ma-more {
+  font-size: 9.5px;
+  color: rgba(150, 165, 185, 0.75);
+  padding-left: 3px;
+}
+
+/* LOD：只切 class，不重建 DOM。
+   1× 时每城只留主导标的 1 行 —— 伦敦的「富时」会撞上巴黎、「日经」会撞上
+   「韩国」；2 行纯粹是把自己叠出噪音。放大后逐档展开，数据一行不少。 */
+.map-anchors.lod-0 .ma-row:nth-child(n + 2) { display: none; }
+.map-anchors.lod-1 .ma-row:nth-child(n + 5) { display: none; }
+
+/* 1× 全览只挂七个主城市；其余在 1.5× 起出现 */
+.map-anchors.lod-0 .map-anchor.tier-2 { display: none; }
+.map-anchors.lod-1 .ma-more,
+.map-anchors.lod-2 .ma-more { display: none; }
+
+/* 城市命中区：比视觉上的点大一圈，方便点中；透明但可接收事件 */
+.city-hit {
+  fill: transparent;
+  cursor: pointer;
+}
+
 /* 指数标签 */
 .map-city {
   cursor: pointer;

@@ -14,7 +14,7 @@
  * 不手动错开会叠成一团。
  */
 export const MAP_CITIES = [
-  { key: 'ny', name: '纽约', lon: -74.0, lat: 40.7, ids: ['sp500', 'ndx100', 'dji', 'vix', 'vxn'], side: 'right', dx: 16, dy: -46 },
+  { key: 'ny', name: '纽约', lon: -74.0, lat: 40.7, ids: ['sp500', 'ndx100', 'dji', 'vix', 'vxn'], side: 'left', dx: -16, dy: -46 },
   { key: 'tor', name: '多伦多', lon: -79.4, lat: 43.7, ids: ['tsx'], side: 'left', dx: -18, dy: -16 },
   { key: 'chi', name: '芝加哥', lon: -87.6, lat: 41.9, ids: ['oil'], side: 'left', dx: -18, dy: 28 },
   { key: 'sh', name: '上海', lon: 121.5, lat: 31.2, ids: ['sh000001', 'gold-cn'], side: 'left', dx: -14, dy: 16 },
