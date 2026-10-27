@@ -13,79 +13,21 @@ import { readFileSync } from 'node:fs';
 import fsp from 'node:fs/promises';
 
 import { fetchRaw, toNum } from '../providers/index.js';
+import { fetchFeedCatalog, DIRECT_FEEDS, GOOGLE_FEEDS } from '../providers/news-feeds.js';
+import { COMPILED_TOPICS, IMPACT_WORDS, anyWordHit, sanitizeText, guessRegion, isOfficialRoutine } from '../domain/news-lexicon.js';
 import { kvGetJson, kvSetJson, appendJsonl, readJsonlField } from '../db/index.js';
 import { DATA_DIR } from '../paths.js';
 
 const EVENTS_CACHE_TTL_MS = 25_000;
+
+/**
+ * 全球源比国内快讯慢得多：一次要打 24 个直连 feed + 14 个语种的聚合，
+ * 实测约 5 秒。前端每 30 秒轮询一次，若跟着 25 秒的缓存走，等于每轮都全量
+ * 重抓 38 个上游 —— 既无必要（新闻不会 30 秒变一次）也容易被限流。
+ * 国内快讯保持 25 秒的实时感，全球源单独按 3 分钟走。
+ */
+const GLOBAL_CACHE_TTL_MS = 180_000;
 const eventsCache = new Map();
-
-/** 主题规则：命中任意关键词就打上该主题，并关联受影响标的 */
-const TOPIC_RULES = [
-  { key: 'fed', label: '货币政策', weight: 3,
-    words: ['美联储', '加息', '降息', 'FOMC', '利率决议', '鲍威尔', '议息', '点阵图', '缩表', '扩表', 'QE', 'Taper', '联邦基金利率', '贴现率', '超额准备金'],
-    symbols: ['us10y', 'dxy', 'sp500', 'ndx100', 'gold-intl', 'btc'] },
-  { key: 'inflation', label: '通胀', weight: 3,
-    words: ['CPI', 'PPI', '通胀', '通膨', '物价', 'PCE', '消费者物价', '生产者物价', '核心CPI', '通胀预期'],
-    symbols: ['us10y', 'gold-intl', 'dxy', 'sp500'] },
-  { key: 'jobs', label: '就业', weight: 3,
-    words: ['非农', '失业率', '就业人数', 'ADP', '初请', '续请', '薪资', '劳动参与率', '裁员'],
-    symbols: ['us10y', 'dxy', 'sp500', 'ndx100'] },
-  { key: 'geopolitics', label: '地缘政治', weight: 3,
-    words: ['战争', '冲突', '制裁', '袭击', '空袭', '轰炸', '封锁', '禁运', '关税', '贸易战', '升级', '停火', '入侵', '政变', '弹劾'],
-    symbols: ['gold-intl', 'oil', 'vix'] },
-  // 选举本身不是价格传导事件：绝大多数是政治八卦与民调播报。
-  // 单列成低权主题、不挂任何标的，落在事件流里可看，但不会被判 high、也不连冲击弧线。
-  { key: 'politics', label: '选举政治', weight: 1.2,
-    words: ['选举', '大选', '中期选举', '投票', '民调', '初选', '竞选'],
-    symbols: [] },
-  { key: 'energy', label: '能源', weight: 2,
-    words: ['OPEC', '欧佩克', '减产', '增产', '原油', '油价', '天然气', '炼油', '库存', '页岩', '钻井', '管道'],
-    symbols: ['oil', 'brent'] },
-  { key: 'precious', label: '贵金属', weight: 2,
-    words: ['黄金', '金价', '白银', '避险', '金饰', '央行购金', '金矿', '现货金'],
-    symbols: ['gold-intl', 'gold-cn'] },
-  { key: 'crypto', label: '加密资产', weight: 2,
-    words: ['比特币', 'BTC', '以太坊', 'ETH', '加密', '稳定币', '币安', 'Coinbase', '数字资产', '现货ETF'],
-    symbols: ['btc'] },
-  { key: 'china', label: '中国政策', weight: 2,
-    words: ['国务院', '发改委', '财政部', '证监会', '人民银行', '央行', '降准', 'LPR', 'MLF', '专项债', '政治局', '刺激政策', '一揽子'],
-    symbols: ['sh000001', 'gold-cn'] },
-  { key: 'equities', label: '权益市场', weight: 2,
-    words: ['纳斯达克', '标普', '道琼斯', '美股', '财报', '英伟达', '苹果', '特斯拉', '微软', '科技股', 'A股', '沪指', '恒生'],
-    symbols: ['sp500', 'ndx100', 'sh000001'] },
-  { key: 'rates', label: '债市', weight: 2,
-    words: ['国债', '收益率', '美债', '债券', '收益率曲线', '期限利差', '拍卖'],
-    symbols: ['us10y'] },
-  { key: 'fx', label: '汇率', weight: 1,
-    words: ['美元指数', '人民币', '日元', '欧元', '汇率', '升值', '贬值', '外汇', '中间价'],
-    symbols: ['dxy'] },
-  { key: 'macro', label: '宏观数据', weight: 1,
-    words: ['GDP', 'PMI', '工业产出', '零售销售', '贸易帐', '进出口', '工业增加值', '社融', '信贷', '库存'],
-    symbols: ['sp500', 'sh000001'] },
-];
-
-/** 关键词兜底的地区推断（LLM 会覆盖它） */
-const REGION_WORDS = [
-  ['cn', ['中国', '北京', '上海', '国务院', '发改委', '央行', '人民币', 'A股', '沪深', '证监会', '财政部', '深圳', '广州']],
-  ['us', ['美国', '美联储', '华盛顿', '纽约', '纳斯达克', '标普', '道琼斯', '白宫', '鲍威尔', '财政部', '硅谷']],
-  ['eu', ['欧元区', '欧盟', '德国', '法国', '欧洲央行', '拉加德', '意大利', '西班牙', '布鲁塞尔']],
-  ['uk', ['英国', '伦敦', '英国央行', '英镑', '英格兰银行']],
-  ['jp', ['日本', '东京', '日本央行', '日元', '日经']],
-  ['me', ['中东', '伊朗', '以色列', '沙特', '也门', '胡塞', '阿联酋', '伊拉克', '卡塔尔', '叙利亚', '加沙']],
-  ['latam', ['巴西', '阿根廷', '墨西哥', '智利', '委内瑞拉', '哥伦比亚', '秘鲁']],
-  ['africa', ['南非', '埃及', '尼日利亚', '非洲', '肯尼亚']],
-  ['asia', ['韩国', '印度', '新加坡', '越南', '泰国', '印尼', '马来西亚', '菲律宾', '台湾']],
-];
-
-function guessRegion(text) {
-  for (const [region, words] of REGION_WORDS) {
-    if (words.some((w) => text.includes(w))) return region;
-  }
-  return 'global';
-}
-
-/** 高影响动词：出现时额外加权，这类词往往意味着盘面会动 */
-const IMPACT_WORDS = ['暴跌', '暴涨', '崩盘', '熔断', '创历史', '创新高', '创新低', '紧急', '意外', '大幅', '远超预期', '不及预期', '超预期', '暂停', '禁止', '批准', '通过', '签署'];
 
 function stripHtml(html) {
   return String(html ?? '')
@@ -117,22 +59,6 @@ function bjTimeString(input) {
 const NOISE_RE =
   /汇总|一览|早报|晚报|周报|月刊|盘点|速览|每日.{0,4}动态|领跑|净值|半日成交|基金份额|涨幅榜|跌幅榜|涨停揭秘|跌停揭秘|ETF.{0,6}成交|目标价|目标位|上调.{0,10}目标|下调.{0,10}目标|维持.{0,8}(买入|增持|中性|持有|跑赢|卖出|减持)|(买入|增持|中性|跑赢|卖出|减持)?.{0,4}评级|评级.{0,8}(上调|下调)|评级为|首次覆盖|主力资金净|龙虎榜/;
 
-/**
- * 清洗多义词，防止气象征候、产业政策、公司治理被误判成地缘政治冲突。
- * 「风暴袭击欧洲」和「空袭伊朗」在词表上都命中「袭击」，但前者对资产价格没有传导路径，
- * 实测这类稿子会被打成 high 并连上黄金/原油/VIX 的冲击弧线，必须拦住。
- */
-function sanitizeAmbiguousContext(text) {
-  return String(text ?? '')
-    // 气象灾害不是地缘政治冲突
-    .replace(/台风|风暴|飓风|暴雨|寒潮|暴雪|强风|洪涝|洪水|龙卷风|沙尘暴|热浪|干旱|野火/g, '气象灾害')
-    .replace(/(气象灾害[^，。；！？]{0,12})袭击/g, '$1侵袭')
-    .replace(/袭击([^，。！？]{0,12}(电力|交通|航班|供电|通信|港口|机场|铁路|供水))/g, '侵袭$1')
-    // 政策与产业语境里的「升级」
-    .replace(/消费升级|产业升级|转型升级|品牌升级|服务升级|系统升级|版本升级|技术升级|智能升级|装备升级|产品升级|结构升级|评级升级/g, '产业演进')
-    // 公司治理与党争语境里的「选举 / 弹劾」
-    .replace(/董事会|监事会|换届选举|独立董事|股东大会|职工代表|选举董事/g, '公司治理');
-}
 
 /**
  * 分类：标题命中的主题才算「强命中」，正文命中打 7 折。
@@ -140,17 +66,18 @@ function sanitizeAmbiguousContext(text) {
  * 避免「一条稿子提到很多词」被误判成重大新闻。
  */
 function classify(title, body) {
-  const cTitle = sanitizeAmbiguousContext(title);
-  const cBody = sanitizeAmbiguousContext(body);
+  const cTitle = sanitizeText(title);
+  const cBody = sanitizeText(body);
   const topics = [];
   const symbols = new Set();
   let mainWeight = 0;
   let mainInTitle = false;
   let secondary = 0;
 
-  for (const rule of TOPIC_RULES) {
-    const hitTitle = rule.words.some((w) => cTitle.includes(w));
-    const hitBody = !hitTitle && rule.words.some((w) => cBody.includes(w));
+  for (const rule of COMPILED_TOPICS) {
+    // 标题用全量词（含 titleOnly 的高风险泛词），正文用剔除后的词表
+    const hitTitle = anyWordHit(cTitle, rule.titleWords);
+    const hitBody = !hitTitle && anyWordHit(cBody, rule.bodyWords);
     if (!hitTitle && !hitBody) continue;
     topics.push({ key: rule.key, label: rule.label, strong: hitTitle });
     rule.symbols.forEach((sym) => symbols.add(sym));
@@ -164,7 +91,7 @@ function classify(title, body) {
     }
   }
 
-  const impact = IMPACT_WORDS.some((w) => cTitle.includes(w) || cBody.includes(w));
+  const impact = anyWordHit(cTitle, IMPACT_WORDS) || anyWordHit(cBody, IMPACT_WORDS);
   return {
     topics,
     symbols: [...symbols],
@@ -513,7 +440,7 @@ function normalizeTopicLabel(raw) {
   if (directKey) return { key: directKey, label: t, strong: true };
   const aliased = TOPIC_ALIAS.get(t);
   if (!aliased) return null;
-  const rule = TOPIC_RULES.find((r) => r.key === aliased);
+  const rule = COMPILED_TOPICS.find((r) => r.key === aliased);
   return rule ? { key: rule.key, label: rule.label, strong: true } : null;
 }
 
@@ -656,7 +583,76 @@ function applyLlmResults(items) {
   return applied;
 }
 
-export async function getEvents({ force = false, limit = 120 } = {}) {
+/* ------------------------------------------------------------------ *
+ * 全球源
+ *
+ * 两条腿（见 providers/news-feeds.js 的说明）：直连 feed 拿原文直链，
+ * Google 多语种聚合覆盖那些关停 RSS 或被 WAF 挡住的媒体。合并后统一成
+ * 与国内快讯同形的事件对象，后面的分类/去重/归档完全不用分叉。
+ * ------------------------------------------------------------------ */
+let globalCache = { at: 0, items: [], status: [], langs: [], regions: [] };
+
+/** FNV-1a：Google 的 guid 是 base64 长串，收敛成短 id，免得撑爆 DOM 属性 */
+function shortHash(s) {
+  let h = 0x811c9dc5;
+  const str = String(s);
+  for (let i = 0; i < str.length; i += 1) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(36);
+}
+
+/** 把一条 feed 条目改成事件对象的形状（与国内快讯同构） */
+function feedItemToEvent(it) {
+  const title = it.title.length > 90 ? `${it.title.slice(0, 90)}…` : it.title;
+  const body = it.body && it.body.length > 400 ? `${it.body.slice(0, 400)}…` : it.body;
+  return {
+    id: `${it.sourceKey}:${shortHash(it.guid)}`,
+    sourceKey: it.sourceKey,
+    source: it.source,              // 通道名，如「日文财经」
+    publisher: it.publisher,        // 原始媒体，如「日本経済新聞」
+    lang: it.lang,
+    // 这条稿是媒体自己发的，还是经聚合索引转手的 —— 前端据此标注「一手」
+    origin: it.origin,
+    sourceKind: it.sourceKind,
+    sourceRegion: it.sourceRegion,
+    time: bjTimeString(it.at),
+    title,
+    body: body || '',
+    url: it.url,
+    important: false,               // 全球源没有「重要」标记，等级全靠主题权重
+  };
+}
+
+async function fetchGlobalFeeds(force = false) {
+  if (!force && globalCache.at && Date.now() - globalCache.at < GLOBAL_CACHE_TTL_MS) {
+    return globalCache;
+  }
+  const [direct, agg] = await Promise.all([
+    // 聚合源每条 feed 有 50~100 条，只取前 10 条会让德/意/葡/俄这些语种
+    // 剩不下几条通过分类；25 条既覆盖足够广度，也不至于把陈货全拉进来。
+    fetchFeedCatalog(DIRECT_FEEDS, { perSource: 12 }),
+    fetchFeedCatalog(GOOGLE_FEEDS, { perSource: 25, concurrency: 8 }),
+  ]);
+
+  const items = [];
+  for (const res of [direct, agg]) {
+    for (const it of res.items) items.push(feedItemToEvent(it));
+  }
+  const status = [...direct.status, ...agg.status];
+
+  globalCache = {
+    at: Date.now(),
+    items,
+    status,
+    langs: [...new Set(status.filter((s) => s.ok).map((s) => s.lang))].sort(),
+    regions: [...new Set(status.filter((s) => s.ok).map((s) => s.region))].sort(),
+  };
+  return globalCache;
+}
+
+export async function getEvents({ force = false, limit = 160 } = {}) {
   const cached = eventsCache.get('ev');
   if (!force && cached && Date.now() - cached.at < EVENTS_CACHE_TTL_MS) {
     // 缓存期内 LLM 可能刚复核完，重新盖一次（幂等且廉价），
@@ -668,19 +664,32 @@ export async function getEvents({ force = false, limit = 120 } = {}) {
     return data;
   }
 
-  const results = await Promise.allSettled([fetchJin10(), fetchSinaLive(2), fetchWscn(40)]);
+  // 国内三源是快讯流（秒级更新），全球源是报道流（分钟级）—— 两条并行，
+  // 各自吃各自的缓存，合并后才做去重与分类。
+  const DOMESTIC = [
+    { key: 'jin10', name: '金十数据', run: () => fetchJin10() },
+    { key: 'sina', name: '新浪财经', run: () => fetchSinaLive(2) },
+    { key: 'wscn', name: '华尔街见闻', run: () => fetchWscn(40) },
+  ];
+  const [domesticResults, globals] = await Promise.all([
+    Promise.allSettled(DOMESTIC.map((d) => d.run())),
+    fetchGlobalFeeds(force),
+  ]);
+
   const sourceStatus = [];
   const raw = [];
 
-  results.forEach((r, i) => {
-    const name = ['金十数据', '新浪财经', '华尔街见闻'][i];
+  domesticResults.forEach((r, i) => {
+    const name = DOMESTIC[i].name;
     if (r.status === 'fulfilled') {
-      sourceStatus.push({ source: name, ok: true, count: r.value.length });
+      sourceStatus.push({ key: DOMESTIC[i].key, source: name, kind: 'domestic', ok: true, count: r.value.length });
       raw.push(...r.value);
     } else {
-      sourceStatus.push({ source: name, ok: false, error: String(r.reason?.message ?? r.reason) });
+      sourceStatus.push({ key: DOMESTIC[i].key, source: name, kind: 'domestic', ok: false, error: String(r.reason?.message ?? r.reason) });
     }
   });
+  raw.push(...globals.items);
+  sourceStatus.push(...globals.status);
 
   // 去重：同一 id，或标题高度重合（不同源转发同一条）
   const seenId = new Set();
@@ -695,17 +704,21 @@ export async function getEvents({ force = false, limit = 120 } = {}) {
     seenTitle.add(key);
 
     if (NOISE_RE.test(ev.title)) continue; // 汇总稿/营销稿不进事件流
+    if (isOfficialRoutine(ev.title, ev.sourceKind)) continue; // 央行/国际组织的访谈、演讲、统计报表
 
-    const info = classify(ev.title, ev.body);
+    // 官方源只看标题（正文是样板文字，见 isOfficialRoutine 上的说明）
+    const info = classify(ev.title, ev.sourceKind === 'official' ? '' : ev.body);
     if (!info.topics.length) continue;
     // 弱相关（例如公司新闻里顺带提到「人民币」）不算市场事件
     if (info.mainWeight < 1.5) continue;
 
     items.push({
       ...ev,
+      // 国内快讯本身就是媒体自己的流，媒体名 = 通道名；全球源两者不同
+      publisher: ev.publisher ?? ev.source,
       topics: info.topics,
       symbols: info.symbols,
-      region: guessRegion(`${ev.title} ${ev.body}`),
+      region: guessRegion(`${ev.title} ${ev.body}`, ev.sourceRegion),
       score: Math.round(info.rawScore * 10) / 10,
       level: toLevel(info, ev.important),
     });
@@ -719,17 +732,35 @@ export async function getEvents({ force = false, limit = 120 } = {}) {
   kickLlmClassify(items);
   archiveEvents(items); // 不 await，失败不影响接口返回
 
+  // 覆盖度：这是「是否真的抓到了全球各国主流媒体」唯一可验证的数字，
+  // 而不是靠源列表看起来热闹。失败源单独计数，缺了能看见。
+  const okSources = sourceStatus.filter((s) => s.ok);
+  const publishers = new Set(items.map((i) => i.publisher).filter(Boolean));
   const data = {
     ok: items.length > 0,
     generatedAt: new Date().toISOString(),
     sources: sourceStatus,
+    coverage: {
+      sources: { total: sourceStatus.length, ok: okSources.length, failed: sourceStatus.length - okSources.length },
+      domestic: okSources.filter((s) => s.kind === 'domestic').length,
+      official: okSources.filter((s) => s.kind === 'official').length,
+      media: okSources.filter((s) => s.kind === 'media').length,
+      aggregate: okSources.filter((s) => s.kind === 'aggregate').length,
+      languages: globals.langs,
+      publishers: [...publishers].sort(),
+      regions: [...new Set(items.map((i) => i.region))].sort(),
+      origins: {
+        direct: items.filter((i) => i.origin === 'direct').length,
+        aggregate: items.filter((i) => i.origin === 'aggregate').length,
+      },
+    },
     total: items.length,
     counts: {
       high: items.filter((i) => i.level === 'high').length,
       mid: items.filter((i) => i.level === 'mid').length,
       low: items.filter((i) => i.level === 'low').length,
     },
-    topics: TOPIC_RULES.map((t) => ({ key: t.key, label: t.label })),
+    topics: COMPILED_TOPICS.map((t) => ({ key: t.key, label: t.label })),
     llm: {
       enabled: Boolean(readDshLlmConfig().apiKey),
       applied: llmApplied,

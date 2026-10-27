@@ -229,6 +229,48 @@
   font-family: var(--mono);
 }
 
+.ev-origin {
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-family: var(--sans, inherit);
+  letter-spacing: 0.02em;
+}
+
+/* 一手：媒体/机构自己的 feed，链接直达原文 */
+.ev-origin.direct {
+  color: #7fd6a2;
+  background: rgba(63, 185, 120, 0.12);
+  border: 1px solid rgba(63, 185, 120, 0.28);
+}
+
+/* 索引：经 Google News 转手，出处由聚合方提供 */
+.ev-origin.agg {
+  color: var(--muted-2);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.ev-lang {
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--muted-2);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.ev-pub {
+  color: var(--muted);
+}
+
+.pick-label {
+  font-size: 11px;
+  color: var(--muted-2);
+  align-self: center;
+  margin-right: 2px;
+}
+
 .ev-sym {
   padding: 0 5px;
   border-radius: 4px;

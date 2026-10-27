@@ -115,7 +115,9 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname === '/api/events') {
       const force = url.searchParams.get('force') === '1';
-      const limit = Math.max(10, Math.min(300, Number(url.searchParams.get('limit')) || 120));
+      // 默认 200：接入全球源后事件量从 ~14 条涨到 ~130 条，
+      // 120 会把尾部条目静默截掉，而 total 仍报全量，看起来像丢了新闻。
+      const limit = Math.max(10, Math.min(300, Number(url.searchParams.get('limit')) || 200));
       const data = await getEvents({ force, limit });
       return sendJson(res, 200, data);
     }

@@ -60,6 +60,16 @@ export function eventItemHTML(ev) {
     ? `<a class="ev-link" href="${esc(ev.url)}" target="_blank" rel="noreferrer noopener">原文 ↗</a>`
     : '';
   const isNew = store.events?.newIds?.has(ev.id);
+  // 有多源时「谁发的」比「哪个通道抓的」有用得多：日经的稿子经 Google 聚合
+  // 转手，读者要看到的是「日本経済新聞」而不是「日文财经」。
+  const byline = ev.publisher && ev.publisher !== ev.source ? ev.publisher : ev.source;
+  const channelNote = ev.publisher && ev.publisher !== ev.source ? ev.source : '';
+  const oneHand = ev.origin === 'direct'
+    ? `<span class="ev-origin direct" title="媒体/机构自己发布的feed，链接直达原文域名">一手</span>`
+    : ev.origin === 'aggregate'
+      ? `<span class="ev-origin agg" title="${esc(channelNote || '聚合索引')}｜经 Google News 索引转手，标题与出处由聚合方提供">索引</span>`
+      : '';
+  const langChip = ev.lang && ev.lang !== 'zh' ? `<span class="ev-lang">${esc(ev.lang)}</span>` : '';
   return `<article class="event lv-${ev.level}${isNew ? ' is-new' : ''}" data-id="${esc(ev.id)}">
     <div class="ev-time">${esc(ev.time.slice(11, 16))}<em>${esc(ev.time.slice(5, 10))}</em></div>
     <div class="ev-main">
@@ -71,7 +81,7 @@ export function eventItemHTML(ev) {
       </div>
       <h4 class="ev-title">${esc(ev.title)}</h4>
       ${ev.body && ev.body !== ev.title ? `<p class="ev-body">${esc(ev.body)}</p>` : ''}
-      <div class="ev-meta"><span>${esc(ev.source)}</span>${symChips ? `<span class="ev-sep">·</span>${symChips}` : ''}${link}</div>
+      <div class="ev-meta">${oneHand}${langChip}<span class="ev-pub"${channelNote ? ` title="经 ${esc(channelNote)} 采集"` : ''}>${esc(byline)}</span>${symChips ? `<span class="ev-sep">·</span>${symChips}` : ''}${link}</div>
     </div>
   </article>`;
 }
@@ -90,10 +100,22 @@ export function renderEvents(opts = {}) {
   let items = data.items ?? [];
   if (st.level === 'high') items = items.filter((i) => i.level === 'high');
   if (st.topic) items = items.filter((i) => i.topics.some((t) => t.key === st.topic));
+  // 来源筛选：国内三源是快讯流（更新最快），它们的条目天然排在最前，
+  // 不提供「只看外媒」的开关，全球媒体会被中文快讯一直压在下面。
+  if (st.origin === 'direct') items = items.filter((i) => i.origin === 'direct');
+  else if (st.origin === 'aggregate') items = items.filter((i) => i.origin === 'aggregate');
+  else if (st.origin === 'domestic') items = items.filter((i) => !i.origin);
+  else if (st.origin === 'foreign') items = items.filter((i) => i.lang && i.lang !== 'zh');
 
-  const srcLine = (data.sources ?? [])
-    .map((s) => (s.ok ? `${s.source} ${s.count}` : `${s.source} 失败`))
-    .join(' · ');
+  // 41 个源全部铺出来会把标题行撑爆，也没人读。按类别汇总，失败源单独点名
+  // —— 静默降级最难查，必须让它自己跳出来。
+  const cov = data.coverage ?? {};
+  const failed = (data.sources ?? []).filter((s) => !s.ok);
+  const foreignCount = (data.items ?? []).filter((i) => i.lang && i.lang !== 'zh').length;
+  const srcLine = cov.sources
+    ? `${cov.sources.ok}/${cov.sources.total} 个源可用 · 官方 ${cov.official} · 媒体 ${cov.media} · 本地聚合 ${cov.aggregate} · 国内快讯 ${cov.domestic}`
+      + (failed.length ? ` · 失败 ${failed.map((s) => s.source).join('、')}` : '')
+    : (data.sources ?? []).map((s) => (s.ok ? `${s.source} ${s.count}` : `${s.source} 失败`)).join(' · ');
 
   eventsEl.innerHTML = `
     <div class="d-top">
@@ -125,11 +147,19 @@ export function renderEvents(opts = {}) {
 
     <section class="d-block">
       <div class="chart-head">
-        <h3>实时事件流 <span class="h3-note">共 ${data.total} 条 · 高影响 ${data.counts?.high ?? 0} 条 · 按时间倒序</span></h3>
+        <h3>实时事件流 <span class="h3-note">共 ${data.total} 条 · 外媒 ${foreignCount} 条 · 一手 ${cov.origins?.direct ?? 0} 条 · 高影响 ${data.counts?.high ?? 0} 条 · 按时间倒序</span></h3>
         <div class="seg" id="level-filter">
           <button type="button" data-l="" class="${!st.level ? 'on' : ''}">全部</button>
           <button type="button" data-l="high" class="${st.level === 'high' ? 'on' : ''}">只看重要</button>
         </div>
+      </div>
+      <div class="pick-row" id="origin-filter">
+        <span class="pick-label">来源</span>
+        <button type="button" class="pick ${!st.origin ? 'on' : ''}" data-o="">全部</button>
+        <button type="button" class="pick ${st.origin === 'direct' ? 'on' : ''}" data-o="direct" title="媒体或机构自己发布的 feed，链接直达原文域名">一手直连</button>
+        <button type="button" class="pick ${st.origin === 'aggregate' ? 'on' : ''}" data-o="aggregate" title="经 Google News 多语种索引转手，覆盖关停 RSS 的通讯社">全球索引</button>
+        <button type="button" class="pick ${st.origin === 'domestic' ? 'on' : ''}" data-o="domestic">国内快讯</button>
+        <button type="button" class="pick ${st.origin === 'foreign' ? 'on' : ''}" data-o="foreign">只看外媒</button>
       </div>
       <div class="pick-row" id="topic-filter">
         <button type="button" class="pick ${!st.topic ? 'on' : ''}" data-t="">全部主题</button>
@@ -149,7 +179,7 @@ export function renderEvents(opts = {}) {
 
     <footer class="d-foot">
       <span>标签与影响等级由关键词、源重要度与 LLM 语义复核共同判定，仅供筛选参考</span>
-      <span>聚合源：金十数据 / 新浪财经 / 华尔街见闻</span>
+      <span>覆盖 ${cov.languages?.length ?? 0} 种语言 · ${cov.publishers?.length ?? 0} 家媒体 · 一手 ${cov.origins?.direct ?? 0} 条 / 索引 ${cov.origins?.aggregate ?? 0} 条</span>
     </footer>
   `;
 
@@ -168,6 +198,12 @@ export function renderEvents(opts = {}) {
   document.querySelectorAll('#level-filter button').forEach((btn) => {
     btn.addEventListener('click', () => {
       store.events.level = btn.dataset.l;
+      renderEvents();
+    });
+  });
+  document.querySelectorAll('#origin-filter .pick').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      store.events.origin = btn.dataset.o;
       renderEvents();
     });
   });
@@ -205,7 +241,7 @@ export async function loadEvents(force = false) {
     ]);
     if (!evRes.ok) throw new Error(`HTTP ${evRes.status}`);
     const data = await evRes.json();
-    if (!store.events) store.events = { data, calendar: cal, study, level: '', topic: '', studyMode: 'auto', newIds: null, newCount: 0 };
+    if (!store.events) store.events = { data, calendar: cal, study, level: '', topic: '', origin: '', studyMode: 'auto', newIds: null, newCount: 0 };
     store.events.study = study;
 
     // 增量：只有真正「没见过」的条目才标记为 NEW，避免整页闪
