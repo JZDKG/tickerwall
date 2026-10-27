@@ -1647,10 +1647,19 @@
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
   gap: 5px;
+  /* 它是一个 button 而不是 a：点进去是「在地图上锁定这条的冲击链」，
+     不是跳页。所以要把 button 的默认外观全部清掉。 */
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  font: inherit;
   font-size: 10.5px;
   color: rgba(200, 212, 228, 0.82);
   text-decoration: none;
   line-height: 1.35;
+  cursor: pointer;
 }
 
 .nc-spill-row i {

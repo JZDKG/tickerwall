@@ -30,7 +30,7 @@ import {
 import { TOPIC_FILTERS, filterMapEvents } from './map/logic/filters.js';
 import { sparklinePath } from './map/logic/sparkline.js';
 import { mapEl } from '../shared/dom.js';
-import { dirOf, esc, fmtPrice } from '../shared/format.js';
+import { dirOf, esc, fmtPrice, safeHref } from '../shared/format.js';
 import { store } from '../shared/store.js';
 import { on } from '../shared/bus.js';
 import { loadCalendarCached } from '../shared/calendar.js';
@@ -268,6 +268,17 @@ let historyCache = null;
 let tlActive = null;
 
 /**
+ * 用户最近一次手动滚动事件流列表的时刻。
+ *
+ * syncFeedTo 每 6 秒要把当前播报的那条滚进视野，但如果读者正自己往下翻，
+ * 这一滚会把他拽回去。所以手动滚动后的几秒内不自动跟。
+ */
+let feedUserScrolledAt = 0;
+const FEED_SCROLL_HOLD_MS = 8000;
+/** 程序还原滚动位置时为 true，用来和「用户手动滚动」区分 */
+let feedRestoring = false;
+
+/**
  * 全量事件索引。
  *
  * 巡航队列只收「有靶点 + 高优/mid」的那几条，但用户悬停事件流时可能是任意
@@ -339,6 +350,8 @@ function syncFeedTo(id) {
   if (!row) return;
   row.classList.add('is-current');
   if (bcState.mode !== 'auto') return;
+  // 读者刚手动翻过列表：这一拍别抢他的滚动条
+  if (Date.now() - feedUserScrolledAt < FEED_SCROLL_HOLD_MS) return;
 
   const rel = row.getBoundingClientRect().top - list.getBoundingClientRect().top + list.scrollTop;
   const want = rel - list.clientHeight / 2 + row.offsetHeight / 2;
@@ -437,20 +450,31 @@ function renderHud() {
 
 /** 宏观数据懒加载：首屏渲染完之后才拉，失败就静默（胶囊整块不渲染） */
 let macroLoading = false;
+/** 上一次失败的时刻。没有它，1 秒定时器会把失败重试变成每秒一次的死循环 */
+let macroFailedAt = 0;
 const MACRO_TTL_MS = 5 * 60 * 1000;
+/** 失败后的冷却。macro 是全站最重的接口（13 个市场日线 + 协方差），不能每秒敲 */
+const MACRO_RETRY_MS = 60 * 1000;
 
 async function ensureMacro() {
   if (macroLoading) return;
+  const now = Date.now();
   const at = store.macro?.at ?? 0;
-  if (store.macro?.data && Date.now() - at < MACRO_TTL_MS) return;
+  if (store.macro?.data && now - at < MACRO_TTL_MS) return;
+  // 冷却期内不再发；注意这里必须判「已失败过」而不是只看 data 是否为空 ——
+  // data 为空有两种含义：从没试过（该试）和试过失败（要等）
+  if (macroFailedAt && now - macroFailedAt < MACRO_RETRY_MS) return;
+
   macroLoading = true;
   try {
     const res = await fetch('./api/macro?window=250', { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     store.macro = { data: await res.json(), at: Date.now() };
+    macroFailedAt = 0;
     renderHud();
   } catch {
-    // 这个面板是加分项，不是地图的前提。失败就让它空着。
+    // 这个面板是加分项，不是地图的前提。记下失败时刻进冷却，别让它拖垮上游。
+    macroFailedAt = Date.now();
   } finally {
     macroLoading = false;
   }
@@ -776,6 +800,11 @@ export function spawnBubble(ev) {
 }
 
 export function renderMap() {
+  // 重建前记住事件流的滚动位置。mapEl.innerHTML 重写会把 .mf-list 的
+  // scrollTop 归零 —— 读者正停在列表下方查第 20 条时，15 秒一次的报价广播
+  // 就会把滚动条弹回顶部。
+  const feedScrollTop = mapEl.querySelector('.mf-list')?.scrollTop ?? 0;
+
   // 正在显示的气泡要在重建后接回来，否则每 30 秒轮询会打断它
   const bubbleLayer = document.getElementById('map-bubbles');
   const liveBubbles = bubbleLayer ? [...bubbleLayer.children] : [];
@@ -991,6 +1020,20 @@ export function renderMap() {
   applyRegionClasses();
   bindMapEvents();
 
+  // 还原事件流滚动位置。只在读者自己翻过（或本来就不在顶部）时还原 ——
+  // 归零状态还原成 0 等于没动，不必多写一次。
+  if (feedScrollTop > 0) {
+    const list = mapEl.querySelector('.mf-list');
+    if (list) {
+      // 程序还原也会触发 scroll 事件，得挡住，否则会把「手动滚动」的时刻
+      // 写脏，连带把 syncFeedTo 冻住八秒
+      feedRestoring = true;
+      list.scrollTop = feedScrollTop;
+      // rAF 之后再解除：scroll 事件是异步派发的，同步解除挡不住
+      requestAnimationFrame(() => { feedRestoring = false; });
+    }
+  }
+
   // mapEl.innerHTML 整体重建会连带删掉打开中的节点卡。quotes 有 15 秒 ttl、
   // 30 秒轮询也会走到这里 —— 用户正读着卡片时它会突然消失。重建后重开一次。
   if (nodeCardKey) {
@@ -1120,14 +1163,30 @@ export function openNodeCard(cityKey) {
     ${rowsWithSpark}
     ${spill.length ? `<div class="nc-spill">
       <span class="nc-spill-head">波及事件</span>
-      ${spill.map((ev) => `<a class="nc-spill-row lv-${esc(ev.level)}" href="#/d/${encodeURIComponent(ev.id)}">
-        <i>${esc(String(ev.time).slice(11, 16))}</i><span>${esc(ev.title.slice(0, 34))}</span></a>`).join('')}
+      ${spill.map((ev) => `<button type="button" class="nc-spill-row lv-${esc(ev.level)}" data-spill="${esc(ev.id)}">
+        <i>${esc(String(ev.time).slice(11, 16))}</i><span>${esc(ev.title.slice(0, 34))}</span></button>`).join('')}
     </div>` : ''}
     <div class="nc-foot">
       <a href="#/d/${encodeURIComponent(members[0].id)}">打开详情 →</a>
     </div>
   `;
   el.addEventListener('click', (e) => e.stopPropagation());
+
+  // 波及事件点进去是「在地图上锁定这一条的冲击链」，不是跳出地图。
+  //
+  // 这里曾经写成 href="#/d/<ev.id>" —— 而 #/d/:id 只认标的 id
+  // （sp500 / oil / gold-intl），事件 id 是 sina:5172745 这种，router 会把
+  // 它当标的交给 /api/detail/:id，服务端查不到就直接是红字报错页。
+  el.querySelectorAll('.nc-spill-row[data-spill]').forEach((btn) => {
+    btn.onclick = (e2) => {
+      e2.stopPropagation();
+      const id = btn.dataset.spill;
+      if (!id) return;
+      bcState = spotlightReducer(bcState, { type: 'click', id, now: Date.now() });
+      renderBroadcast();
+    };
+  });
+
   canvas.appendChild(el);
 }
 
@@ -1199,6 +1258,17 @@ export function bindMapEvents() {
     };
   });
 
+  // 读者手动滚动事件流：记下时刻，八秒内 syncFeedTo 不抢滚动条。
+  const feedList = mapEl.querySelector('.mf-list');
+  if (feedList) {
+    // 用 onscroll 赋值而不是 addEventListener —— bindMapEvents 每轮都跑，
+    // 而 .mf-list 是每轮新建的，虽然不会累积，但保持和这里其它绑定同样的写法
+    feedList.onscroll = () => {
+      if (feedRestoring) return;
+      feedUserScrolledAt = Date.now();
+    };
+  }
+
   // 滤镜：切换后整张重绘。数量徽标要跟着赛区一起变，所以顺带重算。
   mapEl.querySelectorAll('.map-pill[data-filter]').forEach((b) => {
     b.onclick = () => {
@@ -1241,7 +1311,18 @@ export function bindMapEvents() {
     bc.onpointerleave = () => setBroadcastPlaying(true);
     bc.onclick = () => {
       const ev = spotlightEvent();
-      if (ev?.id) location.hash = `#/d/${encodeURIComponent(ev.id)}`;
+      if (!ev) return;
+      // 优先打开原文。事件 id（sina:5172745）不是标的 id，绝不能拼 #/d/ ——
+      // 那会直接落进 /api/detail/:id 的报错页。
+      const href = safeHref(ev.url);
+      if (href) {
+        window.open(href, '_blank', 'noopener,noreferrer');
+        return;
+      }
+      // 没有原文就退到它关联的第一个标的；连标的都没有就什么都不做，
+      // 宁可点了没反应，也不给一条会报错的链接。
+      const sym = (ev.symbols ?? []).find((id) => store.quotes?.some((q) => q.id === id));
+      if (sym) location.hash = `#/d/${encodeURIComponent(sym)}`;
     };
   }
 
@@ -1375,7 +1456,8 @@ export function mountMap() {
   hudTimer = setInterval(() => {
     // 只刷倒计时那部分，别碰地图
     renderHud();
-    if (!store.macro?.data) ensureMacro();
+    // 冷却与 TTL 都在 ensureMacro 内部判，这里无脑调即可
+    ensureMacro();
   }, 1000);
   // 列表每轮拿到新报价后顺带刷新地图节点（原来由 list 直接调 renderMap）
   unsubscribeQuotes?.();
