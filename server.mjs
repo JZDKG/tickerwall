@@ -76,13 +76,21 @@ async function serveStatic(res, pathname) {
   }
 }
 
+/**
+ * `X-Content-Type-Options` 挡住「浏览器把 JSON 当 HTML 猜」这种老问题。
+ *
+ * 这里**不发** `Access-Control-Allow-Origin`：前端是同源页面，根本不需要
+ * CORS；而这个头一旦为 `*`，任何网页都能跨域读本机 API。默认只听
+ * 127.0.0.1 时风险有限，但用户设了 HOST=0.0.0.0 就是把整个内部数据面
+ * 暴露给任意站点。需要跨域的场景（比如自己起个前端）请走反向代理。
+ */
 function sendJson(res, status, obj) {
   const body = Buffer.from(JSON.stringify(obj));
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': body.length,
     'Cache-Control': 'no-store',
-    'Access-Control-Allow-Origin': '*',
+    'X-Content-Type-Options': 'nosniff',
   });
   res.end(body);
 }

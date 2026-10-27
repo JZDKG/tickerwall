@@ -9,7 +9,7 @@
  * ================================================================== */
 import { loadCalendarCached } from '../shared/calendar.js';
 import { eventsEl } from '../shared/dom.js';
-import { clockText, esc } from '../shared/format.js';
+import { clockText, esc, safeHref } from '../shared/format.js';
 import { PLACEHOLDER, store } from '../shared/store.js';
 
 
@@ -56,8 +56,11 @@ export function eventItemHTML(ev) {
       return meta ? `<span class="ev-sym">${esc(meta.short ?? meta.name)}</span>` : '';
     })
     .join('');
-  const link = ev.url
-    ? `<a class="ev-link" href="${esc(ev.url)}" target="_blank" rel="noreferrer noopener">原文 ↗</a>`
+  // safeHref 返回 '' 就整段不渲染 —— 宁可没有「原文」入口，也不给一条
+  // javascript: 链接。服务端已清过一遍，这是第二道。
+  const href = safeHref(ev.url);
+  const link = href
+    ? `<a class="ev-link" href="${esc(href)}" target="_blank" rel="noreferrer noopener">原文 ↗</a>`
     : '';
   const isNew = store.events?.newIds?.has(ev.id);
   // 有多源时「谁发的」比「哪个通道抓的」有用得多：日经的稿子经 Google 聚合
@@ -90,7 +93,7 @@ export function renderEvents(opts = {}) {
   const keepScroll = opts.keepScroll ? window.scrollY : null;
   const st = store.events;
   if (!st?.data) {
-    eventsEl.innerHTML = '<div class="d-store.loading">正在聚合全球实时快讯…</div>';
+    eventsEl.innerHTML = '<div class="d-loading">正在聚合全球实时快讯…</div>';
     return;
   }
   const data = st.data;

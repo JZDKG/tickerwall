@@ -594,7 +594,7 @@ export function onGraphDblClick(e, host) {
 export function renderMacro() {
   const data = macroState.data;
   if (!data) {
-    macroEl.innerHTML = '<div class="d-store.loading">正在采集 13 个市场的历史数据…</div>';
+    macroEl.innerHTML = '<div class="d-loading">正在采集 13 个市场的历史数据…</div>';
     return;
   }
   const ra = data.riskAppetite ?? {};
@@ -745,7 +745,7 @@ export function renderMacro() {
 }
 
 export async function loadMacro(windowSize = 250, force = false) {
-  macroEl.innerHTML = '<div class="d-store.loading">正在采集 13 个市场的历史数据…</div>';
+  macroEl.innerHTML = '<div class="d-loading">正在采集 13 个市场的历史数据…</div>';
   try {
     const freq = macroState?.freq ?? 'day';
     const res = await fetch(

@@ -48,6 +48,31 @@ export function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 }
 
+/**
+ * 渲染前的 URL 白名单。
+ *
+ * 服务端已经用同一个判据清洗过（news-lexicon.sanitizeUrl），这里是第二道 ——
+ * 因为 `esc()` 只转义 HTML 实体，对 `javascript:alert(1)` 毫无作用，
+ * 而这类值一旦进了 `href` 就是一个点击即执行的洞。纵深防御，两道都要有。
+ *
+ * 返回 '' 表示不该渲染成链接，调用方据此整段不渲染。
+ */
+export function safeHref(raw) {
+  if (raw == null) return '';
+  const s = String(raw).trim();
+  if (!s || /[\u0000-\u001f\u007f]/.test(s)) return '';
+  try {
+    // 不传 base：相对路径在这里就该被拒（服务端也不会给出相对地址），
+    // 传 location.href 的话 `/x` 会被解析成同源绝对地址而放行。
+    // 也不依赖 location 全局 —— 这个函数在 Node 测试里也要能跑。
+    const u = new URL(s);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return '';
+    return u.href;
+  } catch {
+    return '';
+  }
+}
+
 export function dirOf(v) {
   if (v == null || !Number.isFinite(v) || v === 0) return 'flat';
   return v > 0 ? 'up' : 'down';

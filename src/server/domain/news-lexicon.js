@@ -389,6 +389,32 @@ const WEATHER_RE = new RegExp(
  * heart attack 是健康事件。这些词一旦进了标题（titleOnly 词只认标题），就会被
  * 判成 weight 3 的地缘政治。注意 trade war 不清洗 —— 那是真的地缘政治。
  */
+/**
+ * 只放行 http(s) 链接，其余一律给 null。
+ *
+ * 新闻 url 来自 RSS / 聚合索引 —— 全是外部不可信数据。前端 `esc()` 只转义
+ * HTML 实体，`javascript:alert(1)` 会被原样写进 href，读者一点就在本站
+ * 执行了对方的脚本。服务端这一层是主要拦截点，客户端还会再挡一次。
+ *
+ * 用协议白名单而不是「挡掉 javascript:」的关键词黑名单：后者挡不住
+ * `java\tscript:`、`data:text/html`、`vbscript:` 这些变形。
+ */
+export function sanitizeUrl(raw) {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  if (!s) return null;
+  // 控制字符（含 \t \n \r 与 U+0000..U+001F）会让 URL 解析结果与字面不一致
+  if (/[\u0000-\u001f\u007f]/.test(s)) return null;
+  let u;
+  try {
+    u = new URL(s);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+  return u.toString();
+}
+
 export function sanitizeText(text) {
   return String(text ?? '')
     // 气象灾害不是地缘政治冲突（词表里中英德法西葡俄阿都有）

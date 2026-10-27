@@ -14,7 +14,7 @@ import fsp from 'node:fs/promises';
 
 import { fetchRaw, toNum } from '../providers/index.js';
 import { fetchFeedCatalog, DIRECT_FEEDS, GOOGLE_FEEDS } from '../providers/news-feeds.js';
-import { COMPILED_TOPICS, IMPACT_WORDS, anyWordHit, sanitizeText, guessRegion, isOfficialRoutine, dedupeKey } from '../domain/news-lexicon.js';
+import { COMPILED_TOPICS, IMPACT_WORDS, anyWordHit, sanitizeText, sanitizeUrl, guessRegion, isOfficialRoutine, dedupeKey } from '../domain/news-lexicon.js';
 import { kvGetJson, kvSetJson, appendJsonl, readJsonl, readJsonlField } from '../db/index.js';
 import { DATA_DIR } from '../paths.js';
 
@@ -623,7 +623,9 @@ function feedItemToEvent(it) {
     time: bjTimeString(it.at),
     title,
     body: body || '',
-    url: it.url,
+    // 只放行 http(s)：RSS/聚合索引是外部不可信数据，javascript: 链接会被
+    // 原样写进前端的 href
+    url: sanitizeUrl(it.url),
     important: false,               // 全球源没有「重要」标记，等级全靠主题权重
   };
 }
@@ -688,7 +690,7 @@ function normalizeHistoryRow(ev) {
     symbols: ev.symbols ?? [],
     region: ev.region ?? 'global',
     source: ev.source,
-    url: ev.url,
+    url: sanitizeUrl(ev.url),
     important: Boolean(ev.important),
   };
 }
