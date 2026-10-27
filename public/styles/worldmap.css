@@ -459,6 +459,138 @@
   box-shadow: inset 2px 0 0 rgba(120, 176, 255, 0.85);
 }
 
+/* ------------------------------------------------------------------ *
+ * 24h 时间轴
+ *
+ * 通栏在地图与事件流之下（grid-column: 1 / -1）——它是全局时间轴，
+ * 不该只属于某一列。
+ * ------------------------------------------------------------------ */
+.map-timeline {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 12px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 10px;
+  background: rgba(8, 11, 16, 0.6);
+}
+
+.tl-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: rgba(160, 174, 194, 0.9);
+}
+
+.tl-title {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 11.5px;
+}
+
+.tl-note {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted-2);
+}
+
+.tl-play,
+.tl-live {
+  margin-left: auto;
+  padding: 2px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(196, 208, 224, 0.9);
+  font: inherit;
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.tl-play:hover,
+.tl-live:hover {
+  border-color: rgba(120, 176, 255, 0.5);
+  color: var(--text);
+}
+
+/* 回放中给按钮一个持续的红点，提示「正在动」 */
+.tl-play.on {
+  border-color: rgba(245, 69, 92, 0.6);
+  color: #ff9aa6;
+}
+
+.tl-live {
+  margin-left: 0;
+}
+
+/* 24 格等宽；柱高用 --h 百分比，颜色用 --c 由桶内最高等级决定 */
+.tl-cols {
+  display: grid;
+  grid-template-columns: repeat(24, minmax(0, 1fr));
+  gap: 2px;
+  height: 46px;
+  align-items: end;
+}
+
+.tl-col {
+  position: relative;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: flex-end;
+}
+
+.tl-col > i {
+  display: block;
+  width: 100%;
+  height: var(--h);
+  min-height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--c);
+  opacity: 0.62;
+  transition: opacity 0.12s ease, height 0.25s ease;
+}
+
+.tl-col:hover > i {
+  opacity: 0.95;
+}
+
+/* 空桶：一条极淡的底座，让带子看起来是连续的 */
+.tl-col[data-count="0"] > i {
+  opacity: 0.16;
+  height: 2px;
+}
+
+.tl-col.on > i {
+  opacity: 1;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.55), 0 0 10px currentColor;
+}
+
+.tl-col.on::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+/* 窄屏：格子太细，去掉圆角和间隙 */
+@media (max-width: 720px) {
+  .tl-cols {
+    gap: 1px;
+    height: 38px;
+  }
+
+  .tl-note {
+    display: none;
+  }
+}
+
 .map-body {
   position: relative;
   min-height: 0;
@@ -481,7 +613,7 @@
   width: 100%;
   /* 宽度放开后 aspect-ratio 会把地图撑到 800px+ 高，1080p 屏一屏放不下。
      改成按可用高度定高：929px 视口下约 600px，全屏时吃满剩余空间 */
-  height: clamp(420px, calc(100vh - 322px), 900px);
+  height: clamp(360px, calc(100vh - 430px), 860px);
   border-radius: 14px;
   overflow: hidden;
   border: 1px solid var(--line);
@@ -1049,7 +1181,7 @@
   /* 和 .map-canvas 同一条高度钳制。少了它，事件流内容会把 grid 行撑到
      2500px+，.mf-list 的 overflow-y 永远不触发，变成整页滚动 —— 那样
      「播报推进时把当前条滚进视野」就会带着页面一起跳。 */
-  max-height: clamp(420px, calc(100vh - 322px), 900px);
+  max-height: clamp(360px, calc(100vh - 430px), 860px);
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.11);
   background: rgba(8, 11, 16, 0.72);

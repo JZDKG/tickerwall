@@ -21,6 +21,8 @@ import { createCamera, destroyCamera, applyTransform, syncCamera } from './map/c
 import { cityAnchorsHtml, lodClassFor } from './map/layers/markers.js';
 import { broadcastHtml } from './map/layers/broadcast.js';
 import { relayBandHtml, macroCapsuleHtml, alertChipHtml, alertCardHtml, alertsNow, ALERT_ANCHOR } from './map/layers/hud.js';
+import { timelineBarHtml, hhmmOf } from './map/layers/timeline-bar.js';
+import { bucketEvents24h, eventsUpTo } from './map/logic/timeline.js';
 import {
   createSpotlightState, buildSpotlightQueue, spotlightReducer,
   currentSpotlightEvent, needsIdleTimer, STEP_MS,
@@ -254,6 +256,17 @@ let bcRenderedId = null;
 /** 接力带倒计时的每秒刷新 */
 let hudTimer = null;
 
+/* ---------- 24h 时间轴 ---------- */
+
+/** 回溯到的时刻（null = 看实时）。非 null 时事件流/弧线只留截至那时，昼夜切到那一刻 */
+let mapAtMs = null;
+/** 回放中：每 0.6s 推进一格 */
+let replayTimer = null;
+/** 24h 归档事件（懒加载，5 分钟） */
+let historyCache = null;
+/** 时间轴自己的 active 索引 */
+let tlActive = null;
+
 /**
  * 全量事件索引。
  *
@@ -443,6 +456,108 @@ async function ensureMacro() {
   }
 }
 
+/* ---------- 24h 时间轴 ---------- */
+
+const HISTORY_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * 归档事件懒加载。进入时间轴才请求 —— 这个接口要读两份 jsonl 再合并，
+ * 没必要在首屏就跟地图抢带宽。
+ */
+async function ensureHistory() {
+  if (historyCache && Date.now() - historyCache.at < HISTORY_TTL_MS) return historyCache.data;
+  try {
+    const res = await fetch('./api/events/history?hours=24', { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    historyCache = { data, at: Date.now() };
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+/** 时间轴数据：优先用归档，拿不到就退回当前快照（并且会如实显示条数少） */
+function timelineData() {
+  const items = historyCache?.data?.items ?? store.events?.data?.items ?? [];
+  return bucketEvents24h(items, Date.now());
+}
+
+function renderTimeline() {
+  const host = document.getElementById('map-timeline');
+  if (!host) return;
+  const data = timelineData();
+  host.innerHTML = timelineBarHtml(data, { activeIndex: tlActive, playing: Boolean(replayTimer) });
+
+  host.querySelectorAll('.tl-col').forEach((b) => {
+    b.onclick = () => {
+      const idx = Number(b.dataset.index);
+      if (!Number.isFinite(idx)) return;
+      seekToBucket(idx);
+    };
+  });
+  host.querySelector('.tl-play')?.addEventListener('click', () => {
+    if (replayTimer) stopReplay();
+    else startReplay();
+  });
+  host.querySelector('.tl-live')?.addEventListener('click', () => {
+    stopReplay();
+    tlActive = null;
+    mapAtMs = null;
+    renderMap();
+  });
+}
+
+/**
+ * 回溯到某个桶的结束时刻。
+ *
+ * 只换「看什么」和「天亮到哪儿」：事件流按 cutoff 截断，昼夜面片按那一刻
+ * 的太阳位置重画。不重建整张图 —— 相机、LOD、卡片都得留着。
+ */
+function seekToBucket(idx) {
+  const data = timelineData();
+  const bucket = data.buckets[idx];
+  if (!bucket) return;
+  tlActive = idx;
+  mapAtMs = bucket.end;
+
+  // 2) 重绘（renderMap 自己会按 mapAtMs 截断事件流，并按那一刻画昼夜）
+  renderMap();
+}
+
+/** 浓缩回放：24 格 × 0.6s ≈ 14.4s，正好一口气看完一昼夜 */
+const REPLAY_STEP_MS = 600;
+
+function startReplay() {
+  stopReplay();
+  const data = timelineData();
+  let i = 0;
+  tlActive = 0;
+  seekToBucket(0);
+  replayTimer = setInterval(() => {
+    i += 1;
+    // 跳过空桶，否则深夜会连着好几秒画面不动
+    while (i < data.buckets.length && data.buckets[i].count === 0) i += 1;
+    if (i >= data.buckets.length) {
+      stopReplay();
+      tlActive = null;
+      mapAtMs = null;
+      renderMap();
+      return;
+    }
+    seekToBucket(i);
+    renderTimeline();
+  }, REPLAY_STEP_MS);
+  renderTimeline();
+}
+
+function stopReplay() {
+  if (replayTimer) {
+    clearInterval(replayTimer);
+    replayTimer = null;
+  }
+}
+
 /**
  * 窄屏时把播报台从画布内搬出来，作为 .map-body 的独立一行。
  *
@@ -468,6 +583,7 @@ function placeBroadcast() {
 }
 
 function stopBroadcast() {
+  stopReplay();
   if (hudTimer) { clearInterval(hudTimer); hudTimer = null; }
   if (bcStepTimer) { clearInterval(bcStepTimer); bcStepTimer = null; }
   if (bcIdleTimer) { clearInterval(bcIdleTimer); bcIdleTimer = null; }
@@ -665,7 +781,10 @@ export function renderMap() {
   const liveBubbles = bubbleLayer ? [...bubbleLayer.children] : [];
 
   const quotes = store.quotes ?? [];
-  const items = store.events?.data?.items ?? [];
+  const rawItems = store.events?.data?.items ?? [];
+  // 回溯模式下只看到那一刻为止 —— 时间轴点某一格、或回放到某一格时，
+  // 事件流、弧线、播报台都该停在那时，不能把未来的事件摆出来。
+  const items = mapAtMs != null ? eventsUpTo(rawItems, mapAtMs) : rawItems;
   const quoteOf = (id) => quotes.find((q) => q.id === id);
 
   // ---- 城市节点：SVG 只画点与光环，标签交给 HTML 锚点层 ----
@@ -764,7 +883,7 @@ export function renderMap() {
     .join('');
 
   // 昼夜每小时才需要重算一次的量级，但这里跟着重建走，成本可以忽略
-  const night = nightLayerPaths(new Date());
+  const night = nightLayerPaths(new Date(mapAtMs ?? Date.now()));
 
   /**
    * 太阳直射点。它和黑夜面片是同一份数据的两种表达：面片说「哪儿是夜里」，
@@ -854,6 +973,7 @@ export function renderMap() {
         </div>
         <div class="mf-list">${feedRows}</div>
       </aside>
+      <div class="map-timeline" id="map-timeline"></div>
     </div>
   `;
 
@@ -864,6 +984,7 @@ export function renderMap() {
 
   placeBroadcast();
   renderHud();
+  renderTimeline();
   refreshBroadcastQueue(visibleItems);
   applyMapView();
   updateAnchors();
@@ -1249,6 +1370,8 @@ export function mountMap() {
   startBroadcast();
   // 首屏已经渲染完了，现在才去拉宏观（这个接口要拉 13 个市场的全量日线）
   ensureMacro();
+  // 归档事件也懒加载：拿到之后把时间轴和「覆盖 HH:MM 起」的注记补上
+  ensureHistory().then(() => renderTimeline());
   hudTimer = setInterval(() => {
     // 只刷倒计时那部分，别碰地图
     renderHud();
