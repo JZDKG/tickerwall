@@ -1,0 +1,49 @@
+/* ================================================================== *
+ * tokens.css —— 设计变量：颜色 / 字号 / 圆角 / 阴影。必须第一个加载，后面的文件全部引用这里的 --var。
+ *
+ * 来源：public/styles.css（3751 行单体）拆分，本文件内容对应原文件 L1-42。
+ * 拆分方式：按原文连续区间整段搬移，不重排、不改写任何一条声明。
+ * 加载顺序（见 public/index.html）就是原来的从上到下顺序，级联结果不变。
+ * ================================================================== */
+
+:root {
+  --bg: #080b10;
+  --panel: rgba(255, 255, 255, 0.028);
+  --panel-2: rgba(255, 255, 255, 0.05);
+  --line: rgba(255, 255, 255, 0.075);
+  --text: #e8edf5;
+  --muted: #7c8899;
+  --muted-2: #5a6474;
+  --up: #f5455c;
+  --down: #0ecb81;
+  --flat: #8b97a8;
+  --radius: 16px;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(1100px 620px at 12% -12%, rgba(64, 110, 190, 0.16), transparent 62%),
+    radial-gradient(900px 520px at 92% 4%, rgba(190, 96, 64, 0.1), transparent 58%),
+    var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+    "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  /* 1180 在 1920 屏上只用到 61%，横向空间白扔一半。
+     改成随视口放大：1080p 约 1766px（92%），超宽屏收到 2200px 免得行长过头难读 */
+  padding: 22px clamp(14px, 2.4vw, 52px) 28px;
+  max-width: clamp(1180px, 94vw, 2200px);
+  margin: 0 auto;
+}

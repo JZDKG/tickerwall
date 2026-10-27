@@ -7,8 +7,15 @@ data/history.json
 data/llm-cache.json
 data/events/*.jsonl
 !data/events/.gitkeep
+# 日线缓存、本地 SQLite（含 -wal / -shm 旁文件）、快照流
+data/daily/
+data/kanban.db*
+data/snapshots.jsonl
 
 # 本地工具链配置
 .workbuddy-ai/
 .vscode/
 .idea/
+
+# 本地调试脚本（CDP 探针等，不入库）
+.scratch/

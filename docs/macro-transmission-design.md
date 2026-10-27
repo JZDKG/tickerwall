@@ -79,7 +79,8 @@ flowchart LR
 | **④ 全球权益与高Beta风险资产** | **底层象限** (`y: 430~490`) | 纳指100 (`ndx100`)、标普500 (`sp500`)、上证 (`sh000001`)、比特币 (`btc`) | **红蓝风险层**：对利率折现（久期）、经济增长和全球流动性最敏感 |
 
 > **同源标的聚合展示（降噪设计）**：
-> 在全局罗盘默认状态下，`WTI原油` 卡片内附带 `布伦特` 子标签，`VIX` 卡片内附带 `VXN` 子标签（与首页列表设计同构），把主画布核心节点控制在 **11 个**，大幅减少平行重复连线；当点击展开「单点思维导图」时，再把 `WTI ↔ 布伦特`、`国际金 ↔ 沪金`、`VIX ↔ VXN` 的内部联动完整画出来。
+> 在全局罗盘默认状态下，`WTI原油` 卡片内附带 `布伦特` 子标签，`国际金` 卡片内附带 `沪金` 子标签，`VIX` 卡片内附带 `VXN` 子标签（与首页列表设计同构），把 13 个数据标的合并为主画布上的 **10 个核心节点**、**16 条主干边**；当点击展开「单点思维导图」时，再把 `WTI ↔ 布伦特 (E18)`、`国际金 ↔ 沪金 (E16)` 的簇内联动完整画出来。
+> 底层 4 个风险资产节点按 `上证 (118) → 标普 (326) → 纳指 (534) → BTC (742)` 排列，使 `铜→上证 (E12)`、`标普→纳指 (E17)`、`纳指→BTC (E13)` 三条强相关边均相邻直连，无需跨节点拱出画布。
 
 #### 连线（Edge）的视觉编码规范
 1. **方向与粒子流光**：使用二次贝塞尔曲线（`M ... Q ...`），带 SVG `<marker>` 箭头；线上叠加 `stroke-dasharray: 6 10` 的流光动画（`@keyframes edgeFlow`），**光点流动方向即「谁影响谁（因 → 果）」**。
@@ -212,8 +213,9 @@ function evaluateEdgeReality(edge, macroData) {
   const stdA = calcStd(changesA.slice(-60));
   const stdB = calcStd(changesB.slice(-60));
 
-  // 2. 计算近 20 期短期滚动相关性 vs 250 期长期相关性
+  // 2. 计算近 20 期 / 60 期滚动相关性（先取成对非空 pairwise 样本再截尾，避免跨时区休市空洞稀释样本）
   const roll20 = lastRollingCorr(changesA, changesB, 20);
+  const roll60 = lastRollingCorr(changesA, changesB, 60);
   const longCorr = getMatrixCorr(macroData.matrix, edge.from, edge.to);
 
   // 3. 判定是否发生显著「逻辑背离 (Divergence)」
@@ -222,8 +224,11 @@ function evaluateEdgeReality(edge, macroData) {
   const moveProductSign = Math.sign(lastA * lastB);
   const singleDayDiverged = significantMove && moveProductSign !== 0 && moveProductSign !== edge.sign;
 
-  // 条件 B（短期趋势背离）：近 20 期滚动相关性与理论方向相反，且绝对值 >= 0.28
-  const trendDiverged = roll20 != null && Math.sign(roll20) !== edge.sign && Math.abs(roll20) >= 0.28;
+  // 条件 B（短期趋势背离）：20 样本标准误约 0.24，门槛收紧至 0.35 并要求 60 期同向反号二次确认，
+  // 或 20 期单窗达到 0.45（|t| > 2.13, p < 0.05 统计显著反转）
+  const opp20 = roll20 != null && Math.sign(roll20) !== edge.sign;
+  const opp60 = roll60 != null && Math.sign(roll60) !== edge.sign;
+  const trendDiverged = opp20 && (Math.abs(roll20) >= 0.45 || (Math.abs(roll20) >= 0.35 && opp60));
 
   if (singleDayDiverged || trendDiverged) {
     return {

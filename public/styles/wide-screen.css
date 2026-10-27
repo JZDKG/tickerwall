@@ -1,0 +1,74 @@
+/* ================================================================== *
+ * wide-screen.css —— 大屏（≥1560px / ≥2000px）覆盖：压行高、给 sparkline 让横向空间。**必须排在 ticker-list.css 之后**。
+ *
+ * 来源：public/styles.css（3751 行单体）拆分，本文件内容对应原文件 L2628-2694。
+ * 拆分方式：按原文连续区间整段搬移，不重排、不改写任何一条声明。
+ * 加载顺序（见 public/index.html）就是原来的从上到下顺序，级联结果不变。
+ * ================================================================== */
+
+/* ================================================================== *
+ * 大屏（≥1560px）：把横向空间喂给 sparkline，同时压行高
+ * 1080p 全宽下原来一行 145px、一屏只放 6 行，20 个标要滚 3 屏多
+ * ================================================================== */
+
+@media (min-width: 1560px) {
+  .row {
+    /* 前三列定宽、曲线吃掉剩余：用 fr 分会把价格推到中间，和名称之间留 400px 空白 */
+    grid-template-columns: 250px 195px 168px 1fr;
+    gap: 2px 26px;
+    padding: 10px 26px 8px;
+  }
+
+  .row .id h2 {
+    font-size: 17px;
+  }
+
+  /* 价格和单位并排 —— 原来 value/unit/fresh 三层竖着堆，仅价格区就吃掉 70px */
+  .row .price {
+    display: flex;
+    align-items: baseline;
+    justify-content: flex-end;
+    gap: 0 7px;
+  }
+
+  .row .value {
+    font-size: 33px;
+    line-height: 1.05;
+  }
+
+  .row .unit {
+    font-size: 10px;
+    opacity: 0.6;
+  }
+
+  .row .delta .pct {
+    font-size: 19px;
+  }
+
+  .row .spark {
+    height: 54px;
+  }
+
+  /* meta 一行到底：新鲜度徽章现在也在这里 */
+  .row .meta {
+    margin-top: 4px;
+    padding-top: 4px;
+    font-size: 10.5px;
+    gap: 7px;
+  }
+
+  .row .meta .fresh {
+    order: -1;
+  }
+
+  .rows {
+    gap: 8px;
+  }
+}
+
+/* 超宽屏（≥2000px）：再放一档，横向不空 */
+@media (min-width: 2000px) {
+  .row {
+    grid-template-columns: 280px 215px 178px 1fr;
+  }
+}

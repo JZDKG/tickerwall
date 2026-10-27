@@ -1,0 +1,64 @@
+/* ================================================================== *
+ * responsive.css —— 窄屏与降级动效。**必须排在 ticker-list.css 之后** —— 它用同优先级的 .row / .row .price 覆盖列表布局，提前加载会失效。
+ *
+ * 来源：public/styles.css（3751 行单体）拆分，本文件内容对应原文件 L476-532。
+ * 拆分方式：按原文连续区间整段搬移，不重排、不改写任何一条声明。
+ * 加载顺序（见 public/index.html）就是原来的从上到下顺序，级联结果不变。
+ * ================================================================== */
+
+/* ---------------- 窄屏：价格与涨跌并排 ---------------- */
+
+@media (max-width: 880px) {
+  body {
+    padding: 20px 14px 26px;
+  }
+
+  .row {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "id id"
+      "price delta"
+      "spark spark"
+      "meta meta";
+    gap: 10px 14px;
+    padding: 15px 16px 13px;
+  }
+
+  .row .price {
+    text-align: left;
+  }
+
+  .row .delta {
+    align-items: flex-end;
+  }
+
+  .row .value {
+    font-size: 26px;
+  }
+
+  .row .spark {
+    height: 46px;
+  }
+
+  .spark svg,
+  .spark-empty {
+    height: 46px;
+  }
+
+  .status {
+    gap: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* display:flex 会盖掉 [hidden] 自带的 display:none，这里显式兜住 */
+#rows[hidden],
+#detail[hidden] {
+  display: none !important;
+}

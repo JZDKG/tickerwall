@@ -1,0 +1,451 @@
+/* ================================================================== *
+ * 传导图谱 · X6 画布样式
+ *
+ * 只负责「画布里的东西」：卡片、连接桩、边、机理胶囊、分组带、工具条。
+ * 区块外壳（模式条 / 工具条 / 横幅 / 右侧机理卡 / 图例）沿用 public/styles.css
+ * 里既有的 .mg-* 类，不在这里重复定义 —— 两份样式表各管一层，改起来不会打架。
+ *
+ * 配色全部走 :root 变量，语义固定：
+ *   正向 #f5455c（--up）· 负向 #5b9cf8 · 背离 #f59e0b
+ * 注意：红绿是 A 股习惯（涨红跌绿），不要按欧美惯例反过来。
+ * ================================================================== */
+
+/* ---------- 画布容器 ---------- */
+.mg-x6 {
+  position: relative;
+  height: 700px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(760px 420px at 22% -6%, rgba(64, 110, 190, 0.1), transparent 62%),
+    radial-gradient(680px 380px at 88% 108%, rgba(190, 96, 64, 0.075), transparent 60%),
+    rgba(6, 9, 13, 0.62);
+  overflow: hidden;
+  contain: paint;
+}
+
+.mg-x6-graph {
+  position: absolute;
+  inset: 0;
+}
+
+/* X6 的 foreignObject 里那层包装 div 没有任何尺寸约束，子元素写 height:100% 会
+   落到「百分比高度参照 auto」那条规则上，实测把卡片撑到 1013px 高、端口全飞出去。
+   先把包装层钉死成 100%，卡片再写 100% 才有意义。 */
+.mg-x6 foreignObject > body,
+.mg-x6 foreignObject > div,
+.mg-x6 foreignObject > body > div {
+  margin: 0;
+  padding: 0;
+  background: none;
+}
+
+.mg-x6 .x6-graph {
+  background: transparent;
+}
+
+.mg-x6-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--muted-2);
+  font-size: 12px;
+  letter-spacing: 0.4px;
+}
+
+/* 画布内的 <g> 不要抢焦点环，卡片自己有 */
+.mg-x6 .x6-node {
+  overflow: visible;
+}
+.mg-x6 .x6-node:focus,
+.mg-x6 .x6-node:focus-visible {
+  outline: none;
+}
+
+/* ---------- 行情卡片（真 HTML） ---------- */
+.mgx-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 8px 11px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.085);
+  /* 底色要够实：卡片盖在分组带的虚线边框上，之前 0.9 透明度 + 9px 模糊会把
+     背后的虚线糊成一片「卡片自带虚线框」的错觉。 */
+  /* 不透明底：卡片会盖在分组带虚线框上，一旦半透明 + backdrop-filter，
+     背后的虚线会被糊进卡面，看起来像卡片自带一圈虚线，很难看。 */
+  background: linear-gradient(180deg, #111823 0%, #0b1119 100%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 10px 24px -14px rgba(0, 0, 0, 0.9);
+  cursor: grab;
+  user-select: none;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease, transform 0.16s ease;
+  font-family: inherit;
+  overflow: hidden;
+}
+
+.mgx-card:active {
+  cursor: grabbing;
+}
+
+/* 生态位色带：只染左边一条细边，整卡不上色，避免 10 张卡变成调色盘 */
+.mgx-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 12%;
+  bottom: 12%;
+  width: 2px;
+  border-radius: 2px;
+  opacity: 0.75;
+}
+.mgx-card.zone-anchor::before { background: #9c8bd8; }
+.mgx-card.zone-commodity::before { background: #d8a25c; }
+.mgx-card.zone-hedge::before { background: #6fb4d8; }
+.mgx-card.zone-risk::before { background: #8b97a8; }
+
+.mgx-card.zone-anchor { border-color: rgba(156, 139, 216, 0.26); }
+.mgx-card.zone-commodity { border-color: rgba(216, 162, 92, 0.26); }
+.mgx-card.zone-hedge { border-color: rgba(111, 180, 216, 0.26); }
+
+.mgx-card.is-focus,
+.mgx-card.is-pair {
+  border-color: rgba(245, 158, 11, 0.62);
+  box-shadow:
+    0 0 0 1px rgba(245, 158, 11, 0.24),
+    0 10px 26px -12px rgba(245, 158, 11, 0.32);
+}
+.mgx-card.is-hot,
+.mgx-card.is-spot {
+  border-color: rgba(232, 237, 245, 0.5);
+  transform: translateY(-1px);
+  box-shadow:
+    0 0 0 1px rgba(232, 237, 245, 0.16),
+    0 14px 30px -14px rgba(0, 0, 0, 0.95);
+}
+.mgx-card.is-dim {
+  opacity: 0.24;
+}
+.mg-x6.mgx-spot .mgx-card.is-dim {
+  opacity: 0.16;
+}
+
+/* 头部：简称 + 生态位/状态徽章 */
+.mgx-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+}
+.mgx-name {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mgx-zone {
+  flex: none;
+  font-size: 9px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 999px;
+  color: var(--muted-2);
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  white-space: nowrap;
+}
+
+.mgx-chip {
+  flex: none;
+  font-size: 9px;
+  line-height: 1;
+  padding: 2.5px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+.mgx-chip.pos { color: #ff9fad; background: #241015; border-color: rgba(245, 69, 92, 0.6); }
+.mgx-chip.src { color: #ffb3bd; background: #2a1116; border-color: rgba(245, 69, 92, 0.85); }
+.mgx-chip.cold { color: #a9c8ff; background: #0e1726; border-color: rgba(91, 156, 248, 0.6); }
+.mgx-chip.mix {
+  color: #f8c063;
+  background: #241a06;
+  border-color: rgba(245, 158, 11, 0.85);
+  animation: mgx-chip-breathe 2.1s ease-in-out infinite;
+}
+@keyframes mgx-chip-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+  50% { box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.16); }
+}
+
+/* 价格行 */
+.mgx-mid {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.mgx-price {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.mgx-price.up { color: var(--up); }
+.mgx-price.down { color: var(--down); }
+
+.mgx-chg {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  color: var(--flat);
+  white-space: nowrap;
+}
+.mgx-chg.up { color: var(--up); }
+.mgx-chg.down { color: var(--down); }
+
+/* 同源子标的行（布伦特 / 沪金 / VXN） */
+.mgx-sub {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  padding-top: 3px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.07);
+  font-size: 9.5px;
+  color: var(--muted-2);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.mgx-sub span {
+  flex: none;
+}
+.mgx-sub b {
+  font-family: var(--mono);
+  font-weight: 500;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.mgx-sub i {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+.mgx-sub i.up { color: rgba(245, 69, 92, 0.85); }
+.mgx-sub i.down { color: rgba(14, 203, 129, 0.85); }
+
+/* 导图中心卡放大一档 */
+.mgx-card--lg {
+  padding: 10px 13px;
+  border-width: 1.5px;
+}
+.mgx-card--lg .mgx-name { font-size: 13.5px; }
+.mgx-card--lg .mgx-price { font-size: 17px; }
+.mgx-card--lg .mgx-chg { font-size: 11px; }
+
+/* 分组带标签 */
+.mgx-bandlabel {
+  display: flex;
+  align-items: center;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: 0.7px;
+  white-space: nowrap;
+  color: var(--muted-2);
+  background: rgba(8, 11, 16, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.mgx-bandlabel.anchor { color: #9c8bd8; border-color: rgba(156, 139, 216, 0.25); }
+.mgx-bandlabel.commodity { color: #d8a25c; border-color: rgba(216, 162, 92, 0.25); }
+.mgx-bandlabel.hedge { color: #6fb4d8; border-color: rgba(111, 180, 216, 0.25); }
+.mgx-bandlabel.risk { color: var(--muted); }
+
+/* 孤岛提示（VXN 这类没有登记任何边的焦点） */
+.mgx-orphan {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px 13px;
+  border-radius: 12px;
+  border: 1px dashed rgba(245, 158, 11, 0.5);
+  background: rgba(36, 26, 6, 0.62);
+  font-size: 10px;
+  line-height: 1.5;
+  color: #f8c063;
+}
+.mgx-orphan b {
+  font-size: 11px;
+}
+
+/* ---------- 连接桩 ---------- */
+.mg-x6 .x6-port-body {
+  transition: r 0.12s ease, stroke 0.12s ease;
+}
+.mg-x6 .x6-node:hover .x6-port-body {
+  stroke: rgba(232, 237, 245, 0.75);
+}
+
+/* ---------- 边 ---------- */
+.mg-x6 .x6-edge {
+  transition: opacity 0.16s ease;
+}
+
+/* 流光：给叠加边上的虚线跑 offset，方向 = 因果方向。
+   叠加边的 cell id 统一是 flow-E01 这种，X6 会把 id 写到 data-cell-id 上。 */
+.mg-x6 .x6-edge[data-cell-id^='flow-'] path {
+  animation: mgx-flow 1.6s linear infinite;
+}
+@keyframes mgx-flow {
+  to {
+    stroke-dashoffset: -34;
+  }
+}
+
+/* X6 默认给边加了 hover 加粗，和我们的 tone 体系冲突，关掉 */
+.mg-x6 .x6-edge:hover path:nth-child(2),
+.mg-x6 .x6-edge.edge-hover path:nth-child(2) {
+  stroke-width: inherit;
+}
+
+/* ---------- 左下角工具条 ---------- */
+.mgx-tools {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px;
+  border-radius: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(9, 13, 19, 0.88);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 10px 26px -16px rgba(0, 0, 0, 0.95);
+}
+
+.mgx-tbtn {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  border-radius: 8px;
+  height: 24px;
+  min-width: 24px;
+  padding: 0 7px;
+  font-size: 11px;
+  font-family: inherit;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.14s ease, border-color 0.14s ease, background 0.14s ease;
+}
+.mgx-tbtn.wide {
+  padding: 0 9px;
+  white-space: nowrap;
+}
+.mgx-tbtn:hover {
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.07);
+}
+.mgx-tbtn:active {
+  transform: translateY(0.5px);
+}
+
+.mgx-zoom {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted-2);
+  padding: 0 4px 0 2px;
+  font-variant-numeric: tabular-nums;
+  min-width: 34px;
+  text-align: right;
+}
+
+/* ---------- 窄屏 ---------- */
+@media (max-width: 1100px) {
+  .mg-x6 {
+    height: 560px;
+  }
+}
+@media (max-width: 760px) {
+  .mg-x6 {
+    height: 460px;
+  }
+  .mgx-tools .mgx-tbtn.wide {
+    display: none;
+  }
+}
+
+/* 尊重「减少动效」偏好 */
+@media (prefers-reduced-motion: reduce) {
+  .mg-x6 .x6-edge path {
+    animation: none !important;
+  }
+  .mgx-chip.mix {
+    animation: none;
+  }
+  .mgx-card {
+    transition: none;
+  }
+}
+
+/* ---------- 机理胶囊（HTML 节点，不是 X6 edge label） ---------- */
+.mgx-pill-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.mgx-pill {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-size: 9.5px;
+  line-height: 1;
+  letter-spacing: 0.1px;
+  white-space: nowrap;
+  background: #0b1017;
+  border: 1px solid;
+  pointer-events: auto;
+  cursor: pointer;
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+/* 注意 specificity：legacy 的 .macro-graph-section .neg 也是 (0,2,0)，
+   两边同为两个 class 时只能靠「谁在后面」决胜 —— 现在赢是因为本文件由 JS
+   注入到 <head> 末尾。一旦哪天把这份样式改成 <link> 前置，胶囊颜色会静默
+   翻成 var(--mg-neg)。所以这里统一加 .mg-x6 作用域抬到 (0,3,0)，把胜负写死。 */
+.mg-x6 .mgx-pill.pos { color: #ff8d9c; border-color: rgba(245, 69, 92, 0.5); }
+.mg-x6 .mgx-pill.neg { color: #8fbcf7; border-color: rgba(91, 156, 248, 0.5); }
+.mg-x6 .mgx-pill.div {
+  color: #f8c063;
+  border-color: rgba(245, 158, 11, 0.7);
+  border-style: dashed;
+}
+.mgx-pill.is-hot {
+  background: #121a24;
+  border-width: 1.4px;
+}
+.mgx-pill.pos.is-hot { border-color: rgba(245, 69, 92, 0.95); }
+.mgx-pill.neg.is-hot { border-color: rgba(91, 156, 248, 0.95); }
+.mgx-pill.div.is-hot { border-color: rgba(245, 158, 11, 1); }
+.mgx-pill:hover {
+  background: #16202c;
+}

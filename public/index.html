@@ -9,19 +9,32 @@
     rel="icon"
     href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230b1017'/%3E%3Cpath d='M6 22l6-7 5 4 9-11' stroke='%23f5455c' stroke-width='2.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"
   />
-  <link rel="stylesheet" href="./styles.css" />
+  <!-- 样式按主题拆成 11 个文件，加载顺序 = 原 styles.css 的从上到下顺序（级联结果不变）。
+       顺序有强约束：tokens 必须最先；responsive / wide-screen 必须在 ticker-list 之后（同优先级覆盖列表布局）。 -->
+  <link rel="stylesheet" href="./styles/tokens.css" />
+  <link rel="stylesheet" href="./styles/base.css" />
+  <link rel="stylesheet" href="./styles/ticker-list.css" />
+  <link rel="stylesheet" href="./styles/responsive.css" />
+  <link rel="stylesheet" href="./styles/detail.css" />
+  <link rel="stylesheet" href="./styles/macro-matrix.css" />
+  <link rel="stylesheet" href="./styles/events.css" />
+  <link rel="stylesheet" href="./styles/worldmap.css" />
+  <link rel="stylesheet" href="./styles/wide-screen.css" />
+  <link rel="stylesheet" href="./styles/recap.css" />
+  <link rel="stylesheet" href="./styles/macro-graph.css" />
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
       <span class="pulse" aria-hidden="true"></span>
       <h1>市场看板</h1>
-      <span class="tag">7 个标的 · 纵向单列</span>
+      <span class="tag">23 标的 · 跨资产宏观终端</span>
     </div>
     <div class="status">
       <a class="nav-link" href="#/map">全球地图</a>
       <a class="nav-link" href="#/events">事件中心</a>
       <a class="nav-link" href="#/macro">关联分析</a>
+      <button id="briefing-btn" type="button" class="nav-link btn-link" title="A股收盘后，隔夜各资产走了多少">隔夜复盘</button>
       <span id="updated" class="updated">连接中…</span>
       <span id="countdown" class="muted"></span>
       <button id="refresh" type="button" title="立即刷新（快捷键 R）">刷新</button>

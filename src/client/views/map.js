@@ -1,0 +1,792 @@
+/* ================================================================== *
+ * map.js —— #/map：晨昏线世界地图、城市节点、影响弧线、气泡与节点详情卡。
+ *
+ * 来源：public/app.js（原 3655 行单体）L2754-3500，整段搬运，逻辑未改写。
+ * ================================================================== */
+
+/* ================================================================== *
+ * 全球市场地图 v2
+ * 全屏 / 缩放平移 / 各地指数直接标注 / 新事件气泡 / 右侧滚动事件流
+ * ================================================================== */
+import { WORLD_COUNTRIES, MAP_SIZE } from '/worldmap.js';
+import { mapEl } from '../shared/dom.js';
+import { dirOf, esc, fmtPrice } from '../shared/format.js';
+import { store } from '../shared/store.js';
+import { on } from '../shared/bus.js';
+import { loadCalendarCached } from '../shared/calendar.js';
+
+
+// 交易所坐标：同城多标的聚合到一个节点，纵向堆叠显示
+// dx/dy 是标签相对城市点的偏移 —— 欧洲三国、北美三城在地图上只隔十几像素，
+// 不手动错开标签会叠成一团
+export const MAP_CITIES = [
+  { key: 'ny', name: '纽约', lon: -74.0, lat: 40.7, ids: ['sp500', 'ndx100', 'dji', 'vix', 'vxn'], side: 'right', dx: 16, dy: -46 },
+  { key: 'tor', name: '多伦多', lon: -79.4, lat: 43.7, ids: ['tsx'], side: 'left', dx: -18, dy: -16 },
+  { key: 'chi', name: '芝加哥', lon: -87.6, lat: 41.9, ids: ['oil'], side: 'left', dx: -18, dy: 28 },
+  { key: 'sh', name: '上海', lon: 121.5, lat: 31.2, ids: ['sh000001', 'gold-cn'], side: 'left', dx: -14, dy: 16 },
+  { key: 'hkg', name: '香港', lon: 114.2, lat: 22.3, ids: ['hsi'], side: 'left', dx: -12, dy: 34 },
+  { key: 'ldn', name: '伦敦', lon: -0.1, lat: 51.5, ids: ['gold-intl', 'ftse'], side: 'left', dx: -14, dy: -28 },
+  { key: 'par', name: '巴黎', lon: 2.3, lat: 48.9, ids: ['cac'], side: 'left', dx: -16, dy: 20 },
+  { key: 'fra', name: '法兰克福', lon: 8.7, lat: 50.1, ids: ['dax'], side: 'right', dx: 16, dy: -10 },
+  { key: 'tyo', name: '东京', lon: 139.7, lat: 35.7, ids: ['n225'], side: 'left', dx: -16, dy: -10 },
+  { key: 'sel', name: '首尔', lon: 127.0, lat: 37.6, ids: ['kospi'], side: 'left', dx: -14, dy: 26 },
+  { key: 'tpe', name: '台北', lon: 121.6, lat: 25.0, ids: ['twii'], side: 'left', dx: -12, dy: 18 },
+  { key: 'sao', name: '圣保罗', lon: -46.6, lat: -23.5, ids: ['bvsp'], side: 'right', dx: 14, dy: 2 },
+  { key: 'bom', name: '孟买', lon: 72.9, lat: 19.1, ids: ['nifty'], side: 'right', dx: 14, dy: 48 },
+  { key: 'syd', name: '悉尼', lon: 151.2, lat: -33.9, ids: ['asx'], side: 'left', dx: -14, dy: 6 },
+];
+
+// 指数简称（地图标签用）
+export const MAP_TAG = {
+  sp500: '标普', ndx100: '纳指', dji: '道指', vix: 'VIX', vxn: 'VXN',
+  sh000001: '上证', 'gold-cn': '沪金', 'gold-intl': '黄金', ftse: '富时',
+  oil: 'WTI', n225: '日经', hsi: '恒生', dax: 'DAX', cac: 'CAC',
+  bvsp: '巴西', nifty: '印度', kospi: '韩国', asx: '澳洲', tsx: '加拿大',
+  twii: '台湾', btc: 'BTC',
+};
+
+export const REGION_ANCHORS = {
+  us: { lon: -98, lat: 39, label: '北美' },
+  cn: { lon: 105, lat: 34, label: '中国' },
+  eu: { lon: 10, lat: 50, label: '欧元区' },
+  uk: { lon: -3, lat: 55, label: '英国' },
+  jp: { lon: 138, lat: 36.5, label: '日本' },
+  me: { lon: 45, lat: 29, label: '中东' },
+  asia: { lon: 106, lat: 14, label: '东南亚' },
+  latam: { lon: -60, lat: -15, label: '拉美' },
+  africa: { lon: 20, lat: 5, label: '非洲' },
+  global: { lon: -30, lat: 62, label: '全球' },
+};
+
+// 视图状态：缩放 + 平移
+// 初始左移 200px：右侧事件面板会盖住亚洲，先把地图推过去，东京/上海/香港才露得出来
+export let mapView = { k: 1, tx: -200, ty: 0 };
+export let mapTimer = null;
+export let mapBubbles = []; // 当前显示的气泡
+export let mapSeenIds = null; // 上一轮事件 id，用于判断「新事件」
+export let mapDrag = null;
+
+export function mapProject(lon, lat) {
+  return [
+    ((lon + 180) / 360) * MAP_SIZE.width,
+    ((MAP_SIZE.latMax - lat) / (MAP_SIZE.latMax - MAP_SIZE.latMin)) * MAP_SIZE.height,
+  ];
+}
+
+/* ---------- 天文：晨昏线 ---------- */
+
+/** 太阳直射点（赤纬 + 经度）。低精度公式，误差 < 0.01°，够画昼夜分界 */
+export function sunPosition(now) {
+  const jd = now.getTime() / 86400000 + 2440587.5;
+  const n = jd - 2451545.0;
+  const L = (280.46 + 0.9856474 * n) % 360;
+  const g = (((357.528 + 0.9856003 * n) % 360) * Math.PI) / 180;
+  const lambda = ((L + 1.915 * Math.sin(g) + 0.02 * Math.sin(2 * g)) * Math.PI) / 180;
+  const eps = ((23.439 - 0.0000004 * n) * Math.PI) / 180;
+  const decl = Math.asin(Math.sin(eps) * Math.sin(lambda));
+  const ra = Math.atan2(Math.cos(eps) * Math.sin(lambda), Math.cos(lambda));
+  const gmst = (18.697374558 + 24.06570982441908 * n) % 24;
+  let lon = (ra * 180) / Math.PI - gmst * 15;
+  lon = ((lon + 540) % 360) - 180;
+  return { decl: (decl * 180) / Math.PI, lon };
+}
+
+/**
+ * 晨昏线路径
+ * 对每个纬度解 cos(天顶角)=0：cosH = -tan(lat)·tan(decl)，得到昼夜分界的经度。
+ * |cosH|>1 表示极昼/极夜，整条纬线都在同一侧。
+ */
+/** 经纬网格（每 30° / 20°），密度感全靠它 */
+export function graticulePaths() {
+  const segs = [];
+  for (let lon = -180; lon <= 180; lon += 30) {
+    const [x1, y1] = mapProject(lon, MAP_SIZE.latMax);
+    const [x2, y2] = mapProject(lon, MAP_SIZE.latMin);
+    segs.push(`M${x1.toFixed(1)},${y1.toFixed(1)}L${x2.toFixed(1)},${y2.toFixed(1)}`);
+  }
+  for (let lat = -40; lat <= 80; lat += 20) {
+    const [x1, y1] = mapProject(-180, lat);
+    const [x2, y2] = mapProject(180, lat);
+    segs.push(`M${x1.toFixed(1)},${y1.toFixed(1)}L${x2.toFixed(1)},${y2.toFixed(1)}`);
+  }
+  return segs.map((d) => `<path d="${d}" />`).join('');
+}
+
+export function terminatorPath(sun) {
+  const d = Math.PI / 180;
+
+  // 晨昏圈在地图上表现为一对对称弧（+H 与 −H 两支），只画一支会看着像被切了一半
+  const build = (sign) => {
+    const segs = [];
+    let cur = [];
+    let prevX = null;
+
+    for (let lat = -88; lat <= 88; lat += 1.5) {
+      const cosH = -Math.tan(lat * d) * Math.tan(sun.decl * d);
+      let lon;
+      if (cosH >= 1) lon = sun.lon;             // 极夜
+      else if (cosH <= -1) lon = sun.lon + 180; // 极昼
+      else lon = sun.lon + (sign * Math.acos(cosH)) / d;
+
+      const [x, y] = mapProject(lon, lat);
+      // 跨日界线断开，避免横穿整图
+      if (prevX !== null && Math.abs(x - prevX) > MAP_SIZE.width / 2) {
+        if (cur.length > 1) segs.push(cur);
+        cur = [];
+      }
+      cur.push([x, y]);
+      prevX = x;
+    }
+    if (cur.length > 1) segs.push(cur);
+
+    return segs
+      .map((sg) => `M${sg.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join('L')}`)
+      .join('');
+  };
+
+  return build(1) + build(-1);
+}
+
+/* ---------- 事件影响弧线 ---------- */
+
+/** 区域 → 受影响的交易中心（仅供参考，真正的连线走下面的标的口径） */
+export const REGION_IMPACT = {
+  us: ['ny'],
+  cn: ['sh', 'hkg'],
+  eu: ['fra', 'ldn'],
+  uk: ['ldn'],
+  jp: ['tyo'],
+  me: ['ldn', 'bom'],
+  asia: ['hkg', 'syd'],
+  latam: ['sao'],
+  africa: ['ldn'],
+  global: ['ny', 'ldn', 'sh'],
+};
+
+/**
+ * 标的 → 定价中心城市。
+ * 每条事件后端 classify 已经给出 symbols（如 ['oil','gold-intl','vix']），
+ * 按定价所在交易所连线比按「事件发生在哪个区域」硬编码准确得多：
+ * 中东地缘冲突该打到芝加哥（WTI）和伦敦（Brent），而不是凭空连孟买。
+ */
+export const SYMBOL_CITY = {
+  // 美债与美元：定价在纽约
+  us10y: ['ny'],
+  dxy: ['ny', 'ldn'],
+  usdcny: ['sh', 'hkg'],
+  // 美股与波动率：纽约 / 芝加哥 CBOE
+  sp500: ['ny'],
+  ndx100: ['ny'],
+  dji: ['ny'],
+  vix: ['chi', 'ny'],
+  // 商品：WTI 在芝加哥，Brent 与伦敦金在伦敦，沪金在上金所，铜在 LME
+  oil: ['chi', 'ldn'],
+  brent: ['ldn'],
+  copper: ['ldn', 'chi'],
+  'gold-intl': ['ldn', 'ny'],
+  'gold-cn': ['sh'],
+  // 加密：现货无实体中心，取 CME 期货所在的纽约
+  btc: ['ny'],
+  // A 股与亚太
+  sh000001: ['sh', 'hkg'],
+  hsi: ['hkg'],
+  n225: ['tyo'],
+  kospi: ['sel'],
+  twii: ['tpe'],
+  asx: ['syd'],
+  nifty: ['bom'],
+  // 欧洲
+  dax: ['fra'],
+  cac: ['par'],
+  ftse: ['ldn'],
+  // 美洲
+  tsx: ['tor'],
+  bvsp: ['sao'],
+};
+
+/** 由事件的 symbols 推出该连线到哪些定价中心；拿不到才退回区域兜底 */
+export function targetCitiesFor(ev) {
+  const keys = new Set();
+  for (const sym of ev.symbols ?? []) {
+    for (const city of SYMBOL_CITY[sym] ?? []) keys.add(city);
+  }
+  const list = [...keys];
+  if (list.length) return list.slice(0, 5);
+  return REGION_IMPACT[ev.region] ?? [];
+}
+
+/** 两点之间的拱形贝塞尔 */
+export function arcBetween([x1, y1], [x2, y2]) {
+  const mx = (x1 + x2) / 2;
+  const my = (y1 + y2) / 2;
+  const dist = Math.hypot(x2 - x1, y2 - y1);
+  const lift = Math.min(90, dist * 0.32);
+  return `M${x1.toFixed(1)},${y1.toFixed(1)} Q${mx.toFixed(1)},${(my - lift).toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`;
+}
+
+export function impactArcs(items) {
+  const cityById = new Map(MAP_CITIES.map((c) => [c.key, c]));
+  let svg = '';
+  // 只给最新 3 条高影响事件画弧，否则满屏都是线
+  const hot = items.filter((e) => e.level === 'high').slice(0, 3);
+
+  hot.forEach((ev, idx) => {
+    const anchor = REGION_ANCHORS[ev.region];
+    if (!anchor) return;
+    const from = mapProject(anchor.lon, anchor.lat);
+    const targets = targetCitiesFor(ev)
+      .map((k) => cityById.get(k))
+      .filter(Boolean)
+      // 连到事件自身所在的交易中心没有意义（零长度弧）
+      .filter((c) => Math.hypot(c.lon - anchor.lon, c.lat - anchor.lat) > 4);
+
+    targets.forEach((city, ti) => {
+      const to = mapProject(city.lon, city.lat);
+      const d = arcBetween(from, to);
+      const delay = (idx * 0.35 + ti * 0.2).toFixed(2);
+      svg += `<path class="impact-arc" d="${d}" style="animation-delay:${delay}s" />`;
+    });
+  });
+
+  return svg;
+}
+
+/* ---------- 平滑视图动画 ---------- */
+
+export let mapAnim = null;
+
+/** ease-out cubic：起手快、收尾稳，比线性自然得多 */
+export function animateMapView(target, dur = 420) {
+  if (mapAnim) cancelAnimationFrame(mapAnim);
+  const from = { ...mapView };
+  const t0 = performance.now();
+
+  const step = (t) => {
+    const p = Math.min(1, (t - t0) / Math.max(1, dur));
+    const e = 1 - (1 - p) ** 3;
+    mapView.k = from.k + (target.k - from.k) * e;
+    mapView.tx = from.tx + (target.tx - from.tx) * e;
+    mapView.ty = from.ty + (target.ty - from.ty) * e;
+    clampMapView();
+    applyMapView();
+    if (p < 1) mapAnim = requestAnimationFrame(step);
+    else mapAnim = null;
+  };
+  mapAnim = requestAnimationFrame(step);
+}
+
+/* ---------- LOD：同城标的按缩放级别展开 ---------- */
+
+/** 低缩放时每个城市只留前两个标的，放大后全展开；否则纽约 5 行永远挤成一坨 */
+export function tagLimitFor(k) {
+  if (k >= 2.2) return 99;
+  if (k >= 1.5) return 4;
+  return 2;
+}
+
+export function freshnessOf(isoTime) {
+  if (!isoTime) return 0;
+  const t = new Date(`${isoTime.replace(' ', 'T')}+08:00`).getTime();
+  if (!Number.isFinite(t)) return 0;
+  const age = (Date.now() - t) / 60000;
+  if (age < 5) return 1;
+  if (age < 30) return 0.72;
+  if (age < 120) return 0.42;
+  return 0.18;
+}
+
+/** 把当前缩放/平移应用到 viewport */
+// 上一次渲染用的 LOD 档位，缩放跨档时才需要重建标签
+export let renderedTagLimit = null;
+export let lodTimer = null;
+
+export function applyMapView() {
+  const vp = document.getElementById('map-viewport');
+  if (!vp) return;
+  vp.setAttribute('transform', `translate(${mapView.tx.toFixed(2)},${mapView.ty.toFixed(2)}) scale(${mapView.k.toFixed(3)})`);
+  const label = document.getElementById('zoom-label');
+  if (label) label.textContent = `${mapView.k.toFixed(1)}×`;
+
+  // 缩放跨越 LOD 阈值时重建标签；等动画停下再重建，否则每帧重绘会卡
+  clearTimeout(lodTimer);
+  lodTimer = setTimeout(() => {
+    if (renderedTagLimit !== null && tagLimitFor(mapView.k) !== renderedTagLimit) renderMap();
+  }, 240);
+}
+
+/** 以某点为中心缩放（屏幕坐标 → svg 坐标） */
+export function zoomAt(clientX, clientY, factor, dur = 240) {
+  const svg = document.querySelector('.world-svg');
+  if (!svg) return;
+  const rect = svg.getBoundingClientRect();
+  const sx = ((clientX - rect.left) / rect.width) * MAP_SIZE.width;
+  const sy = ((clientY - rect.top) / rect.height) * MAP_SIZE.height;
+  const k2 = Math.min(8, Math.max(1, mapView.k * factor));
+  const scale = k2 / mapView.k;
+  animateMapView(
+    {
+      k: k2,
+      tx: sx - scale * (sx - mapView.tx),
+      ty: sy - scale * (sy - mapView.ty),
+    },
+    dur,
+  );
+}
+
+// 允许额外左移 260px（面板宽度量级），否则 k=1 时 tx 只能是 0，亚洲永远压在面板下
+export const MAP_PANEL_GUTTER = 260;
+
+export function clampMapView() {
+  const overX = MAP_SIZE.width * (mapView.k - 1) + MAP_PANEL_GUTTER;
+  const overY = MAP_SIZE.height * (mapView.k - 1);
+  mapView.tx = Math.min(0, Math.max(-overX, mapView.tx));
+  mapView.ty = Math.min(0, Math.max(-overY, mapView.ty));
+}
+
+export function resetMapView() {
+  closeNodeCard();
+  animateMapView({ k: 1, tx: -200, ty: 0 }, 460);
+}
+
+/** 事件气泡：按 region 定位，超出视口就钳制进来 */
+export function spawnBubble(ev) {
+  const anchor = REGION_ANCHORS[ev.region] ?? REGION_ANCHORS.global;
+  const [x, y] = mapProject(anchor.lon, anchor.lat);
+  const layer = document.getElementById('map-bubbles');
+  if (!layer) return;
+
+  // svg 坐标 → 屏幕坐标
+  const svg = document.querySelector('.world-svg');
+  const rect = svg.getBoundingClientRect();
+  const px = rect.left + ((x * mapView.k + mapView.tx) / MAP_SIZE.width) * rect.width;
+  const py = rect.top + ((y * mapView.k + mapView.ty) / MAP_SIZE.height) * rect.height;
+
+  const host = layer.getBoundingClientRect();
+  let left = px - host.left - 150;
+  let top = py - host.top - 76;
+  left = Math.max(12, Math.min(host.width - 320, left));
+  top = Math.max(12, Math.min(host.height - 90, top));
+
+  const el = document.createElement('div');
+  el.className = `map-bubble lv-${ev.level}`;
+  el.style.left = `${left}px`;
+  el.style.top = `${top}px`;
+  el.innerHTML = `
+    <div class="bb-head"><span class="bb-region">${esc(anchor.label)}</span><span class="bb-time">${esc(ev.time.slice(11, 16))}</span></div>
+    <div class="bb-title">${esc(ev.title.slice(0, 60))}</div>
+  `;
+  el.addEventListener('click', () => { location.hash = '#/events'; });
+  layer.appendChild(el);
+
+  mapBubbles.push(el);
+  // 最多同时 3 个，超出移除最旧
+  while (mapBubbles.length > 3) {
+    const old = mapBubbles.shift();
+    old.classList.add('out');
+    setTimeout(() => old.remove(), 400);
+  }
+  setTimeout(() => {
+    el.classList.add('out');
+    setTimeout(() => el.remove(), 400);
+    mapBubbles = mapBubbles.filter((b) => b !== el);
+  }, 6000);
+}
+
+export function renderMap() {
+  // 正在显示的气泡要在重建后接回来，否则每 30 秒轮询会打断它
+  const bubbleLayer = document.getElementById('map-bubbles');
+  const liveBubbles = bubbleLayer ? [...bubbleLayer.children] : [];
+
+  const quotes = store.quotes ?? [];
+  const items = store.events?.data?.items ?? [];
+  const quoteOf = (id) => quotes.find((q) => q.id === id);
+
+  // ---- 城市节点（按缩放级别决定展开多少个标的）----
+  const limit = tagLimitFor(mapView.k);
+  renderedTagLimit = limit;
+  let citySvg = '';
+  for (const city of MAP_CITIES) {
+    const [x, y] = mapProject(city.lon, city.lat);
+    const all = city.ids.map(quoteOf).filter((q) => q && q.ok);
+    if (!all.length) continue;
+
+    const members = all.slice(0, limit);
+    const hidden = all.length - members.length;
+    const lead = members[0];
+
+    // 交易中的市场光环亮，已收盘的压暗 —— 配合晨昏线读「谁在开着」
+    const openNow = Boolean(lead.marketStatus?.open);
+    const ldir = dirOf(lead.changePct);
+    const color = ldir === 'up' ? '#f5455c' : ldir === 'down' ? '#0ecb81' : '#7e8899';
+
+    const lineH = 15;
+    const isRight = city.side !== 'left';
+    const anchorX = isRight ? 9 : -9;
+    const textAnchor = isRight ? 'start' : 'end';
+
+    let rows = members
+      .map((m, i) => {
+        const d = dirOf(m.changePct);
+        const c = d === 'up' ? '#f5455c' : d === 'down' ? '#0ecb81' : '#7e8899';
+        const pct = m.changePct == null ? '—' : `${m.changePct >= 0 ? '+' : ''}${m.changePct.toFixed(2)}%`;
+        const yy = i * lineH;
+        return `<text class="tag-name" x="${anchorX}" y="${yy}" text-anchor="${textAnchor}">${esc(MAP_TAG[m.id] ?? m.name)}</text>
+          <text class="tag-pct" x="${anchorX + (isRight ? 1 : -1) * 46}" y="${yy}" text-anchor="${textAnchor}" fill="${c}">${pct}</text>`;
+      })
+      .join('');
+    // 折叠提示：还有 N 个标的没展开
+    if (hidden > 0) {
+      rows += `<text class="tag-more" x="${anchorX}" y="${members.length * lineH}" text-anchor="${textAnchor}">+${hidden} 放大可见</text>`;
+    }
+
+    const dx = city.dx ?? 12;
+    const dy = city.dy ?? 0;
+    const rowsShift = (-(members.length - 1) * lineH) / 2;
+    citySvg += `<g class="map-city${openNow ? ' is-open' : ' is-closed'}" transform="translate(${x.toFixed(1)},${y.toFixed(1)})"
+        data-city="${esc(city.key)}" data-open="${openNow ? 1 : 0}">
+      <circle class="city-halo" r="8" fill="${color}" />
+      <circle class="city-dot" r="2.8" fill="${color}" />
+      <line class="city-link" x1="0" y1="0" x2="${dx}" y2="${(dy + rowsShift).toFixed(1)}" />
+      <g transform="translate(${dx},${(dy + rowsShift).toFixed(1)})">${rows}</g>
+    </g>`;
+  }
+
+  // ---- 事件区域 ----
+  const byRegion = new Map();
+  for (const ev of items) {
+    const r = ev.region || 'global';
+    if (!byRegion.has(r)) byRegion.set(r, []);
+    byRegion.get(r).push(ev);
+  }
+  let regionSvg = '';
+  for (const [region, evs] of byRegion) {
+    const a = REGION_ANCHORS[region];
+    if (!a) continue;
+    const [x, y] = mapProject(a.lon, a.lat);
+    const high = evs.filter((e) => e.level === 'high').length;
+    const fresh = Math.max(...evs.slice(0, 5).map((e) => freshnessOf(e.time)));
+    const r = 2.5 + Math.min(7, evs.length * 0.9);
+    const color = high > 0 ? '#f5455c' : '#e0a83c';
+    regionSvg += `<g class="map-region${fresh > 0.7 ? ' hot' : ''}" transform="translate(${x.toFixed(1)},${y.toFixed(1)})">
+      <circle class="rg-pulse" r="${(r + 5).toFixed(1)}" fill="none" stroke="${color}" stroke-width="0.9" opacity="${(fresh * 0.55).toFixed(2)}" />
+      <circle class="rg-core" r="${r.toFixed(1)}" fill="${color}" opacity="${(0.2 + fresh * 0.6).toFixed(2)}" />
+      <title>${esc(a.label)} · ${evs.length} 条 · 最新 ${esc(evs[0]?.title?.slice(0, 40) ?? '')}</title>
+    </g>`;
+  }
+
+  // ---- BTC 卫星位 ----
+  const btc = quoteOf('btc');
+  let btcSvg = '';
+  if (btc?.ok) {
+    const d = dirOf(btc.changePct);
+    const c = d === 'up' ? '#f5455c' : d === 'down' ? '#0ecb81' : '#7e8899';
+    btcSvg = `<g class="map-sat" transform="translate(196,296)" data-goto="btc">
+      <circle class="sat-ring" r="15" fill="none" stroke="${c}" stroke-width="0.9" opacity="0.5" />
+      <circle r="5" fill="${c}" />
+      <text x="22" y="-2" class="tag-name">BTC</text>
+      <text x="22" y="9" class="tag-pct" fill="${c}">${fmtPrice(btc.price, 0)} ${btc.changePct >= 0 ? '+' : ''}${btc.changePct.toFixed(2)}%</text>
+    </g>`;
+  }
+
+  // ---- 右侧事件流 ----
+  const feedRows = items
+    .slice(0, 40)
+    .map((ev) => {
+      const a = REGION_ANCHORS[ev.region] ?? REGION_ANCHORS.global;
+      const hot = mapSeenIds && !mapSeenIds.has(ev.id) ? ' is-new' : '';
+      return `<div class="mf-item lv-${ev.level}${hot}" data-id="${esc(ev.id)}">
+        <span class="mf-meta"><i>${esc(ev.time.slice(11, 16))}</i>${esc(a.label)}</span>
+        <span class="mf-text">${esc(ev.title)}</span>
+      </div>`;
+    })
+    .join('');
+
+  mapEl.innerHTML = `
+    <div class="map-top">
+      <div class="map-title">
+        <h2>全球市场地图</h2>
+        <p>${quotes.length} 个标的 · ${items.length} 条实时事件 · 滚轮缩放 / 拖拽平移</p>
+      </div>
+      <div class="map-tools">
+        <button type="button" class="map-btn" id="map-zoom-out" title="缩小">−</button>
+        <span class="map-zoom" id="zoom-label">1.0×</span>
+        <button type="button" class="map-btn" id="map-zoom-in" title="放大">+</button>
+        <button type="button" class="map-btn" id="map-reset" title="复位">复位</button>
+        <button type="button" class="map-btn" id="map-full" title="全屏">⛶ 全屏</button>
+      </div>
+    </div>
+    <div class="map-body">
+      <div class="map-canvas" id="map-canvas">
+        <svg class="world-svg" viewBox="0 0 ${MAP_SIZE.width} ${MAP_SIZE.height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="全球市场地图">
+          <defs>
+            <radialGradient id="oceanGlow" cx="50%" cy="42%" r="62%">
+              <stop offset="0%" stop-color="#0d1a2c" />
+              <stop offset="58%" stop-color="#080d16" />
+              <stop offset="100%" stop-color="#05070b" />
+            </radialGradient>
+            <linearGradient id="terminatorStroke" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#4a7fd4" stop-opacity="0.15" />
+              <stop offset="45%" stop-color="#7fb4ff" stop-opacity="0.55" />
+              <stop offset="100%" stop-color="#4a7fd4" stop-opacity="0.15" />
+            </linearGradient>
+            <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="2.2" result="b" />
+              <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+            </filter>
+          </defs>
+          <rect class="map-ocean" width="${MAP_SIZE.width}" height="${MAP_SIZE.height}" fill="url(#oceanGlow)" />
+          <g id="map-viewport">
+            <g class="map-graticule">${graticulePaths()}</g>
+            <g class="world-land">${WORLD_COUNTRIES.map((c) => `<path d="${c.d}" />`).join('')}</g>
+            <path class="terminator" d="${terminatorPath(sunPosition(new Date()))}" fill="none" stroke="url(#terminatorStroke)" filter="url(#softGlow)" />
+            <g class="impact-layer">${impactArcs(items)}</g>
+            <g class="map-regions">${regionSvg}</g>
+            <g class="map-cities">${citySvg}</g>
+            ${btcSvg}
+          </g>
+        </svg>
+        <div class="map-bubbles" id="map-bubbles"></div>
+      </div>
+      <aside class="map-feed" id="map-feed">
+        <div class="mf-head">
+          <span>实时事件</span>
+          <em>${items.filter((i) => i.level === 'high').length} 条高影响</em>
+          <button type="button" class="mf-fold" id="mf-fold" title="收起面板">⟩</button>
+        </div>
+        <div class="mf-list">${feedRows}</div>
+      </aside>
+    </div>
+  `;
+
+  const layerNow = document.getElementById('map-bubbles');
+  if (layerNow && liveBubbles.length) {
+    liveBubbles.forEach((b) => layerNow.appendChild(b));
+  }
+
+  applyMapView();
+  bindMapEvents();
+}
+
+/* ---------- 节点详情卡（就地展开，不跳页） ---------- */
+
+export let nodeCardKey = null;
+
+export function closeNodeCard() {
+  document.getElementById('map-node-card')?.remove();
+  nodeCardKey = null;
+}
+
+export function openNodeCard(cityKey) {
+  const city = MAP_CITIES.find((c) => c.key === cityKey);
+  if (!city) return;
+  if (nodeCardKey === cityKey) {
+    closeNodeCard();
+    return;
+  }
+  closeNodeCard();
+  nodeCardKey = cityKey;
+
+  const quotes = store.quotes ?? [];
+  const members = city.ids.map((id) => quotes.find((q) => q.id === id)).filter((q) => q && q.ok);
+  if (!members.length) return;
+
+  const canvas = document.getElementById('map-canvas');
+  const svg = document.querySelector('.world-svg');
+  if (!canvas || !svg) return;
+
+  // 把城市坐标换算成屏幕位置
+  const [mx, my] = mapProject(city.lon, city.lat);
+  const rect = svg.getBoundingClientRect();
+  const hostRect = canvas.getBoundingClientRect();
+  let px = rect.left - hostRect.left + ((mx * mapView.k + mapView.tx) / MAP_SIZE.width) * rect.width;
+  let py = rect.top - hostRect.top + ((my * mapView.k + mapView.ty) / MAP_SIZE.height) * rect.height;
+
+  const W = 246;
+  const H = 74 + members.length * 30;
+  px = Math.max(10, Math.min(hostRect.width - W - 10, px - W / 2));
+  py = Math.max(10, Math.min(hostRect.height - H - 10, py + 22));
+
+  const openNow = Boolean(members[0].marketStatus?.open);
+  const rows = members
+    .map((m) => {
+      const d = dirOf(m.changePct);
+      const c = d === 'up' ? '#f5455c' : d === 'down' ? '#0ecb81' : '#8a8f99';
+      const pct = m.changePct == null ? '—' : `${m.changePct >= 0 ? '+' : ''}${m.changePct.toFixed(2)}%`;
+      const f = m.freshness?.label ?? '';
+      return `<div class="nc-row">
+        <span class="nc-name">${esc(MAP_TAG[m.id] ?? m.name)}</span>
+        <span class="nc-price">${fmtPrice(m.price, m.decimals ?? 2)}</span>
+        <span class="nc-pct" style="color:${c}">${pct}</span>
+        <span class="nc-fresh">${esc(f)}</span>
+      </div>`;
+    })
+    .join('');
+
+  const el = document.createElement('div');
+  el.className = 'map-node-card';
+  el.id = 'map-node-card';
+  el.style.left = `${px}px`;
+  el.style.top = `${py}px`;
+  el.innerHTML = `
+    <div class="nc-head">
+      <span class="nc-city">${esc(city.name)}</span>
+      <span class="nc-status ${openNow ? 'on' : 'off'}">${openNow ? '交易中' : '已收盘'}</span>
+    </div>
+    ${rows}
+    <div class="nc-foot">
+      <a href="#/d/${encodeURIComponent(members[0].id)}">打开详情 →</a>
+    </div>
+  `;
+  el.addEventListener('click', (e) => e.stopPropagation());
+  canvas.appendChild(el);
+}
+
+export function bindMapEvents() {
+  const svg = document.querySelector('.world-svg');
+  const canvas = document.getElementById('map-canvas');
+  if (!svg || !canvas) return;
+
+  // 滚轮缩放
+  svg.addEventListener(
+    'wheel',
+    (e) => {
+      e.preventDefault();
+      zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.18 : 1 / 1.18);
+    },
+    { passive: false },
+  );
+
+  // 拖拽平移
+  svg.addEventListener('pointerdown', (e) => {
+    mapDrag = { x: e.clientX, y: e.clientY, tx: mapView.tx, ty: mapView.ty, moved: false };
+    svg.setPointerCapture(e.pointerId);
+    canvas.classList.add('dragging');
+  });
+  svg.addEventListener('pointermove', (e) => {
+    if (!mapDrag) return;
+    const rect = svg.getBoundingClientRect();
+    const dx = ((e.clientX - mapDrag.x) / rect.width) * MAP_SIZE.width;
+    const dy = ((e.clientY - mapDrag.y) / rect.height) * MAP_SIZE.height;
+    if (Math.abs(e.clientX - mapDrag.x) + Math.abs(e.clientY - mapDrag.y) > 3) mapDrag.moved = true;
+    mapView.tx = mapDrag.tx + dx;
+    mapView.ty = mapDrag.ty + dy;
+    clampMapView();
+    applyMapView();
+  });
+  const endDrag = () => {
+    mapDrag = null;
+    canvas.classList.remove('dragging');
+  };
+  svg.addEventListener('pointerup', endDrag);
+  svg.addEventListener('pointercancel', endDrag);
+
+  // 点城市节点 → 就地浮出卡片（不跳页，保住心流）
+  svg.querySelectorAll('[data-city]').forEach((g) => {
+    g.addEventListener('click', (e) => {
+      if (mapDrag?.moved) return;
+      e.stopPropagation();
+      openNodeCard(g.dataset.city);
+    });
+  });
+
+  // 点空白处收起卡片
+  svg.addEventListener('click', () => closeNodeCard());
+
+  // 双击放大（GIS 的标准手势）
+  svg.addEventListener('dblclick', (e) => {
+    e.preventDefault();
+    zoomAt(e.clientX, e.clientY, 1.8, 320);
+  });
+
+  // 工具按钮
+  document.getElementById('map-zoom-in')?.addEventListener('click', () => {
+    const r = svg.getBoundingClientRect();
+    zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1.35);
+  });
+  document.getElementById('map-zoom-out')?.addEventListener('click', () => {
+    const r = svg.getBoundingClientRect();
+    zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1 / 1.35);
+  });
+  document.getElementById('map-reset')?.addEventListener('click', resetMapView);
+  document.getElementById('mf-fold')?.addEventListener('click', () => {
+    const host = document.querySelector('.map');
+    const folded = host?.classList.toggle('feed-folded');
+    const btn = document.getElementById('mf-fold');
+    if (btn) btn.textContent = folded ? '\u27e8' : '\u27e9';
+  });
+  document.getElementById('map-full')?.addEventListener('click', () => {
+    const host = document.querySelector('.map');
+    if (!document.fullscreenElement) host?.requestFullscreen?.();
+    else document.exitFullscreen?.();
+  });
+}
+
+export function stopMapTimer() {
+  if (mapTimer) {
+    clearInterval(mapTimer);
+    mapTimer = null;
+  }
+  mapBubbles.forEach((b) => b.remove());
+  mapBubbles = [];
+}
+
+export async function loadMap() {
+  try {
+    const [evRes, cal] = await Promise.all([
+      fetch('./api/events', { cache: 'no-store' }),
+      loadCalendarCached(false),
+    ]);
+    const data = evRes.ok ? await evRes.json() : null;
+    if (!store.events) store.events = { data, calendar: cal, level: '', topic: '', studyMode: 'auto', newIds: null, newCount: 0 };
+    if (data) {
+      store.events.data = data;
+      store.events.calendar = cal;
+    }
+    if (!location.hash.startsWith('#/map')) return;
+
+    // 新事件 → 弹气泡
+    const items = data?.items ?? [];
+    const first = mapSeenIds === null;
+    const fresh = first ? [] : items.filter((ev) => !mapSeenIds.has(ev.id));
+    mapSeenIds = new Set(items.map((ev) => ev.id));
+
+    // 必须先渲染再弹：renderMap 会重写 innerHTML，先弹的气泡会被一起清掉
+    renderMap();
+    fresh.reverse().slice(-2).forEach((ev) => spawnBubble(ev));
+  } catch (err) {
+    mapEl.innerHTML = `<div class="d-error">地图加载失败：${esc(err?.message ?? String(err))}</div>`;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * 生命周期（由 router 调用）
+ *
+ * unmount 除了停表，还要清掉正在淡出的气泡节点与拖拽状态 —— 气泡是直接挂在
+ * mapEl 里的绝对定位 div，容器清空后它们的 transitionend 回调仍会跑一次。
+ * 另外要退订 bus 的 quotes 广播，否则地图离场后每轮报价仍会触发一次全量重绘。
+ * ------------------------------------------------------------------ */
+let unsubscribeQuotes = null;
+
+export function mountMap() {
+  mapEl.hidden = false;
+  window.scrollTo({ top: 0 });
+  loadMap();
+  mapTimer = setInterval(() => loadMap(), 30000);
+  // 列表每轮拿到新报价后顺带刷新地图节点（原来由 list 直接调 renderMap）
+  unsubscribeQuotes?.();
+  unsubscribeQuotes = on('quotes', () => {
+    if (!mapEl.hidden) renderMap();
+  });
+}
+
+export function unmountMap() {
+  stopMapTimer();
+  unsubscribeQuotes?.();
+  unsubscribeQuotes = null;
+  mapBubbles.forEach((b) => b.remove());
+  mapBubbles = [];
+  mapDrag = null;
+  closeNodeCard?.();
+  mapEl.hidden = true;
+  mapEl.innerHTML = '';
+}

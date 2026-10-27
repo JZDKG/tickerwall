@@ -1,0 +1,719 @@
+/* ================================================================== *
+ * detail.css —— 详情页：K 线 / 十字光标 / 分时切换 / 右侧指标。
+ *
+ * 来源：public/styles.css（3751 行单体）拆分，本文件内容对应原文件 L533-1232。
+ * 拆分方式：按原文连续区间整段搬移，不重排、不改写任何一条声明。
+ * 加载顺序（见 public/index.html）就是原来的从上到下顺序，级联结果不变。
+ * ================================================================== */
+
+/* ================================================================== *
+ * 详情页
+ * ================================================================== */
+
+.detail {
+  animation: fadein 0.18s ease-out;
+}
+
+@keyframes fadein {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.d-top {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.back-btn {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 7px 13px;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.back-btn:hover {
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.d-id h2 {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 650;
+  letter-spacing: 0.3px;
+}
+
+.d-id p {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.d-hero {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 4px 0 18px;
+}
+
+.d-price {
+  font-family: var(--mono);
+  font-size: 42px;
+  font-weight: 620;
+  letter-spacing: -1px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.05;
+}
+
+.d-price.up {
+  color: var(--up);
+}
+.d-price.down {
+  color: var(--down);
+}
+.d-price.flat {
+  color: var(--text);
+}
+
+.d-delta {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  color: var(--flat);
+}
+
+.d-delta.up {
+  color: var(--up);
+}
+.d-delta.down {
+  color: var(--down);
+}
+
+.d-delta b {
+  font-weight: 600;
+}
+.d-delta span {
+  opacity: 0.85;
+}
+
+.d-hero-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted-2);
+  font-family: var(--mono);
+  margin-left: auto;
+}
+
+.d-hero-meta .sep {
+  opacity: 0.4;
+}
+
+/* 区间涨跌 chips */
+.d-perf {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.perf-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 11px;
+  border-radius: 9px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.perf-chip em {
+  font-style: normal;
+  color: var(--muted);
+}
+
+.perf-chip b {
+  font-family: var(--mono);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--flat);
+}
+
+.perf-chip.up b {
+  color: var(--up);
+}
+.perf-chip.down b {
+  color: var(--down);
+}
+
+/* 区块 */
+.d-block {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  margin-bottom: 12px;
+}
+
+.d-block h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.h3-note {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--muted-2);
+  font-family: var(--mono);
+}
+
+.chart-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.chart-head h3 {
+  margin: 0;
+}
+
+.chart-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+}
+
+.seg button {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  padding: 5px 12px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.seg button:hover {
+  color: var(--text);
+}
+
+.seg button.on {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+
+.chart-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* ---------- 十字光标 ---------- */
+
+/* 浮层的定位基准 */
+.chart-host {
+  position: relative;
+}
+
+.xhair line {
+  stroke: rgba(255, 255, 255, 0.34);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  pointer-events: none;
+}
+
+.xhair circle {
+  stroke: #0b0d10;
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+
+.chart-tip {
+  position: absolute;
+  z-index: 6;
+  min-width: 132px;
+  /* 窄屏下不要顶出图表区域 */
+  max-width: calc(100% - 8px);
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: rgba(14, 17, 21, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--fg);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.09s linear;
+  backdrop-filter: blur(6px);
+}
+
+.chart-tip.on {
+  opacity: 1;
+}
+
+.chart-tip .tip-date {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-tip .tip-grid {
+  display: grid;
+  grid-template-columns: auto 1fr auto 1fr;
+  gap: 1px 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-tip .tip-grid span {
+  color: var(--muted-2);
+}
+
+.chart-tip .tip-grid b {
+  font-weight: 600;
+  text-align: right;
+}
+
+.chart-tip .tip-line {
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-tip .tip-dim {
+  color: var(--muted-2);
+  font-size: 10.5px;
+}
+
+.chart-tip .tip-evt {
+  color: #e0a83c;
+  font-size: 10.5px;
+}
+
+/* 窄屏图表本身只有 ~180px 高，保留 OHLC + 涨跌幅就够，把次要行收掉减少遮挡 */
+@media (max-width: 520px) {
+  .chart-tip {
+    padding: 5px 7px;
+    font-size: 10.5px;
+    line-height: 1.42;
+  }
+
+  .chart-tip .tip-dim {
+    display: none;
+  }
+}
+
+.chart-tip .up {
+  color: var(--up);
+}
+
+.chart-tip .down {
+  color: var(--down);
+}
+
+/* 蜡烛图的图例色块（阳线实心 / 阴线实心） */
+.candle-swatch {
+  width: 7px;
+  height: 11px;
+  border-radius: 1px;
+  display: inline-block;
+}
+
+.candle-swatch.up {
+  background: var(--up);
+}
+
+.candle-swatch.down {
+  background: var(--down);
+}
+
+/* 历史源全部失败时的说明（区分「源挂了」和「确实没数据」） */
+.chart-empty-err {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.65;
+  text-align: left;
+}
+
+.grid-line {
+  stroke: rgba(255, 255, 255, 0.06);
+  stroke-width: 1;
+}
+
+.base-line {
+  stroke: rgba(255, 255, 255, 0.22);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
+.axis-text {
+  fill: var(--muted-2);
+  font-size: 10.5px;
+  font-family: var(--mono);
+}
+
+.mark-text {
+  fill: var(--text);
+  font-size: 10px;
+  font-family: var(--mono);
+  paint-order: stroke;
+  stroke: #0a0e13;
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+.chart-empty,
+.d-loading,
+.d-error {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.d-error {
+  color: #ff8f9c;
+}
+
+/* 指标网格 */
+.d-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(138px, 1fr));
+  gap: 8px;
+}
+
+.metric {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.028);
+  border: 1px solid rgba(255, 255, 255, 0.045);
+}
+
+.m-label {
+  font-size: 11px;
+  color: var(--muted-2);
+}
+
+.m-value {
+  font-family: var(--mono);
+  font-size: 14.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.metric.up .m-value {
+  color: var(--up);
+}
+.metric.down .m-value {
+  color: var(--down);
+}
+
+/* 表格 */
+.table-wrap {
+  overflow-x: auto;
+}
+
+.d-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.d-table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--muted-2);
+  font-size: 11.5px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.d-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.035);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.d-table .num {
+  text-align: right;
+}
+
+.d-table .mono {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.d-table .dim {
+  color: var(--muted-2);
+}
+
+.d-table td.up {
+  color: var(--up);
+}
+.d-table td.down {
+  color: var(--down);
+}
+
+.d-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.more-btn {
+  margin-top: 12px;
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 7px 16px;
+  width: 100%;
+}
+
+.more-btn:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.d-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  color: var(--muted-2);
+  font-family: var(--mono);
+  padding: 6px 2px 0;
+}
+
+/* 列表卡片可点 */
+.row {
+  cursor: pointer;
+}
+
+.row:focus-visible {
+  outline: 2px solid rgba(120, 170, 255, 0.5);
+  outline-offset: 2px;
+}
+
+.row .extra {
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.row .extra:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+/* 窄屏 */
+@media (max-width: 880px) {
+  .d-price {
+    font-size: 34px;
+  }
+
+  .d-hero {
+    gap: 10px;
+  }
+
+  .d-hero-meta {
+    margin-left: 0;
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .d-block {
+    padding: 14px 14px;
+  }
+
+  .d-metrics {
+    grid-template-columns: repeat(auto-fill, minmax(116px, 1fr));
+  }
+
+  .d-table {
+    font-size: 11.5px;
+  }
+
+  .d-table th,
+  .d-table td {
+    padding: 6px 8px;
+  }
+
+  /* 「多源对照」表 4 列在 390px 下最小内容宽 403px、容器只有 362px → 整页横向溢出。
+     固定表格布局 + 表头允许换行后压到 332px。
+     只对这张表生效：历史表（.hist-table）列宽语义强（日期/OHLC 对齐），窄屏另有砍列规则，
+     一起改成 fixed 会让日期列被压缩换行。 */
+  .d-table:not(.hist-table) {
+    table-layout: fixed;
+  }
+
+  .d-table:not(.hist-table) th {
+    white-space: normal;
+  }
+
+  /* 窄屏放不下 7 列，历史表先砍掉成交量（详情仍在指标卡里） */
+  .hist-table th:nth-child(7),
+  .hist-table td:nth-child(7) {
+    display: none;
+  }
+
+  /* 剩下的 6 列再收紧一点，避免还要横向滚动 */
+  .hist-table th,
+  .hist-table td {
+    padding: 6px 5px;
+    font-size: 11px;
+    letter-spacing: -0.2px;
+  }
+}
+
+/* 图例、成交量副图、市场状态徽章 */
+.chart-legend {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 2px 0 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+  font-family: var(--mono);
+}
+
+.chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.chart-legend i {
+  width: 10px;
+  height: 2.5px;
+  border-radius: 1px;
+  display: inline-block;
+}
+
+.legend-note {
+  color: var(--muted-2);
+}
+
+/* 勾选了利率类标的时，图例上标一下折算口径，避免把「债券价格」误读成收益率 */
+.legend-badge {
+  font-style: normal;
+  font-size: 9px;
+  padding: 0 4px;
+  margin-left: 4px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--muted-2);
+}
+
+/* 事件研究矩阵里的时区对齐标记（T+0 / T+1） */
+.lag-tag {
+  display: block;
+  font-style: normal;
+  font-size: 8.5px;
+  line-height: 1.25;
+  opacity: 0.55;
+}
+
+/* 口径切换按钮右对齐，挂在外层 h3 下方 */
+.study-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin: -4px 0 8px;
+}
+
+.vol-svg {
+  margin-top: 2px;
+  opacity: 0.9;
+}
+
+.vol-bar.up {
+  fill: var(--up);
+  opacity: 0.55;
+}
+
+.vol-bar.down {
+  fill: var(--down);
+  opacity: 0.55;
+}
+
+.vol-bar.flat {
+  fill: var(--flat);
+  opacity: 0.4;
+}
+
+.mkt-badge {
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  font-size: 11px;
+  font-family: -apple-system, sans-serif;
+}
+
+.mkt-badge.open {
+  color: var(--down);
+  border-color: rgba(14, 203, 129, 0.4);
+  background: rgba(14, 203, 129, 0.08);
+}
+
+.mkt-badge.closed {
+  color: var(--muted-2);
+  background: rgba(255, 255, 255, 0.03);
+}

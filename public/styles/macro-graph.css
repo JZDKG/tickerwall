@@ -1,0 +1,931 @@
+/* ================================================================== *
+ * macro-graph.css —— 传导图谱与宏观逻辑沙盘（#/macro 上半场）：图谱容器、SVG 节点/连线/胶囊、剧本栏、右卡、窄屏响应式。
+ *
+ * 来源：public/styles.css（3751 行单体）拆分，本文件内容对应原文件 L2829-3751。
+ * 拆分方式：按原文连续区间整段搬移，不重排、不改写任何一条声明。
+ * 加载顺序（见 public/index.html）就是原来的从上到下顺序，级联结果不变。
+ * ================================================================== */
+
+/* ================================================================== *
+ * 金融传导图谱与宏观逻辑沙盘（#/macro 上半场）
+ *
+ * 语义色与涨跌红绿刻意分开：
+ *   正向驱动 / 同向  = #f5455c（暖红）   负向压制 / 跷跷板 = #5b9cf8（冷蓝）
+ *   实盘背离          = #f59e0b（琥珀）
+ * 这不是「涨/跌」，是「同向/反向」，所以负向不复用 --down 的绿。
+ * ================================================================== */
+
+.macro-graph-section {
+  --mg-pos: #f5455c;
+  --mg-neg: #5b9cf8;
+  --mg-div: #f59e0b;
+}
+
+.macro-graph-section .up {
+  color: var(--up);
+}
+.macro-graph-section .down {
+  color: var(--down);
+}
+.macro-graph-section .cold {
+  color: var(--mg-neg);
+}
+.macro-graph-section .mid {
+  color: #d8a13a;
+}
+.macro-graph-section .dim {
+  color: var(--muted-2);
+}
+.macro-graph-section .faint {
+  opacity: 0.62;
+}
+.mg-svg .up.faint,
+.mg-svg .cold.faint {
+  opacity: 0.62;
+}
+.macro-graph-section .warn {
+  color: var(--mg-div);
+  font-style: normal;
+}
+.macro-graph-section .ok {
+  color: var(--down);
+  font-style: normal;
+}
+.macro-graph-section .pos {
+  color: var(--mg-pos);
+}
+.macro-graph-section .neg {
+  color: var(--mg-neg);
+}
+.macro-graph-section .div {
+  color: var(--mg-div);
+}
+
+/* ---------- 顶部工具条 ---------- */
+.mg-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 9px;
+}
+.mg-head h3 {
+  margin: 0;
+}
+.mg-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.mg-playbooks {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.mg-pb,
+.mg-fpill,
+.mg-spick,
+.mg-sgo,
+.mg-sclear {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11.5px;
+  line-height: 1.3;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 11px;
+  white-space: nowrap;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+.mg-pb:hover,
+.mg-fpill:hover,
+.mg-spick:hover,
+.mg-sgo:hover {
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.mg-pb.on {
+  color: #0b0e14;
+  background: #e8edf5;
+  border-color: #e8edf5;
+  font-weight: 600;
+}
+.mg-tools-hint {
+  font-size: 11px;
+  color: var(--muted-2);
+}
+.mg-divcount {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--muted-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 9px;
+  white-space: nowrap;
+}
+.mg-divcount.has {
+  color: var(--mg-div);
+  border-color: rgba(245, 158, 11, 0.42);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+/* ---------- 背离横幅 ---------- */
+.mg-alert {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  text-align: left;
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  color: #f2d3a1;
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.15), rgba(245, 158, 11, 0.02));
+  border: 1px solid rgba(245, 158, 11, 0.34);
+  border-radius: 9px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  transition: border-color 0.15s ease;
+}
+.mg-alert:hover {
+  border-color: rgba(245, 158, 11, 0.6);
+}
+.mg-alert-ico {
+  font-size: 13px;
+  line-height: 1;
+}
+.mg-alert-text {
+  min-width: 0;
+}
+.mg-alert-text b {
+  color: #fde8c0;
+}
+.mg-alert-go {
+  margin-left: auto;
+  color: var(--mg-div);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+/* ---------- 导图焦点栏 / 沙盘震源栏 ---------- */
+.mg-focusbar,
+.mg-shockbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  padding: 7px 9px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.022);
+  border: 1px solid var(--line);
+}
+.mg-fpill.on,
+.mg-spick.on {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.26);
+  font-weight: 600;
+}
+.mg-shock-label {
+  font-size: 11px;
+  color: var(--muted-2);
+  padding-left: 2px;
+}
+.mg-shock-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--line);
+  margin: 0 3px;
+}
+.mg-sgo.up.on {
+  color: #fff;
+  background: rgba(245, 69, 92, 0.24);
+  border-color: rgba(245, 69, 92, 0.6);
+}
+.mg-sgo.down.on {
+  color: #fff;
+  background: rgba(91, 156, 248, 0.24);
+  border-color: rgba(91, 156, 248, 0.6);
+}
+.mg-sclear {
+  color: var(--muted-2);
+}
+
+/* ---------- 左图右卡 ---------- */
+.graph-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 336px;
+  gap: 18px;
+  align-items: start;
+}
+.graph-canvas {
+  min-width: 0;
+}
+.mg-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.graph-card {
+  min-width: 0;
+  border-left: 1px solid var(--line);
+  padding-left: 16px;
+  font-size: 12px;
+  line-height: 1.62;
+  max-height: 620px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.graph-card::-webkit-scrollbar {
+  width: 6px;
+}
+.graph-card::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+}
+
+/* ---------- SVG：分区标签 ---------- */
+.mg-zone-label {
+  fill: var(--muted-2);
+  font-size: 10px;
+  letter-spacing: 0.7px;
+}
+.mg-zone-label.anchor {
+  fill: #9c8bd8;
+}
+.mg-zone-label.commodity {
+  fill: #b08a3e;
+}
+.mg-zone-label.hedge {
+  fill: #b09a3e;
+}
+.mg-zone-label.risk {
+  fill: #6a86b8;
+}
+
+/* ---------- SVG：连线 ---------- */
+.mg-edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 15;
+  cursor: pointer;
+}
+.mg-edge-line {
+  fill: none;
+  stroke-linecap: round;
+  transition: opacity 0.18s ease;
+}
+.mg-edge-flow {
+  fill: none;
+  stroke-linecap: round;
+  stroke-dasharray: 2.5 13.5;
+  animation: edgeFlow 1.7s linear infinite;
+  pointer-events: none;
+  opacity: 0.95;
+}
+@keyframes edgeFlow {
+  to {
+    stroke-dashoffset: -32;
+  }
+}
+.mg-edge:hover .mg-edge-line {
+  filter: brightness(1.4);
+}
+.mg-edge.is-hot .mg-edge-line {
+  filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.45));
+}
+.mg-edge.is-hot .mg-edge-flow {
+  stroke-dasharray: 3 9;
+  animation-duration: 0.85s;
+}
+.mg-edge.is-dim {
+  opacity: 0.14;
+}
+.mg-edge.is-broken .mg-edge-line {
+  stroke: var(--mg-div);
+  stroke-dasharray: 2 4;
+}
+.mg-edge.is-broken .mg-edge-flow {
+  stroke: var(--mg-div);
+}
+
+/* ---------- SVG：机理胶囊 ---------- */
+.mg-pill {
+  cursor: pointer;
+  transition: opacity 0.18s ease;
+}
+.mg-pill text {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  pointer-events: none;
+}
+.mg-pill.pos rect {
+  fill: rgba(245, 69, 92, 0.17);
+  stroke: rgba(245, 69, 92, 0.45);
+}
+.mg-pill.pos text {
+  fill: #ff9fad;
+}
+.mg-pill.neg rect {
+  fill: rgba(91, 156, 248, 0.17);
+  stroke: rgba(91, 156, 248, 0.45);
+}
+.mg-pill.neg text {
+  fill: #a8c8ff;
+}
+.mg-pill.div rect {
+  fill: rgba(245, 158, 11, 0.2);
+  stroke: rgba(245, 158, 11, 0.58);
+}
+.mg-pill.div text {
+  fill: #f8c063;
+}
+.mg-pill:hover rect {
+  fill-opacity: 0.42;
+}
+.mg-pill.is-dim {
+  opacity: 0.14;
+}
+.mg-pill.is-hot rect {
+  stroke-width: 1.4;
+}
+
+/* ---------- SVG：节点 ---------- */
+.mg-node {
+  cursor: pointer;
+}
+.mg-node-box {
+  fill: #0f141d;
+  stroke: rgba(255, 255, 255, 0.13);
+  stroke-width: 1;
+  transition: stroke 0.15s ease, stroke-width 0.15s ease;
+}
+.mg-node.zone-anchor .mg-node-box {
+  fill: #14121f;
+  stroke: rgba(167, 139, 250, 0.5);
+}
+.mg-node.zone-commodity .mg-node-box {
+  fill: #17130c;
+  stroke: rgba(224, 168, 60, 0.46);
+}
+.mg-node.zone-hedge .mg-node-box {
+  fill: #18160d;
+  stroke: rgba(250, 214, 90, 0.46);
+}
+.mg-node.zone-risk .mg-node-box {
+  fill: #0d1420;
+  stroke: rgba(91, 156, 248, 0.42);
+}
+.mg-node:hover .mg-node-box {
+  stroke: rgba(255, 255, 255, 0.42);
+}
+.mg-node.is-focus .mg-node-box,
+.mg-node.is-pair .mg-node-box {
+  stroke: rgba(255, 255, 255, 0.72);
+  stroke-width: 1.5;
+}
+.mg-node-name {
+  fill: #cfd6e2;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+.mg-node-val {
+  fill: var(--text);
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+.mg-node-sub {
+  fill: var(--muted-2);
+  font-family: var(--mono);
+  font-size: 8.5px;
+}
+.mg-svg .up {
+  fill: var(--up);
+}
+.mg-svg .down {
+  fill: var(--down);
+}
+
+/* ---------- SVG：思维导图 ---------- */
+.mg-mcard {
+  cursor: pointer;
+}
+.mg-mcard rect {
+  fill: #101620;
+  stroke: rgba(255, 255, 255, 0.11);
+  stroke-width: 1;
+  transition: stroke 0.15s ease;
+}
+.mg-mcard.pos rect {
+  stroke: rgba(245, 69, 92, 0.42);
+}
+.mg-mcard.neg rect {
+  stroke: rgba(91, 156, 248, 0.42);
+}
+.mg-mcard:hover rect {
+  stroke: rgba(255, 255, 255, 0.45);
+}
+.mg-mcard-name {
+  fill: #cfd6e2;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.mg-mcard-val {
+  fill: var(--text);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.mg-mcard-chg {
+  font-family: var(--mono);
+  font-size: 9.5px;
+}
+.mg-focus rect {
+  fill: #171d29;
+  stroke: rgba(255, 255, 255, 0.4);
+  stroke-width: 1.5;
+}
+.mg-focus-name {
+  fill: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.mg-focus-val {
+  fill: #fff;
+  font-family: var(--mono);
+  font-size: 19px;
+}
+.mg-focus-chg {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.mg-focus-unit {
+  fill: var(--muted-2);
+  font-size: 9px;
+}
+.mg-msig rect {
+  fill: rgba(245, 158, 11, 0.06);
+  stroke: rgba(245, 158, 11, 0.42);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+.mg-msig-title {
+  fill: #d8a13a;
+  font-size: 9.5px;
+  letter-spacing: 0.6px;
+}
+.mg-msig-row {
+  fill: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.mg-msig-row .up {
+  fill: var(--up);
+}
+.mg-msig-row .down {
+  fill: var(--down);
+}
+.mg-edge.is-signal .mg-edge-line {
+  opacity: 0.8;
+}
+.mg-pill-lead {
+  stroke-width: 1;
+  opacity: 0.5;
+  pointer-events: none;
+}
+.mg-col-title {
+  fill: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.mg-empty {
+  fill: var(--muted-2);
+  font-size: 11px;
+}
+/* foreignObject 里的 HTML，不是 SVG 文本 —— 用 CSS 而不是 fill */
+.mg-orphan {
+  font: 11.5px/1.65 -apple-system, "PingFang SC", sans-serif;
+  color: var(--muted);
+  text-align: center;
+  border: 1px dashed var(--line);
+  border-radius: 9px;
+  padding: 9px 14px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* ---------- SVG：沙盘状态 ---------- */
+.mg-source-glow {
+  animation: sourcePulse 2.4s ease-in-out infinite;
+}
+@keyframes sourcePulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.mg-node.is-source .mg-node-box {
+  stroke: var(--mg-div);
+  stroke-width: 2;
+  filter: drop-shadow(0 0 10px rgba(245, 158, 11, 0.5));
+}
+.mg-node.hop-up .mg-node-box {
+  stroke: rgba(245, 69, 92, 0.9);
+  stroke-width: 1.6;
+}
+.mg-node.hop-down .mg-node-box {
+  stroke: rgba(91, 156, 248, 0.9);
+  stroke-width: 1.6;
+}
+.mg-node.is-hop2-up .mg-node-box {
+  stroke: rgba(245, 69, 92, 0.38);
+}
+.mg-node.is-hop2-down .mg-node-box {
+  stroke: rgba(91, 156, 248, 0.38);
+}
+.mg-node.is-mixed .mg-node-box {
+  stroke: var(--mg-div);
+  stroke-width: 1.8;
+  stroke-dasharray: 5 3;
+}
+.mg-tag rect {
+  fill: #241a06;
+  stroke: rgba(245, 158, 11, 0.6);
+}
+.mg-tag text {
+  fill: #f8c063;
+  font-family: var(--mono);
+  font-size: 9px;
+}
+.mg-tag.cold rect {
+  fill: #0b1524;
+  stroke: rgba(91, 156, 248, 0.55);
+}
+.mg-tag.cold text {
+  fill: #9fc4ff;
+}
+/* 正向锚点用红（同向）—— 不能落到 base 那套琥珀色上，否则「正向」和「背离」看起来一样 */
+.mg-tag.pos rect {
+  fill: #241015;
+  stroke: rgba(245, 69, 92, 0.6);
+}
+.mg-tag.pos text {
+  fill: #ff9fad;
+}
+/* 背离/多空交织：琥珀 + 虚线描边，跟 shocked-source 的实心琥珀区分开 */
+.mg-tag.mix rect {
+  fill: #241a06;
+  stroke: rgba(245, 158, 11, 0.85);
+  stroke-width: 1.2;
+  stroke-dasharray: 3 2;
+}
+.mg-tag.mix text {
+  fill: #f8c063;
+}
+
+/* ---------- 图例 ---------- */
+.mg-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 15px;
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.mg-legend .lg {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.mg-legend .lg svg {
+  flex: 0 0 auto;
+}
+.mg-legend .note {
+  color: var(--muted-2);
+  font-size: 11px;
+}
+
+/* ---------- 右侧卡片 ---------- */
+.mg-card-empty {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  padding: 14px;
+}
+.mg-card-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-bottom: 7px;
+}
+.mg-addr {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text);
+}
+.mg-addr.big {
+  font-size: 14.5px;
+}
+.mg-arrowsign {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.mg-badge {
+  margin-left: auto;
+  font-size: 10.5px;
+  line-height: 1.4;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  white-space: nowrap;
+}
+.mg-badge.pos {
+  color: #ff9fad;
+  border-color: rgba(245, 69, 92, 0.42);
+  background: rgba(245, 69, 92, 0.1);
+}
+.mg-badge.neg {
+  color: #a8c8ff;
+  border-color: rgba(91, 156, 248, 0.42);
+  background: rgba(91, 156, 248, 0.1);
+}
+.mg-badge.div {
+  color: #f8c063;
+  border-color: rgba(245, 158, 11, 0.48);
+  background: rgba(245, 158, 11, 0.12);
+}
+.mg-lead {
+  margin: 0 0 11px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.mg-sect {
+  position: relative;
+  padding-left: 13px;
+  margin: 0 0 13px;
+}
+.mg-sect > .dot {
+  position: absolute;
+  left: 0;
+  top: 7px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--mg-neg);
+}
+.mg-sect > .dot.warn {
+  background: var(--mg-div);
+}
+.mg-sect h4 {
+  margin: 0 0 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.2px;
+}
+.mg-sect p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.mg-kv {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2.5px 0;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.055);
+  font-size: 11.5px;
+}
+.mg-kv:last-child {
+  border-bottom: 0;
+}
+.mg-kv span {
+  color: var(--muted);
+  min-width: 0;
+}
+.mg-kv b {
+  font-family: var(--mono);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.mg-kv em {
+  font-style: normal;
+  font-size: 10.5px;
+  margin-left: 4px;
+}
+.mg-jump {
+  width: 100%;
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11.5px;
+  color: #9fc4ff;
+  background: rgba(91, 156, 248, 0.1);
+  border: 1px solid rgba(91, 156, 248, 0.28);
+  border-radius: 8px;
+  padding: 6px;
+  margin-top: 2px;
+  transition: background 0.15s ease;
+}
+.mg-jump:hover {
+  background: rgba(91, 156, 248, 0.18);
+}
+.mg-mini-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mg-mini {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.13s ease;
+}
+.mg-mini:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.mg-mini.empty {
+  color: var(--muted-2);
+  cursor: default;
+  font-size: 11px;
+}
+.mg-mini-dir {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  min-width: 17px;
+}
+.mg-mini-name {
+  color: var(--text);
+}
+.mg-mini-tag {
+  color: var(--muted-2);
+  font-size: 10.5px;
+}
+.mg-mini-roll {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+.mg-steps {
+  margin: 0 0 13px;
+  padding-left: 17px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.mg-steps li {
+  margin-bottom: 5px;
+}
+.mg-steps li b {
+  display: block;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+}
+.mg-conclusion {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--muted);
+  background: rgba(245, 158, 11, 0.06);
+  border-left: 2px solid rgba(245, 158, 11, 0.5);
+  border-radius: 0 6px 6px 0;
+  padding: 7px 9px;
+}
+.mg-foot-note {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted-2);
+}
+.mg-hopbins {
+  display: flex;
+  gap: 6px;
+}
+.mg-hopbins .bin {
+  flex: 1;
+  text-align: center;
+  font-size: 10.5px;
+  padding: 5px 2px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.mg-hopbins .bin b {
+  display: block;
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 600;
+}
+.mg-hopbins .bin.up b {
+  color: var(--mg-pos);
+}
+.mg-hopbins .bin.cold b {
+  color: var(--mg-neg);
+}
+.mg-hopbins .bin.mix b {
+  color: var(--mg-div);
+}
+.mg-path-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.mg-path {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 11px;
+}
+.mg-path-hop {
+  font-size: 9.5px;
+  color: var(--muted-2);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+.mg-chain-node {
+  color: var(--text);
+}
+.mg-chain-sep {
+  color: var(--muted-2);
+  margin: 0 3px;
+}
+.mg-path-sign {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+/* ---------- 响应式：窄屏画布在上、卡片在下 ---------- */
+@media (max-width: 1100px) {
+  .graph-stage {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .graph-card {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    padding-left: 0;
+    padding-top: 12px;
+    max-height: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .mg-playbooks {
+    gap: 5px;
+  }
+  .mg-pb,
+  .mg-fpill,
+  .mg-spick,
+  .mg-sgo,
+  .mg-sclear {
+    font-size: 11px;
+    padding: 3px 9px;
+  }
+  .mg-legend {
+    font-size: 11px;
+    gap: 4px 10px;
+  }
+  .mg-legend .note {
+    flex-basis: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mg-edge-flow,
+  .mg-source-glow {
+    animation: none;
+  }
+}

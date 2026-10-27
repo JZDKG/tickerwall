@@ -1,0 +1,553 @@
+/* ================================================================== *
+ * events.css —— 全球事件中心：事件流、来源过滤、日历。
+ *
+ * 来源：public/styles.css（3751 行单体）拆分，本文件内容对应原文件 L1455-2000。
+ * 拆分方式：按原文连续区间整段搬移，不重排、不改写任何一条声明。
+ * 加载顺序（见 public/index.html）就是原来的从上到下顺序，级联结果不变。
+ * ================================================================== */
+
+/* ================================================================== *
+ * 全球事件中心
+ * ================================================================== */
+
+#events[hidden] {
+  display: none !important;
+}
+
+/* 宏观日历 */
+.cal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cal-item {
+  display: grid;
+  grid-template-columns: 74px 62px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.035);
+  font-size: 13px;
+}
+
+.cal-item:last-child {
+  border-bottom: 0;
+}
+
+.cal-item.today {
+  background: rgba(224, 168, 60, 0.07);
+  border-color: rgba(224, 168, 60, 0.25);
+  border-radius: 8px;
+}
+
+.cal-date {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: var(--mono);
+}
+
+.cal-date b {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.cal-date em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--muted-2);
+}
+
+.cal-kind {
+  font-size: 11px;
+  text-align: center;
+  padding: 2px 6px;
+  border-radius: 5px;
+  font-family: var(--mono);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.cal-kind.k-fomc {
+  color: #f5455c;
+  border-color: rgba(245, 69, 92, 0.35);
+  background: rgba(245, 69, 92, 0.08);
+}
+
+.cal-kind.k-cpi {
+  color: #e0a83c;
+  border-color: rgba(224, 168, 60, 0.35);
+  background: rgba(224, 168, 60, 0.08);
+}
+
+.cal-kind.k-nfp {
+  color: #5b9cf8;
+  border-color: rgba(91, 156, 248, 0.35);
+  background: rgba(91, 156, 248, 0.08);
+}
+
+.cal-title {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cal-time {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.cal-time em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--muted-2);
+}
+
+/* 事件流 */
+.event-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.event {
+  display: grid;
+  grid-template-columns: 62px 1fr;
+  gap: 14px;
+  padding: 13px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  transition: background 0.14s ease;
+}
+
+.event:hover {
+  background: rgba(255, 255, 255, 0.022);
+}
+
+.event:last-child {
+  border-bottom: 0;
+}
+
+.ev-time {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+  padding-top: 1px;
+}
+
+.ev-time em {
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--muted-2);
+}
+
+.ev-main {
+  min-width: 0;
+}
+
+.ev-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 5px;
+}
+
+.ev-badge {
+  font-size: 10.5px;
+  padding: 1px 7px;
+  border-radius: 5px;
+  font-weight: 600;
+}
+
+.ev-badge.high {
+  color: #ff8f9c;
+  background: rgba(245, 69, 92, 0.14);
+  border: 1px solid rgba(245, 69, 92, 0.3);
+}
+
+.ev-badge.mid {
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line);
+}
+
+.ev-topic {
+  font-size: 10.5px;
+  padding: 1px 7px;
+  border-radius: 5px;
+  color: var(--muted-2);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ev-topic.strong {
+  color: #9ec2ff;
+  border-color: rgba(91, 156, 248, 0.28);
+  background: rgba(91, 156, 248, 0.07);
+}
+
+.ev-title {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.event.lv-high .ev-title {
+  color: #ffd9de;
+}
+
+.ev-body {
+  margin: 0 0 6px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ev-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  color: var(--muted-2);
+  font-family: var(--mono);
+}
+
+.ev-sym {
+  padding: 0 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--muted);
+}
+
+.ev-sep {
+  opacity: 0.4;
+}
+
+.ev-link {
+  color: #6f9de8;
+  text-decoration: none;
+  margin-left: 2px;
+}
+
+.ev-link:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 880px) {
+  .cal-item {
+    grid-template-columns: 62px 52px 1fr;
+    gap: 8px;
+    font-size: 12.5px;
+  }
+
+  .cal-time {
+    display: none;
+  }
+
+  .event {
+    grid-template-columns: 50px 1fr;
+    gap: 10px;
+  }
+
+  .ev-title {
+    font-size: 13.5px;
+  }
+}
+
+/* 走势图上的宏观事件标注 */
+.evt-line {
+  stroke: rgba(224, 168, 60, 0.26);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+
+.evt-line.k-fomc {
+  stroke: rgba(245, 69, 92, 0.3);
+}
+
+.evt-line.k-nfp {
+  stroke: rgba(91, 156, 248, 0.3);
+}
+
+.evt-dot {
+  fill: rgba(224, 168, 60, 0.6);
+}
+
+.evt-dot.k-fomc {
+  fill: rgba(245, 69, 92, 0.7);
+}
+
+.evt-dot.k-nfp {
+  fill: rgba(91, 156, 248, 0.7);
+}
+
+.legend-events {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding-left: 8px;
+  border-left: 1px solid var(--line);
+}
+
+.evt-swatch {
+  display: inline-block;
+  width: 1px;
+  height: 10px;
+  margin-left: 4px;
+  border-left: 1px dashed rgba(224, 168, 60, 0.7);
+}
+
+.evt-swatch.k-fomc {
+  border-color: rgba(245, 69, 92, 0.8);
+}
+
+.evt-swatch.k-nfp {
+  border-color: rgba(91, 156, 248, 0.8);
+}
+
+/* LLM 状态与增量提示 */
+.llm-pill {
+  font-size: 11px;
+  font-family: var(--mono);
+  padding: 3px 9px;
+  border-radius: 6px;
+  color: #a7c7ff;
+  background: rgba(91, 156, 248, 0.1);
+  border: 1px solid rgba(91, 156, 248, 0.28);
+}
+
+.ev-ai {
+  font-size: 9.5px;
+  font-family: var(--mono);
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: #a7c7ff;
+  background: rgba(91, 156, 248, 0.14);
+  border: 1px solid rgba(91, 156, 248, 0.3);
+  letter-spacing: 0.4px;
+}
+
+.ev-new {
+  font-size: 9.5px;
+  font-family: var(--mono);
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: #ffd9a0;
+  background: rgba(224, 168, 60, 0.16);
+  border: 1px solid rgba(224, 168, 60, 0.36);
+  letter-spacing: 0.4px;
+}
+
+.event.is-new {
+  animation: evFlash 2.4s ease-out;
+}
+
+@keyframes evFlash {
+  0% {
+    background: rgba(224, 168, 60, 0.13);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+.new-banner {
+  position: sticky;
+  top: 8px;
+  z-index: 20;
+  display: block;
+  margin: 0 auto 10px;
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 16px;
+  border-radius: 20px;
+  color: #ffd9a0;
+  background: rgba(40, 30, 12, 0.92);
+  border: 1px solid rgba(224, 168, 60, 0.45);
+  backdrop-filter: blur(6px);
+}
+
+.new-banner:hover {
+  background: rgba(56, 42, 16, 0.95);
+}
+
+/* 事件研究矩阵 */
+.study-matrix td.corr {
+  width: 72px;
+  cursor: default;
+}
+
+.study-matrix th em {
+  display: block;
+  font-style: normal;
+  font-size: 9px;
+  color: var(--muted-2);
+  font-weight: 400;
+  margin-top: 2px;
+}
+
+.study-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  font-size: 12px;
+}
+
+.study-top-label {
+  color: var(--muted-2);
+}
+
+.study-chip {
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: rgba(245, 69, 92, 0.09);
+  border: 1px solid rgba(245, 69, 92, 0.24);
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.study-chip b {
+  color: #ff9aa6;
+  font-family: var(--mono);
+}
+
+.study-chip em {
+  font-style: normal;
+  color: var(--muted-2);
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+
+/* 数据新鲜度徽章 */
+.price .fresh {
+  display: inline-block;
+  margin-top: 5px;
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.3px;
+  border: 1px solid transparent;
+}
+
+.price .fresh:empty {
+  display: none;
+}
+
+.row .fresh {
+  font-size: 9.5px;
+  padding: 0.5px 5px;
+  line-height: 1.5;
+}
+
+.fresh.lv-fresh {
+  color: #6ad6a0;
+  background: rgba(14, 203, 129, 0.09);
+  border-color: rgba(14, 203, 129, 0.22);
+}
+
+.fresh.lv-normal {
+  color: var(--muted-2);
+  background: rgba(255, 255, 255, 0.045);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.fresh.lv-delayed {
+  color: #e0a83c;
+  background: rgba(224, 168, 60, 0.11);
+  border-color: rgba(224, 168, 60, 0.3);
+}
+
+.fresh.lv-stale {
+  color: #f5455c;
+  background: rgba(245, 69, 92, 0.12);
+  border-color: rgba(245, 69, 92, 0.34);
+}
+
+.fresh.lv-unknown {
+  color: var(--muted-2);
+  opacity: 0.65;
+}
+
+.fresh.suspect {
+  color: #ffcc66;
+  background: rgba(255, 204, 102, 0.14);
+  border-color: rgba(255, 204, 102, 0.42);
+}
+
+/* 异常值：整行提示 */
+.row.suspect {
+  box-shadow: inset 3px 0 0 rgba(255, 204, 102, 0.65);
+}
+
+/* 统计稳健性 */
+.corr-matrix td.corr .sig {
+  font-style: normal;
+  font-size: 9px;
+  vertical-align: super;
+  opacity: 0.75;
+  margin-left: 1px;
+}
+
+.corr-matrix td.corr.dim {
+  opacity: 0.26;
+}
+
+.stat-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: var(--muted-2);
+}
+
+.stat-note b {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.stat-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+}
+
+.stat-toggle input {
+  accent-color: #f5455c;
+  cursor: pointer;
+}
+
+.stat-toggle span {
+  font-size: 11.5px;
+}
