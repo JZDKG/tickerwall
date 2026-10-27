@@ -497,6 +497,31 @@
 .night-band.band-civil { fill: rgba(2, 5, 12, 0.18); }
 .night-core { fill: rgba(2, 5, 12, 0.32); }
 
+/* 太阳直射点：发光小圆点，与黑夜面片互补 —— 面片说「哪儿是夜里」，
+   这个点说「太阳此刻在谁的头顶」。脉冲动画让它在静止画面里可被注意到。 */
+.sun-mark {
+  pointer-events: none;
+}
+
+.sun-core {
+  fill: #ffd166;
+  stroke: rgba(255, 233, 168, 0.9);
+  stroke-width: 0.8;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 4px rgba(255, 209, 102, 0.85));
+}
+
+.sun-glow {
+  fill: rgba(255, 209, 102, 0.2);
+  transform-origin: 0 0;
+  animation: sunPulse 4.5s ease-in-out infinite;
+}
+
+@keyframes sunPulse {
+  0%, 100% { transform: scale(0.85); opacity: 0.5; }
+  50% { transform: scale(1.35); opacity: 1; }
+}
+
 /* 晨昏圈：单独一条 LineString，只含昼夜分界本身，不含图幅边界的竖线 */
 .terminator {
   fill: none;

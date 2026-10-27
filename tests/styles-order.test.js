@@ -108,8 +108,11 @@ describe('样式分片：层叠前提', () => {
 
   it('拆分前后规则数守恒：11 个文件里没有丢失 @media / @keyframes', () => {
     const all = EXPECTED.map(read).join('\n');
-    // 原单体的计数（拆分时逐个核对过）
+    // @media 仍是拆分时的 13 个 —— 这个数字只会因为真的新增响应式规则而变。
     expect((all.match(/@media/g) ?? []).length).toBe(13);
-    expect((all.match(/@keyframes/g) ?? []).length).toBe(16);
+    // @keyframes：拆分时 16 个。地图 v2 加了 sunPulse（太阳直射点的呼吸），
+    // 所以是 17。改这个数字时请确认是「新增动画」而不是「拆分时丢了又补回来」——
+    // 下面那条唯一性断言会拦住重名。
+    expect((all.match(/@keyframes/g) ?? []).length).toBe(17);
   });
 });

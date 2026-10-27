@@ -452,6 +452,18 @@ export function renderMap() {
   // 昼夜每小时才需要重算一次的量级，但这里跟着重建走，成本可以忽略
   const night = nightLayerPaths(new Date());
 
+  /**
+   * 太阳直射点。它和黑夜面片是同一份数据的两种表达：面片说「哪儿是夜里」，
+   * 这个点说「此刻太阳在谁头顶正上方」。放大到 3× 找城市时，靠它能判断某地
+   * 是清晨还是黄昏 —— 局部明暗反而不容易看出方向。
+   */
+  const sunXY = mapProject(night.sun.lon, night.sun.decl);
+  const sunMark = sunXY
+    ? '<g class="sun-mark" transform="translate(' + sunXY[0].toFixed(1) + ',' + sunXY[1].toFixed(1) + ')">'
+      + '<g class="scene-fixed"><circle class="sun-glow" r="7" /><circle class="sun-core" r="2.6" /></g>'
+      + '</g>'
+    : '';
+
   mapEl.innerHTML = `
     <div class="map-top">
       <div class="map-title">
@@ -498,6 +510,7 @@ export function renderMap() {
               <path class="night-core" d="${night.core}" />
               <path class="terminator" d="${night.line}" />
             </g>
+            ${sunMark}
             <g class="impact-layer">${impactArcs(items)}</g>
             <g class="map-regions">${regionSvg}</g>
             <g class="map-cities">${citySvg}</g>
