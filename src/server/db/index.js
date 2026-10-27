@@ -21,7 +21,14 @@ export {
 
 export { DAILY_FRESH_MS, numOrNull, readDailyCache, writeDailyCache, isDailyCacheFresh } from './daily-cache.js';
 
-export { SNAPSHOT_READ_LIMIT, takeSnapshot, readSnapshots, snapshotCount } from './snapshots.js';
+export {
+  SNAPSHOT_READ_LIMIT,
+  SNAPSHOT_ANCHOR_WINDOW,
+  takeSnapshot,
+  readSnapshots,
+  snapshotCount,
+  resetSnapshotGuard,
+} from './snapshots.js';
 
 export {
   writeJsonAtomic,

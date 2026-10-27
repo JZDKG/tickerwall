@@ -28,6 +28,8 @@ import {
   takeSnapshot,
   readSnapshots,
   snapshotCount,
+  resetSnapshotGuard,
+  SNAPSHOT_ANCHOR_WINDOW,
   writeJsonAtomic,
   readJson,
   appendJsonl,
@@ -260,8 +262,9 @@ describe('快照：写入与读回', () => {
   });
 
   it('时间刻度按字符串升序（ISO 定长，字典序即时间序）', async () => {
+    // 价格保持在同一量级：单步 +100% 会被跳变护栏正当拦下（见下方护栏测试）
     await takeSnapshot([Q('a', 1)], { at: '2026-10-27T10:00:00.000Z' });
-    await takeSnapshot([Q('a', 2)], { at: '2026-10-27T09:00:00.000Z' });
+    await takeSnapshot([Q('a', 1.05)], { at: '2026-10-27T09:00:00.000Z' });
     const snaps = await readSnapshots();
     expect(snaps.map((s) => s.at)).toEqual(['2026-10-27T09:00:00.000Z', '2026-10-27T10:00:00.000Z']);
   });
@@ -352,5 +355,98 @@ describe('分层：db/ 不能反向依赖上层', () => {
       }
     }
     expect(bad, 'db 层必须能被 providers 单向依赖，不能反向').toEqual([]);
+  });
+});
+
+
+/* ================================================================== *
+ * 快照跳变护栏
+ *
+ * 真实事故：sina:int_nikkei / int_ftse / int_dji 长期停更，但接口仍返回
+ * 一年前的僵尸价（日经 44946.64、富时 9284.83、道指 46247.29，涨跌幅的小数
+ * 点后 16 位永恒不变）。每当东财偶发断连降级到这些源，僵尸价就被写进快照，
+ * 隔夜复盘随即出现 +40% 这种离谱值。
+ *
+ * 实测：`curl hq.sinajs.cn/list=int_nikkei` 现在返回的就是 44946.64。
+ * ================================================================== */
+
+describe('快照跳变护栏', () => {
+  const Q = (id, price) => [{ id, name: id.toUpperCase(), price, ok: true }];
+  const at = (m) => `2026-10-27T06:${String(m).padStart(2, '0')}:00.000Z`;
+
+  beforeEach(() => {
+    resetSnapshotGuard();
+  });
+
+  it('正常序列不受影响，逐条写入', async () => {
+    for (const m of [0, 5, 10, 15, 20, 25]) {
+      expect(await takeSnapshot(Q('n225', 63260 + m), { at: at(m) })).toBe(1);
+    }
+    expect(snapshotCount()).toBe(6);
+  });
+
+  it('中间夹一个僵尸价会被拦下，后续正常刻度继续写', async () => {
+    for (const m of [0, 5, 10, 15, 20, 25]) await takeSnapshot(Q('n225', 63260 + m), { at: at(m) });
+
+    const skips = [];
+    const written = await takeSnapshot(Q('n225', 44946.64), { at: at(30), onSkip: (s) => skips.push(s) });
+
+    expect(written, '僵尸价不该写进快照').toBe(0);
+    expect(skips).toHaveLength(1);
+    expect(skips[0]).toMatchObject({ id: 'n225', reason: 'jump-pending' });
+    expect(snapshotCount()).toBe(6);
+
+    // 真实行情回来，继续正常写入
+    expect(await takeSnapshot(Q('n225', 63270), { at: at(35) })).toBe(1);
+    const snaps = await readSnapshots();
+    expect(snaps.at(-1).quotes[0].price).toBe(63270);
+  });
+
+  it('脏锚点死锁：库里最新已是僵尸价时，真实行情必须能恢复写入', async () => {
+    // 先造一个「最新刻度是僵尸价」的库（模拟护栏上线前的既有脏数据）
+    for (const m of [0, 5, 10, 15, 20, 25]) await takeSnapshot(Q('n225', 44946.64), { at: at(m) });
+    expect((await readSnapshots()).at(-1).quotes[0].price).toBe(44946.64);
+
+    // 真实行情第一次出现：相对 4 万多的锚点是 +40%，先挂起
+    const skips = [];
+    expect(await takeSnapshot(Q('n225', 63268.37), { at: at(30), onSkip: (s) => skips.push(s) })).toBe(0);
+    expect(skips[0].reason).toBe('jump-pending');
+
+    // 第二次仍然停在新价位 → 认定真的换挡，放行（否则会永久锁死）
+    expect(await takeSnapshot(Q('n225', 63270.1), { at: at(35) })).toBe(1);
+    expect((await readSnapshots()).at(-1).quotes[0].price).toBe(63270.1);
+  });
+
+  it('按品种传阈值：指数 10% 太松时可用业务阈值收紧', async () => {
+    for (const m of [0, 5, 10, 15, 20, 25]) await takeSnapshot(Q('usdcny', 7.1), { at: at(m) });
+    // 7.1 → 7.5 是 +5.6%：默认 10% 放行，按品种 3% 则拦下
+    expect(await takeSnapshot(Q('usdcny', 7.5), { at: at(30) })).toBe(1);
+    resetSnapshotGuard();
+    const skips = [];
+    expect(
+      await takeSnapshot(Q('usdcny', 7.5), { at: at(35), maxJumpPctById: { usdcny: 3 }, onSkip: (s) => skips.push(s) }),
+    ).toBe(0);
+    expect(skips[0].reason).toBe('jump-pending');
+  });
+
+  it('锚点窗口是最近 6 个刻度', () => {
+    expect(SNAPSHOT_ANCHOR_WINDOW).toBe(6);
+  });
+
+  it('首次写入没有锚点时不做跳变判断', async () => {
+    expect(await takeSnapshot(Q('brand-new', 12345), { at: at(0) })).toBe(1);
+  });
+
+  it('多标的各自独立判断：一个被拦不影响另一个', async () => {
+    for (const m of [0, 5, 10, 15, 20, 25]) {
+      await takeSnapshot([{ id: 'a', name: 'A', price: 100, ok: true }, { id: 'b', name: 'B', price: 200, ok: true }], { at: at(m) });
+    }
+    const written = await takeSnapshot(
+      [{ id: 'a', name: 'A', price: 100.5, ok: true }, { id: 'b', name: 'B', price: 900, ok: true }],
+      { at: at(30) },
+    );
+    expect(written).toBe(1); // 只有 a 写入
+    const last = (await readSnapshots()).at(-1);
+    expect(last.quotes.map((q) => q.id)).toEqual(['a']);
   });
 });

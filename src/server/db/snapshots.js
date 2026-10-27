@@ -10,17 +10,98 @@ import { getDb } from './sqlite.js';
 /** 单次快照最多取多少个时间刻度（足够覆盖数日） */
 export const SNAPSHOT_READ_LIMIT = 4000;
 
+/** 相邻刻度的锚点窗口：取最近 N 个刻度的中位数当参照，单条脏数据掰不动它 */
+export const SNAPSHOT_ANCHOR_WINDOW = 6;
+
+/**
+ * 跳变两次确认的待定表：id -> { price, count }
+ *
+ * 为什么需要它：库里现有的最新刻度可能本身就是脏值（例如 sina:int_nikkei
+ * 停更后写进去的僵尸价）。如果只做「相对上一刻度跳变超阈值就拒写」，等真实
+ * 行情回来时反而会被当成 +40% 的脏数据永远拒之门外 —— 脏锚点死锁。
+ * 这里改成「连续两次都指向同一新价位才算真换挡」：跳变第一次挂起、第二次确认。
+ */
+const pending = new Map();
+
+/** 仅供测试：清空待定表 */
+export function resetSnapshotGuard() {
+  pending.clear();
+}
+
+/** 取中位数（空数组返回 null） */
+function median(nums) {
+  const arr = nums.filter((n) => Number.isFinite(n)).sort((a, b) => a - b);
+  if (!arr.length) return null;
+  const mid = arr.length >> 1;
+  return arr.length % 2 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
+}
+
+/** 每个标的最近 N 个刻度的中位价（锚点） */
+function anchors(window = SNAPSHOT_ANCHOR_WINDOW, excludeAt = null) {
+  try {
+    const db = getDb();
+    const ats = db
+      .prepare('SELECT DISTINCT at FROM snapshots WHERE at <> ? ORDER BY at DESC LIMIT ?')
+      .all(excludeAt ?? '', window)
+      .map((r) => r.at);
+    if (!ats.length) return new Map();
+    const marks = ats.map(() => '?').join(',');
+    const rows = db.prepare(`SELECT id, price FROM snapshots WHERE at IN (${marks})`).all(...ats);
+    const byId = new Map();
+    for (const r of rows) {
+      if (!byId.has(r.id)) byId.set(r.id, []);
+      byId.get(r.id).push(r.price);
+    }
+    const out = new Map();
+    for (const [id, prices] of byId) out.set(id, median(prices));
+    return out;
+  } catch {
+    return new Map();
+  }
+}
+
 /**
  * 落一份快照。同一次调用共用同一个 at（主键是 at + id），
  * 所以整批要么一起进、要么一起回滚。
  * @param {Array<{ id, name, price, changePct, ok }>} quotes
  * @returns {Promise<number>} 写入行数
  */
-export async function takeSnapshot(quotes, { at = new Date().toISOString() } = {}) {
+export async function takeSnapshot(
+  quotes,
+  { at = new Date().toISOString(), maxJumpPct = 10, maxJumpPctById = null, onSkip = null } = {},
+) {
   try {
-    const rows = (quotes ?? [])
+    const candidates = (quotes ?? [])
       .filter((q) => q && q.ok && q.price > 0)
-      .map((q) => ({ id: q.id, name: q.name, price: q.price, changePct: q.changePct ?? null }));
+      .map((q) => ({ id: q.id, name: q.name, price: Number(q.price), changePct: q.changePct ?? null }));
+    if (!candidates.length) return 0;
+
+    // 跳变护栏：与「最近 N 刻度中位数」比较，超阈值先挂起、连续两次才认。
+    // 阈值可由调用方按品种传入（db/ 不认识业务标的，策略交给上层）。
+    const anchor = anchors(SNAPSHOT_ANCHOR_WINDOW, at);
+    const rows = [];
+    for (const c of candidates) {
+      const base = anchor.get(c.id);
+      const limit = Number(maxJumpPctById?.[c.id] ?? maxJumpPct);
+      const jumped = base != null && base > 0 && Math.abs(c.price - base) / base > limit / 100;
+
+      if (jumped) {
+        const pend = pending.get(c.id);
+        const sameRegime = pend && Math.abs(c.price - pend.price) / pend.price <= limit / 100;
+        if (!sameRegime) {
+          // 第一次看到这个突变：挂起，不写库（避免把僵尸价/跨源错位写进去）
+          pending.set(c.id, { price: c.price, count: 1 });
+          onSkip?.({ id: c.id, price: c.price, anchor: base, reason: 'jump-pending' });
+          continue;
+        }
+        // 连续第二次都停在新价位 → 认定真的换挡，放行
+        pending.delete(c.id);
+        onSkip?.({ id: c.id, price: c.price, anchor: base, reason: 'regime-confirmed' });
+      } else {
+        pending.delete(c.id);
+      }
+      rows.push(c);
+    }
     if (!rows.length) return 0;
     const db = getDb();
     const ins = db.prepare(

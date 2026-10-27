@@ -104,6 +104,12 @@ maybe('端点契约：/api/briefing', () => {
     expect(b.ok).toBe(true);
     expect(b.status).not.toBe('collecting');
     expect(b.items.length).toBeGreaterThan(5);
+    // 跨源口径错位的行会被拦下并登记原因，而不是当成「隔夜涨跌」展示
+    expect(Array.isArray(b.dropped)).toBe(true);
+    for (const d of b.dropped) {
+      expect(d.id, 'dropped 里每行都要能指名是哪个标的').toBeTruthy();
+      expect(Math.abs(d.movePct)).toBeGreaterThan(d.limit);
+    }
     for (const it of b.items) {
       expect(it.id).toBeTruthy();
       expect(Number.isFinite(it.from)).toBe(true);

@@ -548,3 +548,14 @@ diffs (非时间字段)  : 0
 **测试**：258 passed / 10 文件；新增 `tests/golden-contract.test.js`（端点结构与「historyErrors 无 ReferenceError」契约）。
 
 **遗留（业务决策，未改）**：快照表混入 n225 的异常价（两源口径交替），建议在 `takeSnapshot` 用 `MOVE_SUSPECT_PCT` 做跳变过滤。
+
+
+### 14. 快照跳变护栏：`sina:int_*` 僵尸价
+
+实测确认低值（`n225 44946.64` / `ftse 9284.83` / `dji 46247.29`）是 `sina:int_*` 停更源的僵尸价，东财的 63268 才是实时行情。东财偶发断连降级时僵尸价入库，与真实基准做差 → `/api/briefing` 出现 +40%。
+
+**治写**：`takeSnapshot` 加「最近 6 刻度中位价 + 超阈值挂起、连续两次确认」的迟滞护栏，避免脏锚点死锁；阈值由调用方按品种传入，`db/` 零上层依赖。
+**治读**：`buildBriefing` 拦下 `|movePct| > MOVE_SUSPECT_PCT[id] ?? 12` 的行，记入 `dropped`。
+
+**验证**：265 passed（+7）；金标准仅新增 `dropped` 字段，业务叶子全等；真实库 briefing 23 项全在 ±1%。
+**遗留**：三个停更 `sina:int_*` 源仍在降级链里，建议单独一次改动摘除以治本（会改 fallback 链，需重设基线）。

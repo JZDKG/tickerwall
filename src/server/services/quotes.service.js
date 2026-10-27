@@ -1341,7 +1341,7 @@ export async function getQuotes({ force = false } = {}) {
       // 所以节流到 5 分钟，并只记录价格类标的。
       if (Date.now() - lastSnapshotAt > SNAPSHOT_MIN_GAP_MS) {
         lastSnapshotAt = Date.now();
-        takeSnapshot(data?.quotes ?? data?.items ?? []).catch(() => {});
+        takeSnapshot(data?.quotes ?? data?.items ?? [], { maxJumpPctById: MOVE_SUSPECT_PCT }).catch(() => {});
       }
       return data;
     } finally {
@@ -1428,12 +1428,25 @@ export async function buildBriefing() {
   }
   const baseMap = new Map(baseline.quotes.map((q) => [q.id, q]));
   const items = [];
+  const dropped = [];
   for (const q of latest.quotes) {
     const b = baseMap.get(q.id);
     if (!b || !(b.price > 0) || !(q.price > 0)) continue;
     const move = q.price - b.price;
     const movePct = (move / b.price) * 100;
     if (!Number.isFinite(movePct)) continue;
+
+    /**
+     * 跨源口径错位过滤：基准与最新刻度若来自不同上游（典型是新浪停更的
+     * sina:int_* 僵尸价 vs 东财实时价），差值不是「隔夜涨跌」而是一条脏数据。
+     * 阈值复用报价层的 MOVE_SUSPECT_PCT —— 同一套「这个品种一天能动多少」的认知，
+     * 不另立一套。宁可少一行，也不给用户看 +40% 这种假信号。
+     */
+    const suspect = MOVE_SUSPECT_PCT[q.id] ?? 12;
+    if (Math.abs(movePct) > suspect) {
+      dropped.push({ id: q.id, movePct: Number(movePct.toFixed(2)), limit: suspect });
+      continue;
+    }
     items.push({
       id: q.id,
       name: q.name,
@@ -1448,6 +1461,7 @@ export async function buildBriefing() {
   return {
     ok: true,
     status: crossedDay ? 'overnight' : 'intraday',
+    dropped,
     cutLabel: '15:00 A股收盘',
     baselineAt: baseline.at,
     latestAt: latest.at,
