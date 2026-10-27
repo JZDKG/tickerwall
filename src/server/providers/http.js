@@ -72,8 +72,10 @@ export async function fetchRaw(
       throw new Error(`HTTP ${res.status}${detail ? `: ${detail.slice(0, 160)}` : ''}`);
     }
     const buf = Buffer.from(await res.arrayBuffer());
-    if (encoding === 'gb18030') return new TextDecoder('gb18030').decode(buf);
-    return buf.toString('utf8');
+    if (encoding === 'utf-8') return buf.toString('utf8');
+    // 非 utf-8：新浪行情是 gb18030，少数新闻 feed（如巴西圣保罗页报）仍是
+    // ISO-8859-1，按 utf-8 解会把变音字母变成一串问号。
+    return new TextDecoder(encoding).decode(buf);
   } catch (err) {
     if (err?.name === 'AbortError') throw new Error('请求超时');
     throw err;
