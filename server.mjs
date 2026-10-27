@@ -8,7 +8,7 @@
  * 启动：node server.mjs   （默认 http://127.0.0.1:8787）
  */
 import { MARKET_PROFILES, localClock, isMarketOpen } from './src/server/domain/market-hours.js';
-import { takeForce, sendJson, sendText, serveStatic } from './src/server/http.js';
+import { takeForce, sendJson, sendText, serveStatic, guardServerErrors } from './src/server/http.js';
 import { PORT, HOST, DEBUG_API, DISABLE_BACKGROUND } from './src/server/config.js';
 import { getEvents, getEventHistory, loadLlmStore } from './src/server/services/events.service.js';
 import {
@@ -154,11 +154,18 @@ function startBackground() {
 
 /* 进程级兜底：这是本地看板，宁可带着错误继续服务，也不要因为一次未处理
    的拒绝就整站消失。日志必须留，否则只剩「页面打不开」这一个现象。 */
+/* 启动期 / 运行期。兜底只该救「已开始服务之后」的意外：端口被占这类启动期
+   错误是该崩就崩的，吞掉会让启动脚本以为成功。（实现见 http.js） */
+let listening = false;
+guardServerErrors(server, { host: HOST, port: PORT }, () => listening);
+
 process.on('unhandledRejection', (err) => {
   console.error('[process] 未处理的 Promise 拒绝', err);
 });
 process.on('uncaughtException', (err) => {
   console.error('[process] 未捕获异常', err);
+  // 还没开始服务就炸了，说明是启动问题（配置/依赖/端口），不该假装健康
+  if (!listening) process.exit(1);
 });
 
 await migrateLegacyStorage();
@@ -171,6 +178,7 @@ server.listen(PORT, HOST, () => {
   // 消费（集成测试据此拿端口），改中文文案不该让测试挂。
   const a = server.address();
   const port = a && typeof a === 'object' ? a.port : PORT;
+  listening = true;
   console.log(`市场看板已启动 → http://${HOST}:${port}`);
   console.log(`LISTENING ${port}`);
   if (DISABLE_BACKGROUND) return console.log('后台抓取已禁用');

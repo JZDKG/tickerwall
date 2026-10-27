@@ -180,3 +180,28 @@ export async function serveStatic(res, pathname) {
     sendText(res, 404, 'not found');
   }
 }
+
+/**
+ * 给 server 装上「启动期该崩就崩 / 运行期只记日志」的错误处理。
+ *
+ * 为什么不能全靠进程级兜底：吞掉 uncaughtException 之后，端口被占用也会
+ * 被当成「未捕获异常」记一笔然后以**退出码 0** 结束 —— `启动看板.command`
+ * 会认为启动成功，用户看不到失败，进程管理器也不会重启。这是该崩的情况。
+ *
+ * @param {import('node:http').Server} server
+ * @param {{ host: string, port: number }} addr 日志里要显示的目标地址
+ * @param {() => boolean} isListening 启动完成后返回 true
+ */
+export function guardServerErrors(server, { host, port }, isListening) {
+  server.on('error', (err) => {
+    if (isListening()) return console.error('[http] server error', err);
+    const fatal = err?.code === 'EADDRINUSE' || err?.code === 'EACCES';
+    if (fatal) {
+      const why = err.code === 'EADDRINUSE' ? '端口已被占用' : '没有权限';
+      console.error(`[boot] 无法监听 ${host}:${port} —— ${why}`, err.message);
+    } else {
+      console.error('[boot] 监听失败', err?.message ?? err);
+    }
+    process.exit(1);
+  });
+}

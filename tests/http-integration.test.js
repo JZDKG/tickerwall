@@ -11,12 +11,17 @@
  * 必须设 DISABLE_BACKGROUND=1：否则 listen 回调会立刻请求新浪/东方财富，
  * 后台定时器也会一直跑 —— 测试就变成依赖外网的东西，断网还会在 stderr
  * 刷错误。这个开关同时也给「断网环境想先起个页面」用。
+ *
+ * 还必须设 KANBAN_DB：`KANBAN_DATA_DIR` 一开始只管 jsonl / 历史那些文件，
+ * SQLite 的默认路径是写死的 `<仓库>/data/kanban.db` —— 于是「临时数据目录」
+ * 仍然打开并写入用户真实库（WAL 下还会和正在跑的看板抢写）。现在
+ * DEFAULT_DB_FILE 已改成从 DATA_DIR 推导，这里再显式给一次，双保险。
  * ================================================================== */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawn } from 'node:child_process';
 import net from 'node:net';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, statSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -63,6 +68,7 @@ beforeAll(async () => {
       PORT: '0',
       HOST: '127.0.0.1',
       KANBAN_DATA_DIR: dataDir,
+      KANBAN_DB: path.join(dataDir, 'kanban.db'),
       // 关掉 LLM 与外部凭据读取，避免测试碰到网络或别人的密钥
       LLM_CONFIG_SOURCE: 'env',
       // 关键：不起后台抓取，否则测试依赖外网
@@ -85,6 +91,25 @@ afterAll(async () => {
     });
   }
   if (dataDir) rmSync(dataDir, { recursive: true, force: true });
+});
+
+describe('测试隔离', () => {
+  it('不碰用户真实的 data/kanban.db', async () => {
+    const realDb = path.join(REPO, 'data', 'kanban.db');
+    const before = statSync(realDb).mtimeMs;
+    // 打几个会初始化存储的端点
+    await fetch(`${base}/api/health`);
+    await fetch(`${base}/api/_market`);
+    await new Promise((r) => setTimeout(r, 200));
+    const after = statSync(realDb).mtimeMs;
+    // 允许相等（没被写过）；一旦被子进程写过，mtime 必然变
+    expect(after).toBe(before);
+  });
+
+  it('临时数据目录里确实生成了库文件', () => {
+    // 反证：如果它不存在，说明子进程根本没用自己的数据目录
+    expect(existsSync(path.join(dataDir, 'kanban.db'))).toBe(true);
+  });
 });
 
 describe('路由与方法校验', () => {

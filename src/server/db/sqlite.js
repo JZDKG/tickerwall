@@ -13,11 +13,25 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DATA_DIR } from '../paths.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 /** 仓库根目录：src/server/db → 上三级 */
 export const REPO_ROOT = path.resolve(HERE, '..', '..', '..');
-export const DEFAULT_DB_FILE = path.join(REPO_ROOT, 'data', 'kanban.db');
+
+/**
+ * 默认库文件**跟着 DATA_DIR 走**。
+ *
+ * 原先写死成 `<仓库>/data/kanban.db`，于是 `KANBAN_DATA_DIR` 只能换掉
+ * jsonl/历史那些文件，SQLite 仍在原地 —— 换数据目录不是「整套换走」，
+ * 而是换了一半。后果不只是概念不干净：集成测试把 KANBAN_DATA_DIR 指向
+ * 临时目录，却仍然打开并写入用户真实的 kanban.db（WAL 模式下两个进程
+ * 同时写同一个库）。
+ *
+ * `paths.js` 里那句注释本来就说 KANBAN_DATA_DIR 是「把整个 data/ 换到别处」，
+ * 这里补上兑现它。KANBAN_DB 仍然可以单独指定，优先级最高。
+ */
+export const DEFAULT_DB_FILE = path.join(DATA_DIR, 'kanban.db');
 
 let handle = null;
 /** 测试注入用：非 null 时覆盖默认路径 */

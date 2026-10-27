@@ -364,11 +364,23 @@ describe('入口的异常兜底结构', () => {
     expect(src).toContain('res.destroy()');
   });
 
-  it('进程级对未处理拒绝与未捕获异常都留日志，且不退出', () => {
+  it('进程级留日志；只允许在「尚未开始服务」时退出', () => {
     const src = code();
     expect(src).toContain("process.on('unhandledRejection'");
     expect(src).toContain("process.on('uncaughtException'");
-    // 不许出现「记完就退出」的写法
-    expect(src).not.toMatch(/uncaughtException'[\s\S]{0,200}process\.exit/);
+    // uncaughtException 里可以有 exit，但必须带 !listening 条件 ——
+    // 启动期的错误该崩就崩（否则端口被占也会以 0 退出，等于报告成功），
+    // 运行期则宁可带错继续服务。
+    const seg = src.slice(src.indexOf("process.on('uncaughtException'"), src.indexOf("process.on('uncaughtException'") + 400);
+    if (seg.includes('process.exit')) expect(seg).toContain('!listening');
+  });
+
+  it('端口被占用这类启动期错误以非 0 退出', () => {
+    const httpSrc = require('node:fs').readFileSync(path.join(REPO, 'src/server/http.js'), 'utf8');
+    const src = code() + httpSrc;
+    // 必须给 server 挂 error 处理，并对 EADDRINUSE / EACCES 明确 exit(1)
+    expect(src).toContain("server.on('error'");
+    expect(src).toContain('EADDRINUSE');
+    expect(src).toContain('process.exit(1)');
   });
 });
