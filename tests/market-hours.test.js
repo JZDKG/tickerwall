@@ -21,6 +21,8 @@ import {
   hhmmToMin,
   isMarketOpen,
   marketStatusOf,
+  marketPhase,
+  PRE_WINDOW_MS,
   parseDataTime,
   gradeFreshness,
   humanAge,
@@ -217,12 +219,16 @@ describe('crypto 与缺失配置', () => {
     expect(marketStatusOf({ market: 'not-exist' })).toBeNull();
   });
 
-  it('marketStatusOf 的文案三态', () => {
+  it('marketStatusOf 的文案四态（含「待开盘」）', () => {
     expect(marketStatusOf({ market: 'crypto' })).toMatchObject({ label: '24×7', open: true });
-    expect(marketStatusOf({ market: 'us-index' })).toHaveProperty('label');
+    // 全部给定时点 —— 原来这三条不传 now，用的是跑测试那一刻，
+    // 恰好落在「开盘前 3 小时」就会换文案，测试随机红。
+    expect(marketStatusOf({ market: 'us-index' }, at('2026-10-30T14:00:00Z')).label).toBe('交易中');
+    expect(marketStatusOf({ market: 'us-index' }, at('2026-10-29T22:00:00Z')).label).toBe('已收盘');
+    expect(marketStatusOf({ market: 'us-index' }, at('2026-10-30T13:00:00Z')).label).toBe('待开盘');
     const s = marketStatusOf({ market: 'us-index' });
-    expect(['交易中', '已收盘']).toContain(s.label);
     expect(s.market).toBe('美股');
+    expect(['交易中', '已收盘', '待开盘']).toContain(s.label);
   });
 
   it('17 个市场配置都带齐 tz / priceBasis / daysPerYear', () => {
@@ -317,5 +323,94 @@ describe('humanAge', () => {
 
   it('负值不出现「-N 秒前」', () => {
     expect(humanAge(-5000)).toBe('0 秒前');
+  });
+});
+
+/* ================================================================== *
+ * 交易时段相位（Step 3 接力带要用）
+ *
+ *   open / pre / closed / 24x7，外加 nextOpenAt / nextCloseAt 两个 UTC ISO。
+ * 断言全部写绝对时刻：这一层错了不会抛错，只会让「待开盘 · 2h13m」常年
+ * 显示成 0 或显示成昨天。
+ * ================================================================== */
+describe('marketPhase：相位与下次开关盘', () => {
+  const phase = (name, iso) => marketPhase(MARKET_PROFILES[name], at(iso));
+
+  it('盘中给出准确的收盘时刻（美东 9:30–16:00，10-30 仍是 EDT）', () => {
+    // 2026-10-30 周五 14:00Z = 纽约 10:00 EDT
+    expect(phase('us-index', '2026-10-30T14:00:00Z')).toEqual({
+      phase: 'open',
+      nextOpenAt: null,
+      // 16:00 EDT = 20:00Z
+      nextCloseAt: '2026-10-30T20:00:00.000Z',
+    });
+  });
+
+  it('收盘且离开盘还远 → closed，并给出下次开盘（次日 9:30 EDT）', () => {
+    // 2026-10-29 周四 22:00Z = 纽约 18:00 EDT
+    const p = phase('us-index', '2026-10-29T22:00:00Z');
+    expect(p.phase).toBe('closed');
+    expect(p.nextOpenAt).toBe('2026-10-30T13:30:00.000Z');
+    expect(p.nextCloseAt).toBeNull();
+  });
+
+  it('距开盘 1 小时算 pre（不是「盘前」，只是待开盘）', () => {
+    // 2026-10-30 周五 00:30Z = 北京 08:30，A 股 09:30 开盘
+    const p = phase('cn-index', '2026-10-30T00:30:00Z');
+    expect(p.phase).toBe('pre');
+    expect(p.nextOpenAt).toBe('2026-10-30T01:30:00.000Z');
+  });
+
+  it('pre 的边界就是 PRE_WINDOW_MS：正好 3 小时算 pre，多一分钟不算', () => {
+    // A 股 09:30 开盘 = 01:30Z，往前推 3 小时 = 22:30Z 前一天
+    expect(phase('cn-index', '2026-10-29T22:30:00Z').phase).toBe('pre');
+    expect(phase('cn-index', '2026-10-29T22:29:00Z').phase).toBe('closed');
+    expect(PRE_WINDOW_MS).toBe(3 * 60 * 60 * 1000);
+  });
+
+  it('周末要跳过：周六收盘后的下一次开盘是周一', () => {
+    // 2026-10-31 周六 12:00 北京
+    expect(phase('cn-index', '2026-10-31T04:00:00Z').nextOpenAt).toBe('2026-11-02T01:30:00.000Z');
+    // 2026-11-01 周日 12:00 北京，仍然是周一
+    expect(phase('cn-index', '2026-11-01T04:00:00Z').nextOpenAt).toBe('2026-11-02T01:30:00.000Z');
+  });
+
+  it('美国冬令时切换后，同一句 9:30 变成 14:30Z（不是 13:30Z）', () => {
+    // 2026-11-01 美国夏令时结束；11-02 周一是 EST（UTC-5）
+    // 2026-11-02 00:00Z = 11-01 19:00 EST，离开盘 > 3h
+    expect(phase('us-index', '2026-11-02T00:00:00Z').nextOpenAt).toBe('2026-11-02T14:30:00.000Z');
+  });
+
+  it('没有时段表的市场是 24x7，不给开关盘时刻', () => {
+    const p = marketPhase({ label: '加密', tz: 'UTC', ranges: [] }, at('2026-10-30T00:00:00Z'));
+    expect(p).toEqual({ phase: '24x7', nextOpenAt: null, nextCloseAt: null });
+  });
+
+  it('夜盘只在周一到周四：周五晚上没盘，周四晚上 24:00 收', () => {
+    // 上金所夜盘 20:00–24:00 的 days 是 [1,2,3,4]（周一到周四）——
+    // 周五晚上不开，所以别拿周五去测「夜盘在盘中」。
+    // 2026-10-29 周四 21:00 北京 = 13:00Z
+    const thu = phase('cn-spot', '2026-10-29T13:00:00Z');
+    expect(thu.phase).toBe('open');
+    // 24:00 北京 = 16:00Z 同日
+    expect(thu.nextCloseAt).toBe('2026-10-29T16:00:00.000Z');
+    // 2026-10-30 周五 21:00 北京 —— 夜盘不开
+    expect(phase('cn-spot', '2026-10-30T13:00:00Z').phase).not.toBe('open');
+  });
+
+  it('marketStatusOf 把相位摊平出来，label 用「待开盘」而不是「盘前」', () => {
+    const s = marketStatusOf({ market: 'cn-index' }, at('2026-10-30T00:30:00Z'));
+    expect(s.open).toBe(false);
+    expect(s.phase).toBe('pre');
+    expect(s.label).toBe('待开盘');
+    expect(s.nextOpenAt).toBe('2026-10-30T01:30:00.000Z');
+  });
+
+  it('24×7 的 label 保持原样，phase 也对得上', () => {
+    const s = marketStatusOf({ market: 'crypto' }, at('2026-10-30T00:00:00Z'));
+    if (s) {
+      expect(s.label).toBe('24×7');
+      expect(s.phase).toBe('24x7');
+    }
   });
 });

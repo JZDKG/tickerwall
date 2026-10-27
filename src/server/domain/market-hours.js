@@ -8,6 +8,8 @@
  * 全部按**交易所本地时区**判断，理由见 MARKET_PROFILES 上方那段注释。
  * ================================================================== */
 
+import { zonedParts, zonedTimeToUtc } from './clock.js';
+
 export const GLOBEX_ET = [
   { days: [0], from: '18:00', to: '24:00' },
   { days: [1, 2, 3, 4], from: '00:00', to: '17:00' },
@@ -147,14 +149,100 @@ export function isMarketOpen(profile, now = new Date()) {
   return false;
 }
 
-export function marketStatusOf(inst) {
+/**
+ * 距下次开盘多久之内算「待开盘」。
+ *
+ * 刻意不叫「盘前」——我们没有盘前交易的数据，说「盘前」等于暗示有。
+ * 三小时是「值得开始盯」的量级：太短看不出，太长就变成常态。
+ */
+export const PRE_WINDOW_MS = 3 * 60 * 60 * 1000;
+
+/** 未来最长看几天。跨周末（周五收盘 → 周一开盘）要 3 天，留到 8 天足够 */
+const LOOKAHEAD_DAYS = 8;
+
+/**
+ * 把 profile 的营业时段展开成未来若干天的绝对时间窗。
+ *
+ * 逐日按 tz 的当地日历推，再用 zonedTimeToUtc 反解绝对时刻 —— 不在本地
+ * 做时区加法，否则夏令时切换那两天会整体偏一小时。
+ */
+function sessionWindows(profile, now = new Date()) {
+  const tz = profile.tz ?? 'Asia/Shanghai';
+  const base = zonedParts(now.getTime(), tz);
+  if (!base) return [];
+
+  const out = [];
+  for (let d = 0; d < LOOKAHEAD_DAYS; d += 1) {
+    const day = new Date(Date.UTC(base.year, base.month - 1, base.day + d));
+    const y = day.getUTCFullYear();
+    const mo = day.getUTCMonth() + 1;
+    const da = day.getUTCDate();
+    const weekday = day.getUTCDay();
+
+    for (const r of profile.ranges) {
+      if (r.days && !r.days.includes(weekday)) continue;
+      const fromMin = hhmmToMin(r.from);
+      const toMin = hhmmToMin(r.to);
+      if (!Number.isFinite(fromMin) || !Number.isFinite(toMin)) continue;
+      // 收盘时刻不晚于开盘时刻，说明跨午夜（22:00→02:00 这种）
+      const endDayOffset = toMin <= fromMin ? 1 : 0;
+
+      const start = zonedTimeToUtc(y, mo, da, Math.floor(fromMin / 60), fromMin % 60, tz);
+      const end = zonedTimeToUtc(y, mo, da + endDayOffset, Math.floor(toMin / 60), toMin % 60, tz);
+      if (start == null || end == null || end <= start) continue;
+      out.push({ start, end });
+    }
+  }
+  return out.sort((a, b) => a.start - b.start);
+}
+
+/**
+ * 交易时段相位。
+ *
+ *   open    正在交易
+ *   pre     已收盘，但距下次开盘 ≤ 3h —— 界面显示「待开盘 · 2h13m」
+ *   closed  已收盘且离开盘还远
+ *   24x7    没有时段表（加密）
+ *
+ * nextOpenAt / nextCloseAt 都是 UTC ISO，前端直接做绝对差值，不再自己拼时间。
+ */
+export function marketPhase(profile, now = new Date()) {
+  if (!profile) return null;
+  const nowMs = now.getTime();
+
+  if (!Array.isArray(profile.ranges) || !profile.ranges.length) {
+    return { phase: '24x7', nextOpenAt: null, nextCloseAt: null };
+  }
+
+  const windows = sessionWindows(profile, now);
+
+  const cur = windows.find((w) => nowMs >= w.start && nowMs < w.end);
+  if (cur) {
+    return { phase: 'open', nextOpenAt: null, nextCloseAt: new Date(cur.end).toISOString() };
+  }
+
+  const next = windows.find((w) => w.start > nowMs);
+  if (!next) {
+    // 时段表覆盖不到 —— 如实说不知道，不要编一个时间
+    return { phase: 'closed', nextOpenAt: null, nextCloseAt: null };
+  }
+
+  const phase = next.start - nowMs <= PRE_WINDOW_MS ? 'pre' : 'closed';
+  return { phase, nextOpenAt: new Date(next.start).toISOString(), nextCloseAt: null };
+}
+
+export function marketStatusOf(inst, now = new Date()) {
   const profile = MARKET_PROFILES[inst.market];
   if (!profile) return null;
-  const open = isMarketOpen(profile);
+  const open = isMarketOpen(profile, now);
+  const phase = marketPhase(profile, now) ?? { phase: open ? 'open' : 'closed', nextOpenAt: null, nextCloseAt: null };
   return {
     market: profile.label,
     open,
-    label: !profile.ranges.length ? '24×7' : open ? '交易中' : '已收盘',
+    label: !profile.ranges.length ? '24×7' : open ? '交易中' : phase.phase === 'pre' ? '待开盘' : '已收盘',
+    phase: phase.phase,
+    nextOpenAt: phase.nextOpenAt,
+    nextCloseAt: phase.nextCloseAt,
   };
 }
 
