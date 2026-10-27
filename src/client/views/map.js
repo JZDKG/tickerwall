@@ -9,6 +9,8 @@
  * 全屏 / 缩放平移 / 各地指数直接标注 / 新事件气泡 / 右侧滚动事件流
  * ================================================================== */
 import { WORLD_COUNTRIES, MAP_SIZE } from '/worldmap.js';
+import * as GEO from './map/geo/cities.js';
+import * as REGIONS from './map/geo/regions.js';
 import { mapEl } from '../shared/dom.js';
 import { dirOf, esc, fmtPrice } from '../shared/format.js';
 import { store } from '../shared/store.js';
@@ -49,45 +51,10 @@ function deltaToViewBox(svg, dx, dy) {
 // 交易所坐标：同城多标的聚合到一个节点，纵向堆叠显示
 // dx/dy 是标签相对城市点的偏移 —— 欧洲三国、北美三城在地图上只隔十几像素，
 // 不手动错开标签会叠成一团
-export const MAP_CITIES = [
-  { key: 'ny', name: '纽约', lon: -74.0, lat: 40.7, ids: ['sp500', 'ndx100', 'dji', 'vix', 'vxn'], side: 'right', dx: 16, dy: -46 },
-  { key: 'tor', name: '多伦多', lon: -79.4, lat: 43.7, ids: ['tsx'], side: 'left', dx: -18, dy: -16 },
-  { key: 'chi', name: '芝加哥', lon: -87.6, lat: 41.9, ids: ['oil'], side: 'left', dx: -18, dy: 28 },
-  { key: 'sh', name: '上海', lon: 121.5, lat: 31.2, ids: ['sh000001', 'gold-cn'], side: 'left', dx: -14, dy: 16 },
-  { key: 'hkg', name: '香港', lon: 114.2, lat: 22.3, ids: ['hsi'], side: 'left', dx: -12, dy: 34 },
-  { key: 'ldn', name: '伦敦', lon: -0.1, lat: 51.5, ids: ['gold-intl', 'ftse'], side: 'left', dx: -14, dy: -28 },
-  { key: 'par', name: '巴黎', lon: 2.3, lat: 48.9, ids: ['cac'], side: 'left', dx: -16, dy: 20 },
-  { key: 'fra', name: '法兰克福', lon: 8.7, lat: 50.1, ids: ['dax'], side: 'right', dx: 16, dy: -10 },
-  { key: 'tyo', name: '东京', lon: 139.7, lat: 35.7, ids: ['n225'], side: 'left', dx: -16, dy: -10 },
-  { key: 'sel', name: '首尔', lon: 127.0, lat: 37.6, ids: ['kospi'], side: 'left', dx: -14, dy: 26 },
-  { key: 'tpe', name: '台北', lon: 121.6, lat: 25.0, ids: ['twii'], side: 'left', dx: -12, dy: 18 },
-  { key: 'sao', name: '圣保罗', lon: -46.6, lat: -23.5, ids: ['bvsp'], side: 'right', dx: 14, dy: 2 },
-  { key: 'bom', name: '孟买', lon: 72.9, lat: 19.1, ids: ['nifty'], side: 'right', dx: 14, dy: 48 },
-  { key: 'syd', name: '悉尼', lon: 151.2, lat: -33.9, ids: ['asx'], side: 'left', dx: -14, dy: 6 },
-];
-
-// 指数简称（地图标签用）
-export const MAP_TAG = {
-  sp500: '标普', ndx100: '纳指', dji: '道指', vix: 'VIX', vxn: 'VXN',
-  sh000001: '上证', 'gold-cn': '沪金', 'gold-intl': '黄金', ftse: '富时',
-  oil: 'WTI', n225: '日经', hsi: '恒生', dax: 'DAX', cac: 'CAC',
-  bvsp: '巴西', nifty: '印度', kospi: '韩国', asx: '澳洲', tsx: '加拿大',
-  twii: '台湾', btc: 'BTC',
-};
-
-export const REGION_ANCHORS = {
-  us: { lon: -98, lat: 39, label: '北美' },
-  cn: { lon: 105, lat: 34, label: '中国' },
-  eu: { lon: 10, lat: 50, label: '欧元区' },
-  uk: { lon: -3, lat: 55, label: '英国' },
-  jp: { lon: 138, lat: 36.5, label: '日本' },
-  me: { lon: 45, lat: 29, label: '中东' },
-  asia: { lon: 106, lat: 14, label: '东南亚' },
-  latam: { lon: -60, lat: -15, label: '拉美' },
-  africa: { lon: 20, lat: 5, label: '非洲' },
-  global: { lon: -30, lat: 62, label: '全球' },
-};
-
+/* ---------- 地理常量：已搬到 views/map/geo/，这里转发以保持单一来源 ---------- */
+export const MAP_CITIES = GEO.MAP_CITIES;
+export const MAP_TAG = GEO.MAP_TAG;
+export const REGION_ANCHORS = REGIONS.REGION_ANCHORS;
 // 视图状态：缩放 + 平移
 // 初始左移 200px：右侧事件面板会盖住亚洲，先把地图推过去，东京/上海/香港才露得出来
 export let mapView = { k: 1, tx: -200, ty: 0 };
@@ -179,73 +146,10 @@ export function terminatorPath(sun) {
 
 /* ---------- 事件影响弧线 ---------- */
 
-/** 区域 → 受影响的交易中心（仅供参考，真正的连线走下面的标的口径） */
-export const REGION_IMPACT = {
-  us: ['ny'],
-  cn: ['sh', 'hkg'],
-  eu: ['fra', 'ldn'],
-  uk: ['ldn'],
-  jp: ['tyo'],
-  me: ['ldn', 'bom'],
-  asia: ['hkg', 'syd'],
-  latam: ['sao'],
-  africa: ['ldn'],
-  global: ['ny', 'ldn', 'sh'],
-};
-
-/**
- * 标的 → 定价中心城市。
- * 每条事件后端 classify 已经给出 symbols（如 ['oil','gold-intl','vix']），
- * 按定价所在交易所连线比按「事件发生在哪个区域」硬编码准确得多：
- * 中东地缘冲突该打到芝加哥（WTI）和伦敦（Brent），而不是凭空连孟买。
- */
-export const SYMBOL_CITY = {
-  // 美债与美元：定价在纽约
-  us10y: ['ny'],
-  dxy: ['ny', 'ldn'],
-  usdcny: ['sh', 'hkg'],
-  // 美股与波动率：纽约 / 芝加哥 CBOE
-  sp500: ['ny'],
-  ndx100: ['ny'],
-  dji: ['ny'],
-  vix: ['chi', 'ny'],
-  // 商品：WTI 在芝加哥，Brent 与伦敦金在伦敦，沪金在上金所，铜在 LME
-  oil: ['chi', 'ldn'],
-  brent: ['ldn'],
-  copper: ['ldn', 'chi'],
-  'gold-intl': ['ldn', 'ny'],
-  'gold-cn': ['sh'],
-  // 加密：现货无实体中心，取 CME 期货所在的纽约
-  btc: ['ny'],
-  // A 股与亚太
-  sh000001: ['sh', 'hkg'],
-  hsi: ['hkg'],
-  n225: ['tyo'],
-  kospi: ['sel'],
-  twii: ['tpe'],
-  asx: ['syd'],
-  nifty: ['bom'],
-  // 欧洲
-  dax: ['fra'],
-  cac: ['par'],
-  ftse: ['ldn'],
-  // 美洲
-  tsx: ['tor'],
-  bvsp: ['sao'],
-};
-
-/** 由事件的 symbols 推出该连线到哪些定价中心；拿不到才退回区域兜底 */
-export function targetCitiesFor(ev) {
-  const keys = new Set();
-  for (const sym of ev.symbols ?? []) {
-    for (const city of SYMBOL_CITY[sym] ?? []) keys.add(city);
-  }
-  const list = [...keys];
-  if (list.length) return list.slice(0, 5);
-  return REGION_IMPACT[ev.region] ?? [];
-}
-
-/** 两点之间的拱形贝塞尔 */
+/* ---------- 事件 → 定价中心：同上，统一由 geo/cities.js 提供 ---------- */
+export const REGION_IMPACT = GEO.REGION_IMPACT;
+export const SYMBOL_CITY = GEO.SYMBOL_CITY;
+export const targetCitiesFor = GEO.targetCitiesFor;
 export function arcBetween([x1, y1], [x2, y2]) {
   const mx = (x1 + x2) / 2;
   const my = (y1 + y2) / 2;
