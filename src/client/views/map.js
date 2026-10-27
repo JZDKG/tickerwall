@@ -14,6 +14,36 @@ import { dirOf, esc, fmtPrice } from '../shared/format.js';
 import { store } from '../shared/store.js';
 import { on } from '../shared/bus.js';
 import { loadCalendarCached } from '../shared/calendar.js';
+import { applyInverseDelta, applyInverseMatrix, applyMatrix } from '../shared/matrix.js';
+
+/* ------------------------------------------------------------------ *
+ * 屏幕坐标 ↔ SVG 用户坐标
+ *
+ * viewBox 是 1200×560，容器宽高由窗口决定，preserveAspectRatio="xMidYMid meet"
+ * 会在宽高比不匹配时留白。直接按 rect.width / rect.height 换算等于假设
+ * 「viewBox 铺满容器」，留白越多偏得越多：1920 视口能差 290px、平板竖屏差 210px，
+ * 而地图正中心恰好不偏——所以这个问题一直没被看见。
+ * 统一走浏览器算好的 getScreenCTM()，留白、缩放、将来的旋转都会被吸收。
+ * ------------------------------------------------------------------ */
+
+function svgCTM(svg) {
+  return svg?.getScreenCTM?.() ?? null;
+}
+
+/** 屏幕坐标（clientX/clientY）→ viewBox 坐标 */
+function toViewBox(svg, clientX, clientY) {
+  return applyInverseMatrix(svgCTM(svg), clientX, clientY);
+}
+
+/** viewBox 坐标 → 屏幕坐标 */
+function toClient(svg, x, y) {
+  return applyMatrix(svgCTM(svg), x, y);
+}
+
+/** 屏幕位移 → viewBox 位移（拖拽用，平移项自行抵消） */
+function deltaToViewBox(svg, dx, dy) {
+  return applyInverseDelta(svgCTM(svg), dx, dy);
+}
 
 
 // 交易所坐标：同城多标的聚合到一个节点，纵向堆叠显示
@@ -318,9 +348,9 @@ export function applyMapView() {
 export function zoomAt(clientX, clientY, factor, dur = 240) {
   const svg = document.querySelector('.world-svg');
   if (!svg) return;
-  const rect = svg.getBoundingClientRect();
-  const sx = ((clientX - rect.left) / rect.width) * MAP_SIZE.width;
-  const sy = ((clientY - rect.top) / rect.height) * MAP_SIZE.height;
+  const p = toViewBox(svg, clientX, clientY);
+  if (!p) return;
+  const [sx, sy] = p;
   const k2 = Math.min(8, Math.max(1, mapView.k * factor));
   const scale = k2 / mapView.k;
   animateMapView(
@@ -355,15 +385,14 @@ export function spawnBubble(ev) {
   const layer = document.getElementById('map-bubbles');
   if (!layer) return;
 
-  // svg 坐标 → 屏幕坐标
+  // svg 坐标 → 屏幕坐标（走 CTM，留白自动扣掉）
   const svg = document.querySelector('.world-svg');
-  const rect = svg.getBoundingClientRect();
-  const px = rect.left + ((x * mapView.k + mapView.tx) / MAP_SIZE.width) * rect.width;
-  const py = rect.top + ((y * mapView.k + mapView.ty) / MAP_SIZE.height) * rect.height;
+  const p = toClient(svg, x * mapView.k + mapView.tx, y * mapView.k + mapView.ty);
+  if (!p) return;
 
   const host = layer.getBoundingClientRect();
-  let left = px - host.left - 150;
-  let top = py - host.top - 76;
+  let left = p[0] - host.left - 150;
+  let top = p[1] - host.top - 76;
   left = Math.max(12, Math.min(host.width - 320, left));
   top = Math.max(12, Math.min(host.height - 90, top));
 
@@ -594,12 +623,13 @@ export function openNodeCard(cityKey) {
   const svg = document.querySelector('.world-svg');
   if (!canvas || !svg) return;
 
-  // 把城市坐标换算成屏幕位置
+  // 把城市坐标换算成屏幕位置（CTM 吸收 letterbox 留白）
   const [mx, my] = mapProject(city.lon, city.lat);
-  const rect = svg.getBoundingClientRect();
   const hostRect = canvas.getBoundingClientRect();
-  let px = rect.left - hostRect.left + ((mx * mapView.k + mapView.tx) / MAP_SIZE.width) * rect.width;
-  let py = rect.top - hostRect.top + ((my * mapView.k + mapView.ty) / MAP_SIZE.height) * rect.height;
+  const p = toClient(svg, mx * mapView.k + mapView.tx, my * mapView.k + mapView.ty);
+  if (!p) return;
+  let px = p[0] - hostRect.left;
+  let py = p[1] - hostRect.top;
 
   const W = 246;
   const H = 74 + members.length * 30;
@@ -664,12 +694,11 @@ export function bindMapEvents() {
   });
   svg.addEventListener('pointermove', (e) => {
     if (!mapDrag) return;
-    const rect = svg.getBoundingClientRect();
-    const dx = ((e.clientX - mapDrag.x) / rect.width) * MAP_SIZE.width;
-    const dy = ((e.clientY - mapDrag.y) / rect.height) * MAP_SIZE.height;
     if (Math.abs(e.clientX - mapDrag.x) + Math.abs(e.clientY - mapDrag.y) > 3) mapDrag.moved = true;
-    mapView.tx = mapDrag.tx + dx;
-    mapView.ty = mapDrag.ty + dy;
+    const d = deltaToViewBox(svg, e.clientX - mapDrag.x, e.clientY - mapDrag.y);
+    if (!d) return;
+    mapView.tx = mapDrag.tx + d[0];
+    mapView.ty = mapDrag.ty + d[1];
     clampMapView();
     applyMapView();
   });
@@ -698,15 +727,15 @@ export function bindMapEvents() {
     zoomAt(e.clientX, e.clientY, 1.8, 320);
   });
 
-  // 工具按钮
-  document.getElementById('map-zoom-in')?.addEventListener('click', () => {
-    const r = svg.getBoundingClientRect();
-    zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1.35);
-  });
-  document.getElementById('map-zoom-out')?.addEventListener('click', () => {
-    const r = svg.getBoundingClientRect();
-    zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1 / 1.35);
-  });
+  // 工具按钮：以地图几何中心缩放。
+  // 直接取 svg 的 rect 中心也行（xMidYMid 下两者重合），但那样就把
+  // 「留白对称」当成了前提；走 CTM 投影 viewBox 中心，换成别的对齐方式也不会错位。
+  const zoomAtCenter = (factor) => {
+    const c = toClient(svg, MAP_SIZE.width / 2, MAP_SIZE.height / 2);
+    if (c) zoomAt(c[0], c[1], factor);
+  };
+  document.getElementById('map-zoom-in')?.addEventListener('click', () => zoomAtCenter(1.35));
+  document.getElementById('map-zoom-out')?.addEventListener('click', () => zoomAtCenter(1 / 1.35));
   document.getElementById('map-reset')?.addEventListener('click', resetMapView);
   document.getElementById('mf-fold')?.addEventListener('click', () => {
     const host = document.querySelector('.map');
