@@ -47,8 +47,7 @@ async function serveStatic(res, pathname) {
   const resolved = resolveStaticPath(pathname);
   if (!resolved) {
     res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.end('forbidden');
-    return;
+    return res.end('forbidden');
   }
   const { root, rel, full } = resolved;
   try {
@@ -64,7 +63,7 @@ async function serveStatic(res, pathname) {
     });
     res.end(buf);
   } catch {
-    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
     res.end('not found');
   }
 }
@@ -83,10 +82,15 @@ function sendJson(res, status, obj) {
 }
 
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
-  // 405 必须在任何分发之前判：原来它只挡静态资源，于是 POST /api/quotes
-  // 会一路落到 /api/quotes 的 GET 分支被当成正常请求处理
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
+  // 必须在 try 里：`GET //% HTTP/1.1` 会让 new URL 抛 ERR_INVALID_URL 并带崩进程
+  let url;
+  try {
+    url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+  } catch {
+    res.writeHead(400, { 'Content-Type': 'text/plain' });
+    return res.end('bad request');
+  }
+  if (req.method !== 'GET' && req.method !== 'HEAD') { // 405 要在分发之前判
     res.writeHead(405, { Allow: 'GET, HEAD' });
     return res.end();
   }
@@ -145,8 +149,7 @@ const server = http.createServer(async (req, res) => {
     // 只读自检：给时区/交易时段判断留一个可断言的入口。
     // isMarketOpen 是模块内函数，外部调不到，改时段逻辑时没法验证对错。
     if (url.pathname === '/api/_market') {
-      // 调试端点默认关闭（见 config.js）：它会把内部市场配置整份吐出来
-      if (!DEBUG_API) return sendJson(res, 404, { ok: false, error: 'not found' });
+      if (!DEBUG_API) return sendJson(res, 404, { ok: false, error: 'not found' }); // 默认关
       const m = url.searchParams.get('m') || 'us-index';
       const raw = url.searchParams.get('t');
       const t = raw ? new Date(raw) : new Date();
@@ -161,7 +164,7 @@ const server = http.createServer(async (req, res) => {
     }
     return serveStatic(res, url.pathname);
   } catch (err) {
-    // 对外只给通用文案：err.message 常带路径 / 内部 URL，等于把实现细节发给浏览器
+    // 对外只给通用文案（err.message 常带绝对路径），完整错误进日志
     console.error('[http] 未处理异常', url.pathname, err);
     return sendJson(res, 500, { ok: false, error: '服务器内部错误' });
   }
@@ -183,8 +186,7 @@ await seedHistory();
 await loadLlmStore();
 
 server.listen(PORT, HOST, () => {
-  // 用实际监听地址：PORT=0 时打印配置值「:0」是错的。LISTENING 那行给程序
-  // 消费（集成测试据此拿端口），改中文文案不该让测试挂。
+  // 用实际监听地址（PORT=0 时配置值是 :0）。LISTENING 那行给程序消费。
   const a = server.address();
   const port = a && typeof a === 'object' ? a.port : PORT;
   console.log(`市场看板已启动 → http://${HOST}:${port}`);

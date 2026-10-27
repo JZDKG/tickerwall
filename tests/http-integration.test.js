@@ -15,6 +15,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawn } from 'node:child_process';
+import net from 'node:net';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -128,48 +129,98 @@ describe('静态文件与路径防护', () => {
     expect(res.headers.get('content-type')).toContain('javascript');
   });
 
+  /**
+   * 原始请求行直发。不能用 fetch —— 它在发出之前就按 WHATWG 规则把 `..`
+   * 和 `%2e%2e` 折叠掉了，服务器根本收不到穿越路径，用例会「通过」但什么
+   * 都没验证（假阳性）。走 net 手写请求行，才能真的把 `GET /../package.json`
+   * 送到服务器面前。
+   */
+  function rawGet(pathLine) {
+    return new Promise((resolve, reject) => {
+      const { hostname, port } = new URL(base);
+      const sock = net.connect(Number(port), hostname, () => {
+        sock.write(`GET ${pathLine} HTTP/1.1\r\nHost: ${hostname}\r\nConnection: close\r\n\r\n`);
+      });
+      let buf = '';
+      sock.setEncoding('utf8');
+      sock.on('data', (d) => { buf += d; });
+      sock.on('end', () => {
+        const status = Number(/^HTTP\/1\.1 (\d{3})/.exec(buf)?.[1] ?? 0);
+        const body = buf.slice(buf.indexOf('\r\n\r\n') + 4);
+        resolve({ status, body });
+      });
+      sock.on('error', reject);
+      sock.setTimeout(5000, () => { sock.destroy(); reject(new Error('rawGet 超时')); });
+    });
+  }
+
   const TRAVERSALS = [
     '/../package.json',
     '/../../etc/passwd',
     '/%2e%2e/%2e%2e/etc/passwd',
     '/%2e%2e%2fpackage.json',
     '/src/client/../../server.mjs',
+    '/..%2f..%2fpackage.json',
+    '/%2e%2e%5c%2e%2e%5cpackage.json',
   ];
 
-  it('穿越路径拿不到仓库文件', async () => {
+  it('原始请求行的穿越路径拿不到仓库文件', async () => {
     for (const p of TRAVERSALS) {
-      const res = await fetch(`${base}${p}`);
-      // 403（被拦）或 404（规范化后落在 public 里但文件不存在）都可以，
-      // 但绝不能 200 且吐出仓库根的文件
-      expect([403, 404], `${p} 得 ${res.status}`).toContain(res.status);
-      if (res.status === 200) {
-        const body = await res.text();
-        expect(body).not.toContain('"dependencies"');
-        expect(body).not.toContain('migrateLegacyStorage');
-      }
+      const { status, body } = await rawGet(p);
+      // 403（被 resolveStaticPath 拦）或 404（规范化后落在 root 内但不存在）
+      // 都可以；绝不能 200 吐出仓库文件
+      expect([403, 404], `${p} 得 ${status}`).toContain(status);
+      expect(body, `${p} 吐出了仓库文件`).not.toContain('"dependencies"');
+      expect(body).not.toContain('migrateLegacyStorage');
     }
   });
 
-  it('拿不到 server.mjs 与 package.json', async () => {
-    for (const p of ['/server.mjs', '/package.json', '/../server.mjs']) {
-      const res = await fetch(`${base}${p}`);
-      expect(res.status, p).not.toBe(200);
+  it('直接点名的仓库文件也取不到', async () => {
+    for (const p of ['/server.mjs', '/package.json', '/src/server/config.js']) {
+      const { status } = await rawGet(p);
+      expect(status, p).not.toBe(200);
     }
+  });
+
+  it('畸形请求行不会打崩进程（400 且随后仍可用）', async () => {
+    // 这条是真 bug 的回归测试：`GET //% HTTP/1.1` 会让 new URL 抛
+    // ERR_INVALID_URL，而它原本写在 try 外面 —— 异常穿过 handler 把整个
+    // 进程带崩，任何人一个畸形请求就能打掉看板。
+    const { status } = await rawGet('//%');
+    expect(status).toBe(400);
+    // 关键：进程还活着
+    const health = await fetch(`${base}/api/health`);
+    expect(health.status).toBe(200);
+  });
+
+  it('多个畸形请求连续发，进程依然存活', async () => {
+    for (const p of ['//%', '//%zz', '/%', '///%']) {
+      const { status } = await rawGet(p);
+      expect([400, 403], `${p} 得 ${status}`).toContain(status);
+    }
+    const health = await fetch(`${base}/api/health`);
+    expect(health.status).toBe(200);
   });
 });
 
 describe('响应头与错误文案', () => {
+  // 打 /api/health 而不是 /api/quotes：前者同样走 sendJson，但不会触发
+  // 上游抓取。之前这两条用 quotes，单条耗时 1709ms —— 那 1.7 秒就是它在
+  // 连新浪/东财，断网时会直接失败。头这一层跟端点无关，不必付这个代价。
   it('不发 Access-Control-Allow-Origin', async () => {
-    const res = await fetch(`${base}/api/quotes`);
+    const res = await fetch(`${base}/api/health`);
+    expect(res.status).toBe(200);
     expect(res.headers.get('access-control-allow-origin')).toBeNull();
   });
 
   it('JSON 响应带 nosniff', async () => {
-    const res = await fetch(`${base}/api/quotes`);
+    const res = await fetch(`${base}/api/health`);
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
   });
 
-  it('错误响应不含内部细节（路径 / 堆栈）', async () => {
+  // 这条只测业务 404 的文案（真正的 500 在上一组用畸形请求行覆盖）。
+  // 名字不改的话，读的人会以为 500 在这里测过了。
+  it('未知标的返回业务 404，且文案不含路径痕迹', async () => {
     const res = await fetch(`${base}/api/detail/__nope__`);
     expect(res.status).toBe(404);
     const text = await res.text();
