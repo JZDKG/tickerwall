@@ -134,7 +134,8 @@ export function layoutTiered({
   });
 
   const width = Math.max(...rowW, 1) + pad * 2;
-  const height = rowH.reduce((s, h) => s + h, 0) + (rows.length - 1) * gapY + pad * 2;
+  // 先按「行 + 行间距 + 上下 pad」算一个基准高度，稍后再按最底分组带兜底
+  let height = rowH.reduce((s, h) => s + h, 0) + (rows.length - 1) * gapY + pad * 2;
 
   // 4. 落位：每行水平居中（视觉重心对齐），卡片在自己的行高里垂直居中
   const out = [];
@@ -158,6 +159,19 @@ export function layoutTiered({
     });
     y += rowH[r] + gapY;
   });
+
+  /**
+   * 画布高度必须容得下最底那条分组带。
+   *
+   * 分组带上下各外扩 gapY*0.34（含底排的机理胶囊与折线转角），而最后一行下方
+   * 只有 pad 这么点余量，于是末行的带底边会越出画布 —— 实测 8px，表现出来就是
+   * 底排胶囊贴着/压着画布下沿被裁掉一点。这里把高度补到「带底边 + pad」，
+   * 只动画布、不动带几何，视觉上各条带的框选范围保持一致。
+   */
+  if (bands.length) {
+    const bandBottom = Math.max(...bands.map((b) => b.y + b.height));
+    height = Math.max(height, Math.ceil(bandBottom + pad));
+  }
 
   return { nodes: out, bands, width, height, rows };
 }

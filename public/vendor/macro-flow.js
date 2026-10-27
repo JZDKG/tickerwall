@@ -24974,7 +24974,7 @@ function Ek({ nodes: e = g, edges: t = C, gapX: n = 40, gapY: r = 96, pad: i = 2
 		if (!e) break;
 	}
 	let u = o.map((e) => e.length ? Math.max(...e.map((e) => _.get(e).h)) : 0), d = o.map((e) => e.length ? e.reduce((e, t) => e + _.get(t).w, 0) + (e.length - 1) * n : 0), f = Math.max(...d, 1) + i * 2, p = u.reduce((e, t) => e + t, 0) + (o.length - 1) * r + i * 2, m = [], h = [], v = i;
-	return o.forEach((e, t) => {
+	if (o.forEach((e, t) => {
 		let i = (f - d[t]) / 2;
 		for (let r of e) {
 			let e = _.get(r);
@@ -24994,7 +24994,11 @@ function Ek({ nodes: e = g, edges: t = C, gapX: n = 40, gapY: r = 96, pad: i = 2
 			height: Math.round(u[t] + r * .68),
 			label: o
 		}), v += u[t] + r;
-	}), {
+	}), h.length) {
+		let e = Math.max(...h.map((e) => e.y + e.height));
+		p = Math.max(p, Math.ceil(e + i));
+	}
+	return {
 		nodes: m,
 		bands: h,
 		width: f,
@@ -26045,7 +26049,7 @@ function mA() {
 var hA = /* @__PURE__ */ new WeakMap();
 function gA(e, t, n) {
 	let r = e.querySelector(dA);
-	return r && r.querySelector(fA) || (xA(e), e.innerHTML = lA(t, n, { legend: !0 }), r = e.querySelector(dA)), r;
+	return r && r.querySelector(".mg-x6") || (xA(e), e.innerHTML = lA(t, n, { legend: !0 }), r = e.querySelector(dA)), r;
 }
 function _A(e, t, n) {
 	let r = e.querySelector(t);
@@ -26134,4 +26138,4 @@ function bA(e, t, n, r = {}) {
 function xA(e) {
 	hA.get(e)?.dispose(), hA.delete(e);
 }
-export { C as CORE_EDGES, b as MODES, xA as destroyMacroFlow, bA as renderMacroFlow };
+export { fA as CANVAS, C as CORE_EDGES, b as MODES, dA as SECTION, yA as activeEdgeSets, hA as canvases, xA as destroyMacroFlow, gA as ensureSection, mA as injectStyle, bA as renderMacroFlow, pA as styleInjected, _A as swap, vA as syncChrome };

@@ -172,3 +172,33 @@ describe('入口保持零构建', () => {
     expect(code).toContain("rel.startsWith('/src/client/')");
   });
 });
+
+/* ================================================================== *
+ * 画布几何：分组带不得越出画布
+ *
+ * 分组带上下各外扩 gapY*0.34，而最后一行下方只有 pad 余量，于是末行带底边
+ * 会越出画布（实测 8px），表现为底排机理胶囊压着下沿被裁。这条断言把
+ * 「带必须完整落在画布内」锁住。
+ * ================================================================== */
+describe('传导图画布几何', () => {
+  it('最底分组带完整落在画布内，且底部留白不小于 pad', async () => {
+    const { layoutTiered, CANVAS_PAD } = await import('../src/client/views/macro/flow-layouts.js');
+    const L = layoutTiered({});
+
+    const bandBottom = Math.max(...L.bands.map((b) => b.y + b.height));
+    const nodeBottom = Math.max(...L.nodes.map((n) => n.y + n.h));
+
+    expect(bandBottom, '分组带越出画布下沿').toBeLessThanOrEqual(L.height);
+    expect(L.height - bandBottom, '带底边应留出一个 pad 的余量').toBeGreaterThanOrEqual(CANVAS_PAD);
+    expect(L.height - nodeBottom, '卡片底边也要留够 pad').toBeGreaterThanOrEqual(CANVAS_PAD);
+  });
+
+  it('每条带都覆盖它那一行的卡片（上下不外扩到别的行）', async () => {
+    const { layoutTiered } = await import('../src/client/views/macro/flow-layouts.js');
+    const L = layoutTiered({});
+    L.bands.forEach((b, i) => {
+      expect(b.height).toBeGreaterThan(0);
+      if (i > 0) expect(b.y).toBeGreaterThan(L.bands[i - 1].y);
+    });
+  });
+});
