@@ -142,6 +142,54 @@
   opacity: 0.45;
 }
 
+/* ------------------------------------------------------------------ *
+ * 冲击链：弧线 + 靶点高亮 + 弧顶主题
+ *
+ * 弧线只画当前 spotlight 那一条事件，靶点城市亮起、其余压暗 ——
+ * 「传导到谁」应该一眼看出来，不该靠读标题再自己对应。
+ * ------------------------------------------------------------------ */
+.map-city.is-target .city-halo {
+  opacity: 0.55;
+}
+
+.map-city.is-target .city-dot {
+  r: 3.6;
+}
+
+.map-city.is-dim {
+  opacity: 0.34;
+}
+
+.map-region.is-source .rg-core {
+  opacity: 0.85;
+}
+
+.map-region.is-source .rg-pulse {
+  animation-duration: 1.4s;
+}
+
+.arc-tag rect {
+  fill: rgba(8, 12, 18, 0.82);
+  stroke: rgba(120, 176, 255, 0.55);
+  stroke-width: 0.8;
+}
+
+.arc-tag text {
+  fill: #cfe0ff;
+  font-size: 9.5px;
+  font-family: var(--mono);
+  letter-spacing: 0.02em;
+}
+
+/* 事件流条目可点，给一点反馈 */
+.mf-item {
+  cursor: pointer;
+}
+
+.mf-item:hover {
+  background: rgba(120, 176, 255, 0.08);
+}
+
 .map-body {
   position: relative;
   min-height: 0;

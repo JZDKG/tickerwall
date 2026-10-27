@@ -126,6 +126,19 @@ export function arcBetween([x1, y1], [x2, y2], liftRatio = 0.32, maxLift = 90) {
   return `M${x1.toFixed(1)},${y1.toFixed(1)} Q${mx.toFixed(1)},${(my - lift).toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`;
 }
 
+/**
+ * 同一段拱形弧的顶点（t=0.5）。
+ *
+ * 二次贝塞尔在 t=0.5 处是 (P0 + 2C + P2)/4；代入 C=(mx, my-lift) 且
+ * mx=(x1+x2)/2、my=(y1+y2)/2，化简后纵坐标正是 my - lift/2 —— 注意不是
+ * my - lift（那是控制点，弧没到那么高）。弧顶标签挂在这里才不会飘在弧上方。
+ */
+export function arcApex([x1, y1], [x2, y2], liftRatio = 0.32, maxLift = 90) {
+  const dist = Math.hypot(x2 - x1, y2 - y1);
+  const lift = Math.min(maxLift, dist * liftRatio);
+  return [(x1 + x2) / 2, (y1 + y2) / 2 - lift / 2];
+}
+
 /** 某个标的绑定到哪几个城市（全景卡要按城市反查标的） */
 export function citiesOfSymbol(symbolId) {
   return SYMBOL_CITY[symbolId] ?? [];

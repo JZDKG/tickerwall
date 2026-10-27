@@ -171,6 +171,7 @@ export function focusRegion(region) {
 export const REGION_IMPACT = GEO.REGION_IMPACT;
 export const SYMBOL_CITY = GEO.SYMBOL_CITY;
 export const targetCitiesFor = GEO.targetCitiesFor;
+export const arcApex = GEO.arcApex;
 export function arcBetween([x1, y1], [x2, y2]) {
   const mx = (x1 + x2) / 2;
   const my = (y1 + y2) / 2;
@@ -179,30 +180,53 @@ export function arcBetween([x1, y1], [x2, y2]) {
   return `M${x1.toFixed(1)},${y1.toFixed(1)} Q${mx.toFixed(1)},${(my - lift).toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`;
 }
 
-export function impactArcs(items) {
+/**
+ * 单条事件的专属冲击链：从赛区锚点射向 `targetCitiesFor` 命中的定价中心，
+ * 弧顶挂一个主主题胶囊。
+ *
+ * 旧版给「最新 3 条 high」各画一组弧，满屏都是线，读者分不清哪条是哪条；
+ * 而且它和播报台讲的事件不是同一条 —— 眼睛在上下两处对不上。现在弧线跟着
+ * spotlight 走：播报台念哪条，画面上就只画那条的传导路径。
+ */
+export function impactArcsFor(ev) {
+  if (!ev) return '';
+  const anchor = REGION_ANCHORS[ev.region];
+  if (!anchor) return '';
+  const from = mapProject(anchor.lon, anchor.lat);
+  if (!from) return '';
+
   const cityById = new Map(MAP_CITIES.map((c) => [c.key, c]));
+  const targets = targetCitiesFor(ev)
+    .map((k) => cityById.get(k))
+    .filter(Boolean)
+    // 连到事件自身所在的交易中心没有意义（零长度弧）
+    .filter((c) => Math.hypot(c.lon - anchor.lon, c.lat - anchor.lat) > 4);
+  if (!targets.length) return '';
+
+  const topic = ev.topics?.find((t) => t.strong)?.label ?? ev.topics?.[0]?.label ?? '';
+
   let svg = '';
-  // 只给最新 3 条高影响事件画弧，否则满屏都是线
-  const hot = items.filter((e) => e.level === 'high').slice(0, 3);
-
-  hot.forEach((ev, idx) => {
-    const anchor = REGION_ANCHORS[ev.region];
-    if (!anchor) return;
-    const from = mapProject(anchor.lon, anchor.lat);
-    const targets = targetCitiesFor(ev)
-      .map((k) => cityById.get(k))
-      .filter(Boolean)
-      // 连到事件自身所在的交易中心没有意义（零长度弧）
-      .filter((c) => Math.hypot(c.lon - anchor.lon, c.lat - anchor.lat) > 4);
-
-    targets.forEach((city, ti) => {
-      const to = mapProject(city.lon, city.lat);
-      const d = arcBetween(from, to);
-      const delay = (idx * 0.35 + ti * 0.2).toFixed(2);
-      svg += `<path class="impact-arc" d="${d}" style="animation-delay:${delay}s" />`;
-    });
+  // 弧顶标签挂在最长那条弧上。取第一条会把「货币政策」标在华盛顿→纽约
+  // 这种几百公里的短弧顶上，正好压在城市名旁边；最长那条才是传导的代表方向。
+  let apex = null;
+  let apexSpan = -1;
+  targets.forEach((city, ti) => {
+    const to = mapProject(city.lon, city.lat);
+    if (!to) return;
+    svg += `<path class="impact-arc is-live" d="${arcBetween(from, to)}" style="animation-delay:${(ti * 0.12).toFixed(2)}s" />`;
+    const span = Math.hypot(to[0] - from[0], to[1] - from[1]);
+    if (span > apexSpan) {
+      apexSpan = span;
+      apex = arcApex(from, to);
+    }
   });
 
+  // 弧顶标签：只有主主题，不重复标题（标题在播报台里）
+  if (apex && topic) {
+    svg += `<g class="arc-tag" transform="translate(${apex[0].toFixed(1)},${apex[1].toFixed(1)})">`
+      + `<g class="scene-fixed"><rect x="-1" y="-7" width="${(topic.length * 9 + 10).toFixed(0)}" height="14" rx="7" />`
+      + `<text x="${(topic.length * 4.5 + 4).toFixed(1)}" y="3.6" text-anchor="middle">${esc(topic)}</text></g></g>`;
+  }
   return svg;
 }
 
@@ -226,10 +250,27 @@ let bcIdleTimer = null;
 let bcRenderedId = null;
 
 /**
+ * 全量事件索引。
+ *
+ * 巡航队列只收「有靶点 + 高优/mid」的那几条，但用户悬停事件流时可能是任意
+ * 一条 —— 只按队列查会让播报台和弧线一起变空。这里留一份全量兜底索引：
+ * 队列里有就用队列的（保证 tick 顺序），没有就按 id 直接取。
+ */
+let evIndex = new Map();
+
+function spotlightEvent() {
+  const fromQueue = currentSpotlightEvent(bcState);
+  if (fromQueue) return fromQueue;
+  const id = bcState.previewId ?? bcState.lockedId;
+  return id ? evIndex.get(id) ?? null : null;
+}
+
+/**
  * 重建队列。`hasTargets` 交给地理层判断：没有可挂靶点的事件不进队列，
  * 否则地图上会出现「播报了一条但画面上什么都没动」的脱节。
  */
 function refreshBroadcastQueue(items) {
+  evIndex = new Map(items.map((ev) => [ev.id, ev]));
   const queue = buildSpotlightQueue(items, {
     filterKey: mapFilter,
     region: mapRegion,
@@ -243,7 +284,7 @@ function refreshBroadcastQueue(items) {
 function renderBroadcast() {
   const box = document.getElementById('map-broadcast');
   if (!box) return;
-  const ev = currentSpotlightEvent(bcState);
+  const ev = spotlightEvent();
   const quotesById = new Map((store.quotes ?? []).filter((q) => q && q.ok).map((q) => [q.id, q]));
   box.innerHTML = broadcastHtml(ev, quotesById);
   box.dataset.mode = bcState.mode;
@@ -260,6 +301,33 @@ function renderBroadcast() {
     bar.style.animationPlayState = bcState.playing ? 'running' : 'paused';
   }
   bcRenderedId = ev ? ev.id : null;
+  renderImpact(ev);
+}
+
+/**
+ * 弧线层与节点高亮。与播报台同一份输入 —— 念哪条就画哪条、亮哪些靶点，
+ * 其余城市压暗，这样「传导到谁」是一眼的事，不用读文字。
+ */
+function renderImpact(ev) {
+  const layer = mapEl.querySelector('.impact-layer');
+  // 同一事件不重画：quotes 每 30 秒刷新都会走到这里，重画会把弧线的
+  // 入场动画（animation-delay）反复重启，看起来一直在抽。
+  const id = ev?.id ?? '';
+  if (layer && layer.dataset.evId !== id) {
+    layer.innerHTML = impactArcsFor(ev);
+    layer.dataset.evId = id;
+  }
+
+  const targets = new Set(ev ? targetCitiesFor(ev) : []);
+  const src = ev?.region ?? null;
+  mapEl.querySelectorAll('.map-city[data-city]').forEach((g) => {
+    const on = targets.has(g.dataset.city);
+    g.classList.toggle('is-target', on);
+    g.classList.toggle('is-dim', Boolean(ev) && !on);
+  });
+  mapEl.querySelectorAll('.map-region[data-region-anchor]').forEach((g) => {
+    g.classList.toggle('is-source', Boolean(src) && g.dataset.regionAnchor === src);
+  });
 }
 
 /** 暂停 / 继续。播报台自己 hover 时用，切事件时进度停在原处 */
@@ -657,7 +725,7 @@ export function renderMap() {
               <path class="terminator" d="${night.line}" />
             </g>
             ${sunMark}
-            <g class="impact-layer">${impactArcs(items)}</g>
+            <g class="impact-layer"></g>
             <g class="map-regions">${regionSvg}</g>
             <g class="map-cities">${citySvg}</g>
             ${btcSvg}
@@ -830,6 +898,24 @@ export function bindMapEvents() {
     b.addEventListener('click', openCity(b.dataset.city));
   });
 
+  // 事件流：悬停预览该条的冲击链、点击锁定、移开恢复巡航。
+  // 用 on* 赋值（bindMapEvents 每轮跑，事件行每轮重建）。
+  mapEl.querySelectorAll('.mf-item[data-id]').forEach((row) => {
+    const id = row.dataset.id;
+    row.onpointerenter = () => {
+      bcState = spotlightReducer(bcState, { type: 'hover', id, now: Date.now() });
+      renderBroadcast();
+    };
+    row.onpointerleave = () => {
+      bcState = spotlightReducer(bcState, { type: 'unhover', id, now: Date.now() });
+      renderBroadcast();
+    };
+    row.onclick = () => {
+      bcState = spotlightReducer(bcState, { type: 'click', id, now: Date.now() });
+      renderBroadcast();
+    };
+  });
+
   // 滤镜：切换后整张重绘。数量徽标要跟着赛区一起变，所以顺带重算。
   mapEl.querySelectorAll('.map-pill[data-filter]').forEach((b) => {
     b.onclick = () => {
@@ -848,7 +934,7 @@ export function bindMapEvents() {
     bc.onpointerenter = () => setBroadcastPlaying(false);
     bc.onpointerleave = () => setBroadcastPlaying(true);
     bc.onclick = () => {
-      const ev = currentSpotlightEvent(bcState);
+      const ev = spotlightEvent();
       if (ev?.id) location.hash = `#/d/${encodeURIComponent(ev.id)}`;
     };
   }
