@@ -8,7 +8,7 @@
  * 启动：node server.mjs   （默认 http://127.0.0.1:8787）
  */
 import { MARKET_PROFILES, localClock, isMarketOpen } from './src/server/domain/market-hours.js';
-import { getEvents, loadLlmStore } from './src/server/services/events.service.js';
+import { getEvents, getEventHistory, loadLlmStore } from './src/server/services/events.service.js';
 import {
   CACHE_TTL_MS,
   HISTORY_LIMIT,
@@ -112,6 +112,11 @@ const server = http.createServer(async (req, res) => {
       const force = url.searchParams.get('force') === '1';
       const data = await getMacro(win, freq, { force });
       return sendJson(res, 200, data);
+    }
+    if (url.pathname === '/api/events/history') {
+      const hours = Number(url.searchParams.get('hours')) || 24;
+      sendJson(res, 200, await getEventHistory({ hours }));
+      return;
     }
     if (url.pathname === '/api/events') {
       const force = url.searchParams.get('force') === '1';

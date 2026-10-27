@@ -15,7 +15,7 @@ import fsp from 'node:fs/promises';
 import { fetchRaw, toNum } from '../providers/index.js';
 import { fetchFeedCatalog, DIRECT_FEEDS, GOOGLE_FEEDS } from '../providers/news-feeds.js';
 import { COMPILED_TOPICS, IMPACT_WORDS, anyWordHit, sanitizeText, guessRegion, isOfficialRoutine, dedupeKey } from '../domain/news-lexicon.js';
-import { kvGetJson, kvSetJson, appendJsonl, readJsonlField } from '../db/index.js';
+import { kvGetJson, kvSetJson, appendJsonl, readJsonl, readJsonlField } from '../db/index.js';
 import { DATA_DIR } from '../paths.js';
 
 const EVENTS_CACHE_TTL_MS = 25_000;
@@ -207,6 +207,9 @@ async function fetchWscn(limit = 40) {
  * ------------------------------------------------------------------ */
 const LLM_STORE_FILE = path.join(DATA_DIR, 'llm-cache.json');
 const EVENTS_DIR = path.join(DATA_DIR, 'events');
+
+/** label → { key, label }。归档只存了 label，回放时要还原成和实时接口同一形状 */
+const TOPIC_BY_LABEL = new Map(COMPILED_TOPICS.map((t) => [t.label, t]));
 
 let llmStoreTimer = null;
 let llmStoreDirty = false;
@@ -650,6 +653,118 @@ async function fetchGlobalFeeds(force = false) {
     regions: [...new Set(status.filter((s) => s.ok).map((s) => s.region))].sort(),
   };
   return globalCache;
+}
+
+/**
+ * 最近 N 小时的完整事件流（Step 3 的 24h 时间轴用）。
+ *
+ * 数据来自「今天 + 昨天」两份按北京时间命名的归档，与当前实时快照按 id 合并
+ * 去重（实时优先 —— 归档里的 level / topics 是当时算的，实时那份可能被 LLM
+ * 复核改过）。归档里的 topics 只存 label，这里用 COMPILED_TOPICS 还原成
+ * { key, label }，和 /api/events 保持同一形状，前端不用写两套判断。
+ *
+ * 返回 coverageFrom：数据实际覆盖到的最早时刻。归档不满 24h 时前端要如实
+ * 标注「覆盖 HH:MM 起」，不能让时间轴假装有 24 小时。
+ */
+/**
+ * 归档行 / 实时行 → 统一形状。归档只存 label，这里用 COMPILED_TOPICS 还原
+ * 成 { key, label }；认不出的 label 保留 label、key 留空，别把信息丢掉。
+ */
+function normalizeHistoryRow(ev) {
+  const topics = (ev.topics ?? [])
+    .map((t) => {
+      const label = typeof t === 'string' ? t : t?.label;
+      if (!label) return null;
+      const hit = TOPIC_BY_LABEL.get(label);
+      return { key: hit?.key ?? '', label, strong: typeof t === 'object' ? Boolean(t.strong) : false };
+    })
+    .filter(Boolean);
+  return {
+    id: ev.id,
+    time: ev.time,
+    title: ev.title,
+    level: ev.level ?? 'low',
+    topics,
+    symbols: ev.symbols ?? [],
+    region: ev.region ?? 'global',
+    source: ev.source,
+    url: ev.url,
+    important: Boolean(ev.important),
+  };
+}
+
+/** 'YYYY-MM-DD HH:mm:ss'（北京）→ 绝对毫秒；解析不了给 null */
+export function eventTimeMs(time) {
+  const t = new Date(`${String(time).replace(' ', 'T')}+08:00`).getTime();
+  return Number.isFinite(t) ? t : null;
+}
+
+/**
+ * 合并归档与实时快照（纯函数，好测）。
+ *
+ * 去重方向是「实时覆盖归档」：归档里的 level / topics 是写入那一刻算的，
+ * 实时那份可能被 LLM 复核改过，应以它为准。
+ *
+ * 时间窗**两头都卡**。上界不是多余的：源里混着「2027-03-22」这种提前发布
+ * 的会议公告，把未来事件算进 24h 回放，柱状图的最后一根会凭空多出来。
+ */
+export function mergeHistoryRows({ archiveRows = [], liveItems = [], sinceMs, nowMs, limit = 600 }) {
+  const seen = new Map();
+
+  for (const row of archiveRows) {
+    const ms = eventTimeMs(row?.time);
+    if (ms == null || ms < sinceMs || ms > nowMs) continue;
+    if (row?.id) seen.set(row.id, normalizeHistoryRow(row));
+  }
+  for (const row of liveItems) {
+    const ms = eventTimeMs(row?.time);
+    if (ms == null || ms < sinceMs || ms > nowMs) continue;
+    if (row?.id) seen.set(row.id, normalizeHistoryRow(row));
+  }
+
+  const items = [...seen.values()]
+    .sort((a, b) => String(b.time).localeCompare(String(a.time)))
+    .slice(0, limit);
+  const oldest = items.length ? eventTimeMs(items[items.length - 1].time) : null;
+  return { items, coverageFrom: oldest != null ? new Date(oldest).toISOString() : null };
+}
+
+/**
+ * 最近 N 小时的完整事件流（Step 3 的 24h 时间轴用）。
+ *
+ * 数据来自「今天 + 昨天」两份按北京时间命名的归档，与当前实时快照合并。
+ * 返回 coverageFrom：数据实际覆盖到的最早时刻 —— 归档不满 24h 时前端要
+ * 如实标注「覆盖 HH:MM 起」，不能让时间轴假装有 24 小时。
+ */
+export async function getEventHistory({ hours = 24, limit = 600, nowMs = Date.now() } = {}) {
+  const spanMs = Math.max(1, Math.min(72, Number(hours) || 24)) * 3600 * 1000;
+  const sinceMs = nowMs - spanMs;
+
+  // 北京时间的两天（跨天边界按北京算，和归档命名一致）
+  const dayOf = (ms) => new Date(ms + 8 * 3600 * 1000).toISOString().slice(0, 10);
+  const files = [...new Set([dayOf(sinceMs), dayOf(nowMs)])]
+    .map((d) => path.join(EVENTS_DIR, `${d}.jsonl`));
+
+  const archiveRows = [];
+  for (const file of files) archiveRows.push(...(await readJsonl(file)));
+
+  const live = await getEvents({ limit: 200 });
+  const merged = mergeHistoryRows({
+    archiveRows,
+    liveItems: live?.items ?? [],
+    sinceMs,
+    nowMs,
+    limit,
+  });
+
+  return {
+    ok: true,
+    hours: Math.round(spanMs / 3600000),
+    generatedAt: new Date(nowMs).toISOString(),
+    count: merged.items.length,
+    coverageFrom: merged.coverageFrom,
+    items: merged.items,
+  };
 }
 
 export async function getEvents({ force = false, limit = 160 } = {}) {
