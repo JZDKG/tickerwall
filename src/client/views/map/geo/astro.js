@@ -33,6 +33,20 @@ export function sunPosition(now) {
   return { decl: (decl * 180) / Math.PI, lon };
 }
 
+/**
+ * 晨昏圈：只取球冠的边界环，做成 **不闭合的 LineString**。
+ *
+ * 为什么不直接给黑夜面片描边：球冠被投影裁剪后，路径边界是「晨昏圈 +
+ * 图幅边界」两段拼起来的，描边会把左右两条地图边缘的竖线也画出来。
+ * 单独一条 LineString 只含晨昏圈本身，跨裁剪边界自然断开，是正确的样子。
+ */
+export function terminatorGeometry(sun, radius = 90) {
+  const ring = geoCircle()
+    .center([wrapLon(sun.lon + 180), -sun.decl])
+    .radius(radius)().coordinates[0];
+  return { type: 'LineString', coordinates: ring };
+}
+
 /** 把经度规整到 [-180, 180) */
 export function wrapLon(lon) {
   return ((lon + 540) % 360) - 180;

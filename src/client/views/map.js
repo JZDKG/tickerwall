@@ -15,7 +15,7 @@ import {
   LOGICAL_WIDTH, LOGICAL_HEIGHT, worldFeatures, pathOf,
   lonLatToLogical,
 } from './map/geo/projection.js';
-import { sunPosition, nightGeometry, twilightBands } from './map/geo/astro.js';
+import { sunPosition, nightGeometry, twilightBands, terminatorGeometry } from './map/geo/astro.js';
 import { mapEl } from '../shared/dom.js';
 import { dirOf, esc, fmtPrice } from '../shared/format.js';
 import { store } from '../shared/store.js';
@@ -60,9 +60,9 @@ function deltaToViewBox(svg, dx, dy) {
 export const MAP_CITIES = GEO.MAP_CITIES;
 export const MAP_TAG = GEO.MAP_TAG;
 export const REGION_ANCHORS = REGIONS.REGION_ANCHORS;
-// 视图状态：缩放 + 平移
-// 初始左移 200px：右侧事件面板会盖住亚洲，先把地图推过去，东京/上海/香港才露得出来
-export let mapView = { k: 1, tx: -200, ty: 0 };
+// 视图状态：缩放 + 平移。
+// 事件流改成独立 grid 列之后，地图不再被面板遮住，初始不需要偏移。
+export let mapView = { k: 1, tx: 0, ty: 0 };
 export let mapTimer = null;
 export let mapBubbles = []; // 当前显示的气泡
 export let mapSeenIds = null; // 上一轮事件 id，用于判断「新事件」
@@ -104,7 +104,12 @@ export function nightLayerPaths(now = new Date()) {
     key: b.key,
     d: pathOf(b.geometry) ?? '',
   }));
-  return { sun, outer, core: pathOf(nightGeometry(sun)) ?? '' };
+  return {
+    sun,
+    outer,
+    core: pathOf(nightGeometry(sun)) ?? '',
+    line: pathOf(terminatorGeometry(sun)) ?? '',
+  };
 }
 
 /* ---------- 国家底图 ---------- */
@@ -257,11 +262,8 @@ export function zoomAt(clientX, clientY, factor, dur = 240) {
   );
 }
 
-// 允许额外左移 260px（面板宽度量级），否则 k=1 时 tx 只能是 0，亚洲永远压在面板下
-export const MAP_PANEL_GUTTER = 260;
-
 export function clampMapView() {
-  const overX = LOGICAL_WIDTH * (mapView.k - 1) + MAP_PANEL_GUTTER;
+  const overX = LOGICAL_WIDTH * (mapView.k - 1);
   const overY = LOGICAL_HEIGHT * (mapView.k - 1);
   mapView.tx = Math.min(0, Math.max(-overX, mapView.tx));
   mapView.ty = Math.min(0, Math.max(-overY, mapView.ty));
@@ -269,7 +271,7 @@ export function clampMapView() {
 
 export function resetMapView() {
   closeNodeCard();
-  animateMapView({ k: 1, tx: -200, ty: 0 }, 460);
+  animateMapView({ k: 1, tx: 0, ty: 0 }, 460);
 }
 
 /** 事件气泡：按 region 定位，超出视口就钳制进来 */
@@ -467,6 +469,7 @@ export function renderMap() {
             <g class="night-layer">
               ${night.outer.map((b) => `<path class="night-band band-${b.key}" d="${b.d}" />`).join('')}
               <path class="night-core" d="${night.core}" />
+              <path class="terminator" d="${night.line}" />
             </g>
             <g class="impact-layer">${impactArcs(items)}</g>
             <g class="map-regions">${regionSvg}</g>

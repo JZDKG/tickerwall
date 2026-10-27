@@ -82,9 +82,17 @@
 
 /* 地图占满宽度，事件面板浮在右侧 —— 否则面板会把地图压到 730px，
    SVG 缩放到 0.6 倍后 12px 的字只剩 7px，完全看不清 */
+/* 事件流是独立 grid 列，不是浮在地图上的面板。
+   以前是 absolute 浮层，为了不让它盖住亚洲，初始视图硬给了 tx: -200，
+   结果地图整体左移、西半球被裁。改成 grid 之后两边各占自己的格子，
+   地图可以居中，PANEL_GUTTER 那套补偿也一起删掉。 */
 .map-body {
   position: relative;
   min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 12px;
+  align-items: stretch;
 }
 
 .map:fullscreen .map-body {
@@ -274,13 +282,10 @@
 
 /* 右侧悬浮事件流 */
 .map-feed {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  width: 300px;
-  max-height: calc(100% - 24px);
+  position: relative;
   display: flex;
   flex-direction: column;
+  min-width: 0;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.11);
   background: rgba(8, 11, 16, 0.72);
@@ -291,7 +296,7 @@
 }
 
 .map:fullscreen .map-feed {
-  max-height: calc(100% - 24px);
+  max-height: none;
 }
 
 .mf-head {
@@ -371,11 +376,13 @@
 }
 
 @media (max-width: 1000px) {
+  /* 窄屏回到单列：地图在上、事件流在下 */
+  .map-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .map-feed {
-    position: static;
-    width: 100%;
     max-height: 300px;
-    margin-top: 10px;
   }
 
   /* 窄屏按比例，别用 vh，手机地址栏会吃掉高度 */
@@ -424,8 +431,8 @@
   border-color: var(--line);
 }
 
-.map.feed-folded .map-feed {
-  width: 46px;
+.map.feed-folded .map-body {
+  grid-template-columns: minmax(0, 1fr) 46px;
 }
 
 .map.feed-folded .mf-list,
@@ -456,37 +463,40 @@
   vector-effect: non-scaling-stroke;
 }
 
-/* 昼夜层：黑夜是闭合球冠，外面叠三层晨昏带。
-   从外到内 108° → 102° → 96° → 90°，越往外越亮，最内层才是纯黑。
-   底色用深蓝而非纯黑 —— 纯黑会把陆地轮廓吃掉，「哪边是夜里」反而看不清。 */
+/* 昼夜层：黑夜是闭合球冠，外面叠三层晨昏过渡带。
+   从外到内 108° → 102° → 96° → 90°，四层半透明填充由浅到深叠加，
+   自然形成一圈渐变，不需要画任何线。
+
+   为什么不能描边：球冠被投影裁剪后，路径边界 = 晨昏圈 + 图幅边界两段拼在一起。
+   描边会把左右两条「地图边缘的竖直线」也画出来 —— 看起来像地图加了外框。
+   第一版就是这么画的，截图上一眼可见两条竖线斜穿画面。 */
 .night-layer {
   pointer-events: none;
 }
 
-.night-band {
-  fill: none;
-  stroke: rgba(120, 168, 255, 0.20);
-  stroke-width: 0.8;
-  vector-effect: non-scaling-stroke;
+.night-band,
+.night-core {
+  stroke: none;
 }
 
-/* 三层晨昏带只用描边标出高度角，避免三块半透明面叠出脏色 */
-.night-band.band-civil { stroke-opacity: 0.55; }
-.night-band.band-nautical { stroke-opacity: 0.36; stroke-dasharray: 3 4; }
-.night-band.band-astronomical { stroke-opacity: 0.2; stroke-dasharray: 1.5 5; }
+/* 从外到内叠加：alpha 逐层累加，108° 处最浅、90° 处的夜半球最深 */
+.night-band.band-astronomical { fill: rgba(2, 5, 12, 0.10); }
+.night-band.band-nautical { fill: rgba(2, 5, 12, 0.13); }
+.night-band.band-civil { fill: rgba(2, 5, 12, 0.18); }
+.night-core { fill: rgba(2, 5, 12, 0.32); }
 
-/* 黑夜面片本体：与 .world-land 同层但压在上面，给陆地再加一层暗 */
-.night-core {
-  fill: rgba(2, 5, 12, 0.5);
-  stroke: rgba(120, 168, 255, 0.32);
-  stroke-width: 1;
+/* 晨昏圈：单独一条 LineString，只含昼夜分界本身，不含图幅边界的竖线 */
+.terminator {
+  fill: none;
+  stroke: rgba(126, 176, 255, 0.42);
+  stroke-width: 1.2;
   vector-effect: non-scaling-stroke;
   animation: termBreath 8s ease-in-out infinite;
 }
 
 @keyframes termBreath {
-  0%, 100% { stroke-opacity: 0.55; }
-  50% { stroke-opacity: 0.95; }
+  0%, 100% { stroke-opacity: 0.5; }
+  50% { stroke-opacity: 1; }
 }
 
 /* 国家底图：可悬停、可点击，是「地 - 事」联动的命中区。
