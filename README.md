@@ -1,6 +1,6 @@
 # Tickerwall
 
-> 自托管行情看板 · A self-hosted market terminal — zero dependencies, one `node` process.
+> 自托管行情看板 · A self-hosted market terminal — one `node` process.
 >
 > 20 个全球标的 · 晨昏线世界地图 · 实时事件流 · 相关性矩阵（BH 校正 + 样本内外验证）
 
@@ -27,6 +27,31 @@ npm start          # 或 node server.mjs
 macOS 上也可以直接双击 `启动看板.command`：服务没起就起服务，已在跑就直接开页面。
 
 环境变量：`PORT`（默认 8787）、`HOST`（默认 127.0.0.1）、`CACHE_TTL_MS`（默认 15000）。
+
+## 依赖策略（2026-10 起）
+
+项目已全面工程化，**取消「运行时零依赖」约定**：
+
+- 前后端都可以引入成熟的 npm 依赖。选型门槛：维护活跃、提供 ESM、许可证与 MIT 兼容、体积与收益相称；引入时在对应设计文档里写明用途。
+- 浏览器端依赖经 Vite 打包进 `public/vendor/`，产物入库 —— 所以 `node server.mjs` / 双击 `启动看板.command` 仍不需要先 `npm install`。
+- 服务端若引入运行时依赖，要同步让 `启动看板.command` 在缺 `node_modules` 时自动执行 `npm ci`。
+- 不变的底线：不依赖需要 API Key 或境外瓦片的在线地图服务，断网也能打开页面。
+
+### 目前打进 vendor 的东西
+
+| 产物 | 来源 | 大小（gzip） | 用途 |
+| :--- | :--- | :--- | :--- |
+| `vendor/macro-flow.js` | `src/client/views/macro/index.js` | 864KB（226KB） | `#/macro` 顶部的传导图谱（X6 + dagre），按需 `import()` |
+| `vendor/geo-kit.js` | `src/client/vendor/geo-kit.js` | 267KB（76KB） | 地图的 d3 地理/相机栈 + `world-atlas` 177 国拓扑 |
+
+业务代码**只写裸模块名** `import { geoPath } from 'geo-kit'`，两处解析：
+
+- 浏览器：`public/index.html` 里的 `<script type="importmap">`（必须早于任何 `type="module"` 脚本）。
+- Node / Vitest：`vite.config.js` 的 `resolve.alias`。
+
+两边都由 `tests/geo-kit.test.js` 与 `tests/client-modules.test.js` 守着 —— 后者会从 `public/app.js` 出发做可达性遍历，只对**浏览器真正加载的模块**校验裸模块名，构建期子树（`src/client/views/macro/**`）不在其列。
+
+`d3-selection` 与 `d3-transition` 必须落在同一个 bundle 里：后者靠 import 时的副作用给 `selection.prototype` 打补丁，分成两份实例会让动画静默失效。所以 d3 系依赖一律从 `geo-kit` 转出，不在业务代码里直接 import。
 
 ## 详情页
 
@@ -117,7 +142,7 @@ GET /api/detail/:id?force=1  # 跳过 60 秒缓存
 ## 结构
 
 ```
-server.mjs              零依赖 Node 服务：聚合取数 + 详情聚合 + 静态文件 + 走势历史
+server.mjs              Node 服务：聚合取数 + 详情聚合 + 静态文件 + 走势历史
 public/index.html       页面骨架（列表 + 详情容器）+ 11 个样式分片的加载顺序
 public/styles/          样式（原 styles.css 3751 行按主题拆成 11 个文件，顺序即级联）
   tokens.css              设计变量（必须最先，其余文件都引用 --var）

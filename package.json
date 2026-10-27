@@ -2,7 +2,7 @@
   "name": "tickerwall",
   "version": "2.0.0",
   "type": "module",
-  "description": "A self-hosted market terminal: 20 global instruments, terminator world map, macro event stream, correlation matrix and an interactive transmission graph. Zero runtime dependencies, one Node process.",
+  "description": "A self-hosted market terminal: 20 global instruments, terminator world map, macro event stream, correlation matrix and an interactive transmission graph. One Node process.",
   "keywords": [
     "market",
     "dashboard",
@@ -34,9 +34,16 @@
     "tslib": "^2.8.1"
   },
   "devDependencies": {
+    "d3-geo": "^3.1.1",
+    "d3-interpolate": "^3.0.1",
+    "d3-selection": "^3.0.0",
+    "d3-transition": "^3.0.1",
+    "d3-zoom": "^3.0.0",
     "elkjs": "^0.12.0",
+    "topojson-client": "^3.1.0",
     "vite": "^8.3.5",
-    "vitest": "^5.0.5"
+    "vitest": "^5.0.5",
+    "world-atlas": "^2.0.2"
   },
-  "//": "依赖只用于 `npm run build` 生成 public/vendor/macro-flow.js；产物已入库，运行看板本身不需要 node_modules。tslib 是 @antv/x6 的构建产物实际会 import 但没写进它自己 dependencies 的包，必须显式装上。elkjs 只给 tools/layout-lab.mjs 做离线布局实验，不进浏览器包。"
+  "//": "依赖策略见 README「依赖策略」：允许引入依赖；浏览器端依赖由 `npm run build` 打进 public/vendor/（产物入库，运行看板不需要 node_modules）。dependencies 只放「产物会间接 require」的包：tslib 是 @antv/x6 构建产物实际 import 但没写进它自己 dependencies 的包，必须显式装上。devDependencies 里 elkjs 只给 tools/layout-lab.mjs 做离线布局实验；d3-geo/d3-zoom/d3-selection/d3-transition/d3-interpolate/topojson-client/world-atlas 只用于构建 vendor/geo-kit.js 与跑单测，不进运行时。"
 }

@@ -65,6 +65,79 @@ describe('客户端模块：import 路径解析', () => {
     expect(missing, `public/ 下找不到:\n${missing.join('\n')}`).toEqual([]);
   });
 
+  /**
+   * 浏览器真正加载的模块图：从 public/app.js 出发，只有相对路径和
+   * /src/client/** 这种绝对路径会被跟进去。
+   *
+   * 为什么不能对所有源码文件一刀切：src/client/views/macro/** 只在
+   * `npm run build` 时被 Vite 打包进 public/vendor/macro-flow.js，
+   * 浏览器加载的是那个产物，从不直接请求这些源码 —— 它们里面的
+   * `import { Graph } from '@antv/x6'` 是构建期依赖，不该出现在 import map 里。
+   */
+  const browserReachable = (() => {
+    const seen = new Set();
+    const queue = [`${ROOT}public/app.js`];
+    while (queue.length) {
+      const file = queue.pop();
+      if (seen.has(file) || !existsSync(file)) continue;
+      seen.add(file);
+      for (const spec of specifiers(read(file))) {
+        let next = null;
+        if (spec.startsWith('.')) next = new URL(spec, `file://${file}`).pathname;
+        else if (spec.startsWith('/src/client/')) next = `${ROOT}${spec.slice(1)}`;
+        if (next && next.endsWith('.js')) queue.push(next);
+      }
+    }
+    return seen;
+  })();
+
+  it('浏览器可达模块用的裸模块名都在 import map 里声明', () => {
+    // 浏览器原生加载 ES 模块，没有构建期改写。裸模块名一旦不在 import map 里，
+    // 页面会整块加载失败，报的是 "Failed to resolve module specifier" ——
+    // 很容易被当成服务端问题排查半天。这里把那张表当契约守。
+    const html = readFileSync(`${ROOT}public/index.html`, 'utf8');
+    const m = /<script type="importmap">([\s\S]*?)<\/script>/.exec(html);
+    expect(m, 'index.html 缺少 import map').toBeTruthy();
+    const declared = new Set(Object.keys(JSON.parse(m[1]).imports ?? {}));
+
+    const used = new Map(); // bare name → 出现在哪些模块
+    for (const file of browserReachable) {
+      for (const spec of specifiers(read(file))) {
+        if (spec.startsWith('.') || spec.startsWith('/') || spec.startsWith('node:')) continue;
+        if (!used.has(spec)) used.set(spec, []);
+        used.get(spec).push(file.slice(ROOT.length));
+      }
+    }
+
+    const missing = [...used.entries()]
+      .filter(([name]) => !declared.has(name))
+      .map(([name, mods]) => `${name}（被 ${[...new Set(mods)].join('、')} 使用）`);
+    expect(missing, `import map 里缺少：\n${missing.join('\n')}`).toEqual([]);
+  });
+
+  it('可达图确实覆盖到了视图层（防止解析逻辑退化后「通过」）', () => {
+    const files = [...browserReachable].map((f) => f.slice(ROOT.length));
+    for (const must of ['public/app.js', 'src/client/main.js', 'src/client/views/map.js', 'src/client/views/events.js']) {
+      expect(files, `可达图里缺 ${must}`).toContain(must);
+    }
+    // macro 子树是构建期源码，不该被浏览器直接加载
+    expect(files.some((f) => f.includes('/views/macro/'))).toBe(false);
+  });
+
+  it('vendor 打包入口的 bare 依赖不进业务代码（只能从 geo-kit 转出）', () => {
+    // 业务模块直接 import 'd3-geo' 会绕过 geo-kit 的收口，
+    // 一旦 d3-selection / d3-transition 分成两份实例，动画会静默失效。
+    const ALLOWED = new Set(['src/client/vendor/geo-kit.js']);
+    const bad = [];
+    for (const mod of MODULES) {
+      if (ALLOWED.has(rel(mod).replace(/^\/+/, ''))) continue;
+      for (const spec of specifiers(read(mod))) {
+        if (/^(d3-|topojson-|world-atlas)/.test(spec)) bad.push(`${rel(mod)} → ${spec}`);
+      }
+    }
+    expect(bad, `请改从 geo-kit 导入：\n${bad.join('\n')}`).toEqual([]);
+  });
+
   it('没有模块反向依赖 public/ 里的相对路径（那是拆分时的经典错位）', () => {
     const bad = [];
     for (const mod of MODULES) {

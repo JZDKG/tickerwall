@@ -4,6 +4,9 @@
  * 现阶段（Phase 1）只把 `#/macro` 顶部的传导图谱打成一个 ES 模块，
  * 输出到 `public/vendor/macro-flow.js`，由 `public/app.js` 动态 import() 懒加载。
  *
+ * 依赖策略（2026-10 起）：取消「运行时零依赖」约定，允许引入 npm 依赖；
+ * 浏览器端依赖统一打进 public/vendor/ 并入库，详见 README「依赖策略」。
+ *
  * 为什么不直接改成「整站 Vite、输出 dist/」：
  *   这个项目的一条硬约束是「双击 启动看板.command 就秒开，零安装」。
  *   整站切换意味着没有 node_modules 的机器、或忘了 npm run build 的机器，
@@ -32,17 +35,34 @@ export default defineConfig({
     // minify 交给 Vite 8 默认的 oxc（vite 8 已切 rolldown，esbuild 不再是必装依赖）
     sourcemap: false,
     lib: {
-      entry: path.resolve(root, 'src/client/views/macro/index.js'),
+      // 多入口：每个入口产出独立的单文件，浏览器按 import map 各取所需。
+      //   macro-flow —— #/macro 顶部的传导图谱（X6 + dagre，约 700KB）
+      //   geo-kit    —— 地图的 d3 地理/相机栈 + world-atlas 拓扑（约 200KB）
+      // 两者没有共享依赖，所以不会拆出公共 chunk；万一将来有了，Vite 会生成
+      // shared-*.js，届时 import map 要一并补上。
+      entry: {
+        'macro-flow': path.resolve(root, 'src/client/views/macro/index.js'),
+        'geo-kit': path.resolve(root, 'src/client/vendor/geo-kit.js'),
+      },
       formats: ['es'],
-      fileName: () => 'macro-flow.js',
+      fileName: (_format, entryName) => `${entryName}.js`,
     },
     rollupOptions: {
       output: {
-        // 单文件输出：app.js 只需要 import 一个 URL，不用记 chunk 名
-        assetFileNames: 'macro-flow.[ext]',
+        // 产物名由上面 fileName 决定；资源统一用入口名，不用记 chunk 名
+        assetFileNames: '[name].[ext]',
       },
     },
   },
+  // bare specifier 的解析：业务代码统一写 `import ... from 'geo-kit'`，
+  // 浏览器侧靠 index.html 的 import map，Node/Vitest 侧靠这条 alias。
+  // 目标是同一份源码两种环境都能解析，纯函数模块才能直接单测。
+  resolve: {
+    alias: {
+      'geo-kit': path.resolve(root, 'src/client/vendor/geo-kit.js'),
+    },
+  },
+
   // 开发期：把 /api 代理到正在跑的 server.mjs，方便 `npm run dev:web` 单独调前端
   server: {
     port: 5180,
