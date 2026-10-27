@@ -24,6 +24,7 @@ import {
   createSpotlightState, buildSpotlightQueue, spotlightReducer,
   currentSpotlightEvent, needsIdleTimer, STEP_MS,
 } from './map/logic/spotlight.js';
+import { TOPIC_FILTERS, filterMapEvents } from './map/logic/filters.js';
 import { mapEl } from '../shared/dom.js';
 import { dirOf, esc, fmtPrice } from '../shared/format.js';
 import { store } from '../shared/store.js';
@@ -572,8 +573,9 @@ export function renderMap() {
     </g>`;
   }
 
-  // ---- 右侧事件流（赛区聚焦时只留该赛区）----
-  const visibleItems = mapRegion ? items.filter((ev) => ev.region === mapRegion) : items;
+  // ---- 右侧事件流 ----
+  // 滤镜与赛区是「与」关系：聚焦中东后再点「地缘/能源」，在该赛区内继续收窄。
+  const visibleItems = filterMapEvents(items, { filterKey: mapFilter, region: mapRegion });
   const feedRows = visibleItems
     .slice(0, 40)
     .map((ev) => {
@@ -618,6 +620,13 @@ export function renderMap() {
         <button type="button" class="map-btn" id="map-reset" title="复位">复位</button>
         <button type="button" class="map-btn" id="map-full" title="全屏">⛶ 全屏</button>
       </div>
+    </div>
+    <div class="map-filters" role="tablist" aria-label="主题筛选">
+      ${TOPIC_FILTERS.map((f) => {
+        const on = f.key === mapFilter;
+        const n = filterMapEvents(items, { filterKey: f.key, region: mapRegion }).length;
+        return `<button type="button" class="map-pill${on ? ' on' : ''}" role="tab" aria-selected="${on}" data-filter="${esc(f.key)}">${esc(f.label)}<em>${n}</em></button>`;
+      }).join('')}
     </div>
     <div class="map-body">
       <div class="map-canvas" id="map-canvas">
@@ -819,6 +828,16 @@ export function bindMapEvents() {
   });
   mapEl.querySelectorAll('.map-anchors .ma-head').forEach((b) => {
     b.addEventListener('click', openCity(b.dataset.city));
+  });
+
+  // 滤镜：切换后整张重绘。数量徽标要跟着赛区一起变，所以顺带重算。
+  mapEl.querySelectorAll('.map-pill[data-filter]').forEach((b) => {
+    b.onclick = () => {
+      const key = b.dataset.filter;
+      if (key === mapFilter) return;
+      mapFilter = key;
+      renderMap();
+    };
   });
 
   // 播报台：悬停暂停进度、点击跳详情。用 on* 赋值而不是 addEventListener ——
