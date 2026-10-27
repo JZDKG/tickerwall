@@ -25,6 +25,7 @@ import {
   currentSpotlightEvent, needsIdleTimer, STEP_MS,
 } from './map/logic/spotlight.js';
 import { TOPIC_FILTERS, filterMapEvents } from './map/logic/filters.js';
+import { sparklinePath } from './map/logic/sparkline.js';
 import { mapEl } from '../shared/dom.js';
 import { dirOf, esc, fmtPrice } from '../shared/format.js';
 import { store } from '../shared/store.js';
@@ -757,6 +758,14 @@ export function renderMap() {
   updateAnchors();
   applyRegionClasses();
   bindMapEvents();
+
+  // mapEl.innerHTML 整体重建会连带删掉打开中的节点卡。quotes 有 15 秒 ttl、
+  // 30 秒轮询也会走到这里 —— 用户正读着卡片时它会突然消失。重建后重开一次。
+  if (nodeCardKey) {
+    const reopen = nodeCardKey;
+    nodeCardKey = null; // 否则 openNodeCard 会当成「再点一次」而关闭
+    openNodeCard(reopen);
+  }
 }
 
 /**
@@ -814,7 +823,17 @@ export function openNodeCard(cityKey) {
   py = Math.max(10, Math.min(hostRect.height - H - 10, py + 22));
 
   const openNow = Boolean(members[0].marketStatus?.open);
-  const rows = members
+  // 每个成员一条迷你走势，放在价格右边 —— 一行数字看不出「它是怎么走到这儿的」
+  const sparkOf = (q) => {
+    const sp = sparklinePath(q.history, 44, 12, 1);
+    if (!sp) return '';
+    const d = dirOf(q.changePct);
+    return `<svg class="nc-spark" viewBox="0 0 44 12" aria-hidden="true">
+      <path class="nc-spark-area ${d}" d="${sp.area}" /><path class="nc-spark-line ${d}" d="${sp.line}" />
+    </svg>`;
+  };
+
+  const rowsWithSpark = members
     .map((m) => {
       const d = dirOf(m.changePct);
       const c = d === 'up' ? '#f5455c' : d === 'down' ? '#0ecb81' : '#8a8f99';
@@ -822,12 +841,38 @@ export function openNodeCard(cityKey) {
       const f = m.freshness?.label ?? '';
       return `<div class="nc-row">
         <span class="nc-name">${esc(MAP_TAG[m.id] ?? m.name)}</span>
+        ${sparkOf(m)}
         <span class="nc-price">${fmtPrice(m.price, m.decimals ?? 2)}</span>
         <span class="nc-pct" style="color:${c}">${pct}</span>
         <span class="nc-fresh">${esc(f)}</span>
       </div>`;
     })
     .join('');
+
+  // 横向四件套：读某个定价中心时，利率 / 美元 / 人民币 / 原油是绕不开的背景。
+  // 它们不属于这个城市，但决定这个城市的价格在什么环境里。
+  const macroIds = ['us10y', 'dxy', 'usdcny', 'oil'];
+  const macro = macroIds
+    .map((id) => quotes.find((q) => q.id === id))
+    .filter((q) => q && q.ok)
+    .map((q) => {
+      const d = dirOf(q.changePct);
+      return `<span class="nc-macro ${d}">${esc(MAP_TAG[q.id] ?? q.name)} <b>${q.changePct == null ? '—' : (q.changePct >= 0 ? '+' : '') + q.changePct.toFixed(2) + '%'}</b></span>`;
+    })
+    .join('');
+
+  // 波及事件 Top3：按赛区 + 标的命中，重要的排前面
+  // 赛区要按 REGION_IMPACT 反查 —— MAP_CITIES 上没有 region 字段，
+  // 写 city.region 的话条件恒等于 ev.region，等于没过滤，纽约卡里会冒出
+  // 「泽连斯基袭击乌克兰基础设施」这种只是碰巧命中 vix 的条目。
+  const cityRegion = Object.entries(REGION_IMPACT).find(([, keys]) => keys.includes(city.key))?.[0] ?? null;
+  const cityIds = new Set(city.ids);
+  const spill = (store.events?.data?.items ?? [])
+    // global 事件对每个中心都成立，不能因为赛区不同就丢掉
+    .filter((ev) => !cityRegion || ev.region === cityRegion || ev.region === 'global')
+    .filter((ev) => (ev.symbols ?? []).some((id) => cityIds.has(id)))
+    .sort((a, b) => (b.level === 'high' ? 1 : 0) - (a.level === 'high' ? 1 : 0) || String(b.time).localeCompare(String(a.time)))
+    .slice(0, 3);
 
   const el = document.createElement('div');
   el.className = 'map-node-card';
@@ -839,7 +884,13 @@ export function openNodeCard(cityKey) {
       <span class="nc-city">${esc(city.name)}</span>
       <span class="nc-status ${openNow ? 'on' : 'off'}">${openNow ? '交易中' : '已收盘'}</span>
     </div>
-    ${rows}
+    ${macro ? `<div class="nc-macros">${macro}</div>` : ''}
+    ${rowsWithSpark}
+    ${spill.length ? `<div class="nc-spill">
+      <span class="nc-spill-head">波及事件</span>
+      ${spill.map((ev) => `<a class="nc-spill-row lv-${esc(ev.level)}" href="#/d/${encodeURIComponent(ev.id)}">
+        <i>${esc(String(ev.time).slice(11, 16))}</i><span>${esc(ev.title.slice(0, 34))}</span></a>`).join('')}
+    </div>` : ''}
     <div class="nc-foot">
       <a href="#/d/${encodeURIComponent(members[0].id)}">打开详情 →</a>
     </div>

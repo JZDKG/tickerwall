@@ -1164,12 +1164,105 @@
 
 .nc-row {
   display: grid;
-  grid-template-columns: 46px 1fr auto;
+  grid-template-columns: 46px 44px 1fr auto;
   gap: 6px;
-  align-items: baseline;
+  align-items: center;
   font-size: 11.5px;
   line-height: 30px;
   font-family: var(--mono);
+}
+
+/* 成员迷你走势：一行数字看不出「它是怎么走到这儿的」 */
+.nc-spark {
+  width: 44px;
+  height: 12px;
+  display: block;
+  overflow: visible;
+}
+
+.nc-spark-line {
+  fill: none;
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.nc-spark-line.up { stroke: var(--up); }
+.nc-spark-line.down { stroke: var(--down); }
+.nc-spark-line.flat { stroke: #7e8899; }
+
+.nc-spark-area { opacity: 0.16; }
+.nc-spark-area.up { fill: var(--up); }
+.nc-spark-area.down { fill: var(--down); }
+.nc-spark-area.flat { fill: #7e8899; }
+
+/* 横向宏观四件套：不属于这个城市，但决定它的价格在什么环境里 */
+.nc-macros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 3px 0 6px;
+  margin-bottom: 3px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 10px;
+  font-family: var(--mono);
+  color: rgba(160, 174, 194, 0.85);
+}
+
+.nc-macros .up b { color: var(--up); }
+.nc-macros .down b { color: var(--down); }
+.nc-macros .flat b { color: #8a8f99; }
+
+.nc-macros b {
+  font-weight: 600;
+}
+
+/* 波及事件 Top3 */
+.nc-spill {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nc-spill-head {
+  font-size: 9.5px;
+  color: var(--muted-2);
+  letter-spacing: 0.04em;
+  margin-bottom: 1px;
+}
+
+.nc-spill-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 5px;
+  font-size: 10.5px;
+  color: rgba(200, 212, 228, 0.82);
+  text-decoration: none;
+  line-height: 1.35;
+}
+
+.nc-spill-row i {
+  font-style: normal;
+  font-family: var(--mono);
+  color: var(--muted-2);
+  font-size: 9.5px;
+}
+
+.nc-spill-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nc-spill-row:hover span {
+  color: #cfe0ff;
+}
+
+.nc-spill-row.lv-high i {
+  color: #f5455c;
 }
 
 .nc-name {
