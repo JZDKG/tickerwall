@@ -379,17 +379,6 @@ const WEATHER_RE = new RegExp(
 );
 
 /**
- * 清洗多义词，防止气象、产业政策、公司治理被误判成地缘政治冲突。
- *
- * 「风暴袭击欧洲」和「空袭伊朗」在词表上都命中「袭击」，但前者对资产价格没有
- * 传导路径，实测这类稿子会被打成 high 并连上黄金/原油/VIX 的冲击弧线，必须拦住。
- *
- * 英文侧的问题不同：不是气象，而是 war / strike / attack 在英语里是常用比喻。
- * price war、currency war、bidding war 都是竞争；workers strike 是劳工行动；
- * heart attack 是健康事件。这些词一旦进了标题（titleOnly 词只认标题），就会被
- * 判成 weight 3 的地缘政治。注意 trade war 不清洗 —— 那是真的地缘政治。
- */
-/**
  * 只放行 http(s) 链接，其余一律给 null。
  *
  * 新闻 url 来自 RSS / 聚合索引 —— 全是外部不可信数据。前端 `esc()` 只转义
@@ -415,6 +404,17 @@ export function sanitizeUrl(raw) {
   return u.toString();
 }
 
+/**
+ * 清洗多义词，防止气象、产业政策、公司治理被误判成地缘政治冲突。
+ *
+ * 「风暴袭击欧洲」和「空袭伊朗」在词表上都命中「袭击」，但前者对资产价格没有
+ * 传导路径，实测这类稿子会被打成 high 并连上黄金/原油/VIX 的冲击弧线，必须拦住。
+ *
+ * 英文侧的问题不同：不是气象，而是 war / strike / attack 在英语里是常用比喻。
+ * price war、currency war、bidding war 都是竞争；workers strike 是劳工行动；
+ * heart attack 是健康事件。这些词一旦进了标题（titleOnly 词只认标题），就会被
+ * 判成 weight 3 的地缘政治。注意 trade war 不清洗 —— 那是真的地缘政治。
+ */
 export function sanitizeText(text) {
   return String(text ?? '')
     // 气象灾害不是地缘政治冲突（词表里中英德法西葡俄阿都有）
