@@ -134,7 +134,7 @@ async function fetchJin10() {
       time: bjTimeString((x.time ?? '').replace(' ', 'T') + '+08:00'),
       title: title.length > 90 ? `${title.slice(0, 90)}…` : title,
       body: body.length > 400 ? `${body.slice(0, 400)}…` : body,
-      url: d.source_link || null,
+      url: sanitizeUrl(d.source_link),
       important: Number(x.important) > 0,
     };
   });
@@ -163,7 +163,7 @@ async function fetchSinaLive(pages = 2) {
         time: bjTimeString((x.create_time ?? '').replace(' ', 'T') + '+08:00'),
         title: title.length > 90 ? `${title.slice(0, 90)}…` : title,
         body: body.length > 400 ? `${body.slice(0, 400)}…` : body,
-        url: x.docurl || null,
+        url: sanitizeUrl(x.docurl),
         important: Number(x.top_value) > 0,
       });
     }
@@ -191,7 +191,7 @@ async function fetchWscn(limit = 40) {
       time: bjTimeString(x.display_time),
       title: (title || body).slice(0, 90) + ((title || body).length > 90 ? '…' : ''),
       body: body.length > 400 ? `${body.slice(0, 400)}…` : body,
-      url: x.uri || null,
+      url: sanitizeUrl(x.uri),
       important: Number(x.score) >= 2,
     };
   });
@@ -290,7 +290,7 @@ export async function archiveEvents(items) {
         source: it.source,
         title: it.title,
         body: it.body?.slice(0, 300) ?? '',
-        url: it.url,
+        url: sanitizeUrl(it.url),
         level: it.level,
         topics: it.topics?.map((t) => t.label) ?? [],
         symbols: it.symbols ?? [],

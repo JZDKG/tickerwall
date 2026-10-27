@@ -10,6 +10,7 @@ import { describe, it, expect } from 'vitest';
 import { sanitizeUrl } from '../src/server/domain/news-lexicon.js';
 import { safeHref } from '../src/client/shared/format.js';
 import pathMod from 'node:path';
+import { readFileSync } from 'node:fs';
 
 const ATTACKS = [
   'javascript:alert(1)',
@@ -178,5 +179,29 @@ describe('resolveStaticPath：只放行 root 之内', () => {
     const { resolveStaticPath } = await import('../src/server/http.js');
     expect(resolveStaticPath('/%E0%A4%A')).toBeNull();
     expect(resolveStaticPath('/foo\u0000.png')).toBeNull();
+  });
+});
+
+/* ================================================================== *
+ * 事件输出：url 只能是 http(s) 或 null
+ *
+ * sanitizeUrl 本身有单测，但那只证明「函数对」。真正要守的是「所有出口都
+ * 过了它」—— events.service.js 里有 6 处 url 赋值（三个中文源、归档写入、
+ * 全球 feed、历史回读），漏一处就是这个洞。
+ *
+ * 用静态断言而不是跑一遍抓取：源是外网，不可控，也不该在单测里打出去。
+ * ================================================================== */
+describe('events.service 的 url 出口全部经 sanitizeUrl', () => {
+  it('没有裸的 url 赋值', () => {
+    const code = readFileSync(new URL('../src/server/services/events.service.js', import.meta.url), 'utf8');
+    // 逐行找 `url: <expr>`，要求右边必须以 sanitizeUrl( 开头
+    const bad = [];
+    for (const line of code.split('\n')) {
+      const m = /^\s*url:\s*(.+?),?\s*$/.exec(line);
+      if (!m) continue;
+      const rhs = m[1];
+      if (!rhs.startsWith('sanitizeUrl(')) bad.push(line.trim());
+    }
+    expect(bad, `以下 url 赋值没有清洗：\n${bad.join('\n')}`).toEqual([]);
   });
 });
