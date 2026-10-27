@@ -8,6 +8,7 @@
  * 启动：node server.mjs   （默认 http://127.0.0.1:8787）
  */
 import { MARKET_PROFILES, localClock, isMarketOpen } from './src/server/domain/market-hours.js';
+import { takeForce } from './src/server/http.js';
 import { getEvents, getEventHistory, loadLlmStore } from './src/server/services/events.service.js';
 import {
   CACHE_TTL_MS,
@@ -76,14 +77,8 @@ async function serveStatic(res, pathname) {
   }
 }
 
-/**
- * `X-Content-Type-Options` 挡住「浏览器把 JSON 当 HTML 猜」这种老问题。
- *
- * 这里**不发** `Access-Control-Allow-Origin`：前端是同源页面，根本不需要
- * CORS；而这个头一旦为 `*`，任何网页都能跨域读本机 API。默认只听
- * 127.0.0.1 时风险有限，但用户设了 HOST=0.0.0.0 就是把整个内部数据面
- * 暴露给任意站点。需要跨域的场景（比如自己起个前端）请走反向代理。
- */
+/* 不发 Access-Control-Allow-Origin：前端同源，不需要 CORS；一旦为 `*`，
+   任何网页都能跨域读本机 API（HOST=0.0.0.0 时更糟）。跨域需求走反向代理。 */
 function sendJson(res, status, obj) {
   const body = Buffer.from(JSON.stringify(obj));
   res.writeHead(status, {
@@ -99,7 +94,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
   try {
     if (url.pathname === '/api/quotes') {
-      const force = url.searchParams.get('force') === '1';
+      const force = takeForce(url);
       const data = await getQuotes({ force });
       return sendJson(res, 200, data);
     }
@@ -108,7 +103,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname.startsWith('/api/detail/')) {
       const id = url.pathname.slice('/api/detail/'.length);
-      const force = url.searchParams.get('force') === '1';
+      const force = takeForce(url);
       const detail = await getDetail(id, { force });
       if (!detail) return sendJson(res, 404, { ok: false, error: `未知标的: ${id}` });
       return sendJson(res, 200, detail);
@@ -117,17 +112,19 @@ const server = http.createServer(async (req, res) => {
       const winRaw = url.searchParams.get('window');
       const win = winRaw === 'all' ? 0 : Math.max(20, Math.min(5000, Number(winRaw) || 250));
       const freq = url.searchParams.get('freq') === 'week' ? 'week' : 'day';
-      const force = url.searchParams.get('force') === '1';
+      const force = takeForce(url);
       const data = await getMacro(win, freq, { force });
       return sendJson(res, 200, data);
     }
     if (url.pathname === '/api/events/history') {
-      const hours = Number(url.searchParams.get('hours')) || 24;
+      // 归档只有「今天 + 昨天」两份，超过 48 小时没有数据可给；
+      // 下限 1 小时，避免 hours=0 走进空窗口
+      const hours = Math.max(1, Math.min(48, Number(url.searchParams.get('hours')) || 24));
       sendJson(res, 200, await getEventHistory({ hours }));
       return;
     }
     if (url.pathname === '/api/events') {
-      const force = url.searchParams.get('force') === '1';
+      const force = takeForce(url);
       // 默认 200：接入全球源后事件量从 ~14 条涨到 ~130 条，
       // 120 会把尾部条目静默截掉，而 total 仍报全量，看起来像丢了新闻。
       const limit = Math.max(10, Math.min(300, Number(url.searchParams.get('limit')) || 200));
@@ -135,12 +132,12 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, data);
     }
     if (url.pathname === '/api/eventstudy') {
-      const force = url.searchParams.get('force') === '1';
+      const force = takeForce(url);
       const data = await getEventStudy({ force });
       return sendJson(res, 200, data);
     }
     if (url.pathname === '/api/calendar') {
-      const force = url.searchParams.get('force') === '1';
+      const force = takeForce(url);
       const data = await getCalendar({ force });
       return sendJson(res, 200, data);
     }

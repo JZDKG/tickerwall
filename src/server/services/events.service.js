@@ -351,9 +351,50 @@ const LLM_SYSTEM = `你是金融市场的新闻分类器。输入是一批编号
  * 从 dsh 的 web profile 里提取 cline 网关配置，而不是硬编码。
  * 这样 dsh 换了 provider / 模型，这边会跟着走。
  */
-function readDshLlmConfig() {
+/**
+ * LLM 复核的配置来源。
+ *
+ * 优先级：环境变量 > （可选的）外部工具配置。
+ *
+ * 为什么要有 `LLM_CONFIG_SOURCE` 这个开关：默认行为会去读 `~/.dsh` 下另一个
+ * 工具（dsh）的私有 YAML 与明文凭据。这不理想 —— 一旦 dsh 改了格式我们就
+ * 静默失效，而且等于读了本项目之外的密钥。所以：
+ *
+ *   LLM_CONFIG_SOURCE=env   只认环境变量，绝不碰外部文件（推荐用于部署）
+ *   LLM_CONFIG_SOURCE=auto  环境变量优先，缺失才回落读 ~/.dsh（默认，兼容现状）
+ *
+ * 无论走哪条路，配置来源都会记在 cfg.source 里，便于排查「为什么没在复核」。
+ */
+const ENV_LLM = {
+  baseURL: 'LLM_BASE_URL',
+  apiKey: 'LLM_API_KEY',
+  model: 'LLM_MODEL',
+};
+
+export function readDshLlmConfig() {
+  const sourceMode = String(process.env.LLM_CONFIG_SOURCE ?? 'auto').toLowerCase();
+  const cfg = { baseURL: null, apiKeyEnv: 'CLINE_API_KEY', models: [], model: null, apiKey: null, source: null };
+
+  // ---- 1) 环境变量（最高优先级，不依赖任何外部文件）----
+  cfg.baseURL = process.env[ENV_LLM.baseURL] || null;
+  cfg.apiKey = process.env[ENV_LLM.apiKey] || null;
+  const envModel = process.env[ENV_LLM.model] || null;
+  if (cfg.baseURL || cfg.apiKey || envModel) {
+    cfg.source = 'env';
+    if (envModel) cfg.models = [envModel];
+    if (!cfg.baseURL) cfg.baseURL = 'https://api.cline.bot/api/v1';
+    cfg.model = envModel ?? 'cline-pass/deepseek-v4.1-flash-1017';
+    return cfg;
+  }
+
+  // ---- 2) 显式要求只用环境变量：到此为止，不再读外部文件 ----
+  if (sourceMode === 'env') {
+    cfg.source = 'env:missing';
+    return cfg;
+  }
+
+  // ---- 3) 回落：读 dsh 的配置（兼容现状，仅在 auto 下发生）----
   const home = process.env.DSH_HOME || `${process.env.HOME}/.dsh`;
-  const cfg = { baseURL: null, apiKeyEnv: 'CLINE_API_KEY', models: [], apiKey: null, source: null };
 
   try {
     const patch = readFileSync(`${home}/profiles/web/cordis.patch.yml`, 'utf8');
@@ -376,15 +417,16 @@ function readDshLlmConfig() {
     try {
       const cred = readFileSync(`${home}/.credentials.yaml`, 'utf8');
       cfg.apiKey = new RegExp(`${cfg.apiKeyEnv}:\\s*(\\S+)`).exec(cred)?.[1] ?? null;
+      if (cfg.apiKey) cfg.source = `${cfg.source ?? 'dsh'}:credentials.yaml`;
     } catch {
       /* 无凭据 */
     }
   }
 
-  // 优先 deepseek-v4.1-flash（dsh web 的默认模型），否则取配置里第一个
+  // 模型名不再唯独硬编码：LLM_MODEL 已在上面处理，这里只做「在已知模型里
+  // 挑一个」，挑不到就用第一个，最后才是兜底常量
   const preferred = ['cline-pass/deepseek-v4.1-flash-1017', 'cline-pass/glm-5.3-flash'];
-  cfg.model =
-    preferred.find((m) => cfg.models.includes(m)) ?? cfg.models[0] ?? 'cline-pass/deepseek-v4.1-flash-1017';
+  cfg.model = preferred.find((m) => cfg.models.includes(m)) ?? cfg.models[0] ?? 'cline-pass/deepseek-v4.1-flash-1017';
   return cfg;
 }
 

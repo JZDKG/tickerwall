@@ -69,3 +69,34 @@ describe('客户端 safeHref：第二道防线', () => {
     expect(typeof safeHref(null)).toBe('string');
   });
 });
+
+/* ================================================================== *
+ * force=1 限流
+ *
+ * force 会跳过缓存直打上游，不设限就是一个放大器。这里锁住三条：
+ * 不带 force 时不消耗预算、同一端点冷却、不同端点互不影响。
+ * ================================================================== */
+
+describe('takeForce：强制刷新的预算', () => {
+  const u = (path, force) => new URL(`http://x${path}${force ? '?force=1' : ''}`);
+
+  it('不带 force 直接放行成 false，且不消耗预算', async () => {
+    const { takeForce } = await import('../src/server/http.js');
+    expect(takeForce(u('/t1', false))).toBe(false);
+    expect(takeForce(u('/t1', false))).toBe(false);
+    // 预算没被消耗：紧接着的 force 仍然允许
+    expect(takeForce(u('/t1', true))).toBe(true);
+  });
+
+  it('同一端点第二次 force 被拒（静默退回缓存）', async () => {
+    const { takeForce } = await import('../src/server/http.js');
+    expect(takeForce(u('/t2', true))).toBe(true);
+    expect(takeForce(u('/t2', true))).toBe(false);
+  });
+
+  it('不同端点各有自己的预算', async () => {
+    const { takeForce } = await import('../src/server/http.js');
+    expect(takeForce(u('/t3', true))).toBe(true);
+    expect(takeForce(u('/t4', true))).toBe(true);
+  });
+});
