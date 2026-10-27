@@ -239,10 +239,15 @@ describe('入口保持零构建', () => {
     expect(code).not.toMatch(/function\s+\w+\s*\(/);
   });
 
-  it('server.mjs 把 /src/client/ 当静态资源伺服（浏览器原生加载 ES 模块）', () => {
-    const code = read(`${ROOT}server.mjs`);
-    expect(code).toContain("const CLIENT_SRC_DIR = path.join(ROOT, 'src', 'client');");
-    expect(code).toContain("rel.startsWith('/src/client/')");
+  it('/src/client/ 被当静态资源伺服（浏览器原生加载 ES 模块）', () => {
+    // 实现从 server.mjs 搬到了 src/server/http.js 的 resolveStaticPath 纯函数
+    // （为了能对路径穿越单测 —— 那段原先埋在入口里没法测）。这里断言的是
+    // 「这个子树确实被伺服」这个语义，不锁定具体文件。
+    const httpCode = read(`${ROOT}src/server/http.js`);
+    expect(httpCode).toContain("path.join(ROOT, 'src', 'client')");
+    expect(httpCode).toContain("rel.startsWith('/src/client/')");
+    // 入口仍然必须用上它
+    expect(read(`${ROOT}server.mjs`)).toContain('resolveStaticPath');
   });
 });
 

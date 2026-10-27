@@ -8,7 +8,7 @@
  * 启动：node server.mjs   （默认 http://127.0.0.1:8787）
  */
 import { MARKET_PROFILES, localClock, isMarketOpen } from './src/server/domain/market-hours.js';
-import { takeForce } from './src/server/http.js';
+import { takeForce, resolveStaticPath } from './src/server/http.js';
 import { PORT, HOST, DEBUG_API } from './src/server/config.js';
 import { getEvents, getEventHistory, loadLlmStore } from './src/server/services/events.service.js';
 import {
@@ -23,7 +23,6 @@ import {
 import { getDetail } from './src/server/services/detail.service.js';
 import { getMacro } from './src/server/services/macro.service.js';
 import { getCalendar, getEventStudy } from './src/server/services/calendar.service.js';
-import { ROOT, PUBLIC_DIR } from './src/server/paths.js';
 import http from 'node:http';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
@@ -42,25 +41,16 @@ const MIME = {
 };
 
 /** 客户端源码目录：Phase 2 起 app.js 拆成 ES 模块，由浏览器原生加载，不需要构建 */
-const CLIENT_SRC_DIR = path.join(ROOT, 'src', 'client');
 
 async function serveStatic(res, pathname) {
-  let rel = decodeURIComponent(pathname);
-  if (rel === '' || rel === '/') rel = '/index.html';
-
-  // /src/client/** → 仓库里的客户端源码（只开放这一个子树，不暴露 server.mjs 等）
-  let root = PUBLIC_DIR;
-  if (rel.startsWith('/src/client/')) {
-    root = CLIENT_SRC_DIR;
-    rel = rel.slice('/src/client'.length);
-  }
-
-  const full = path.join(root, path.normalize(rel));
-  if (full !== root && !full.startsWith(root + path.sep)) {
+  // 路径解析与越界判断在 http.js 里（纯函数，可单测）
+  const resolved = resolveStaticPath(pathname);
+  if (!resolved) {
     res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('forbidden');
     return;
   }
+  const { root, rel, full } = resolved;
   try {
     const st = await fsp.stat(full);
     if (st.isDirectory()) return serveStatic(res, path.posix.join(rel, 'index.html'));

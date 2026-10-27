@@ -9,6 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import { sanitizeUrl } from '../src/server/domain/news-lexicon.js';
 import { safeHref } from '../src/client/shared/format.js';
+import pathMod from 'node:path';
 
 const ATTACKS = [
   'javascript:alert(1)',
@@ -98,5 +99,84 @@ describe('takeForce：强制刷新的预算', () => {
     const { takeForce } = await import('../src/server/http.js');
     expect(takeForce(u('/t3', true))).toBe(true);
     expect(takeForce(u('/t4', true))).toBe(true);
+  });
+});
+
+/* ================================================================== *
+ * 静态文件路径穿越
+ *
+ * 这是少数「写错了就是安全事故」的逻辑，原先埋在 server.mjs 里没法单测。
+ * 抽成 resolveStaticPath 纯函数后就地覆盖：越界必须返回 null，
+ * 正常路径必须落在 public/ 或 src/client/ 之内。
+ * ================================================================== */
+
+describe('resolveStaticPath：只放行 root 之内', () => {
+  it('正常路径落在 public/ 下', async () => {
+    const { resolveStaticPath } = await import('../src/server/http.js');
+    const r = resolveStaticPath('/index.html');
+    expect(r).not.toBeNull();
+    expect(r.rel).toBe('/index.html');
+    expect(r.full.endsWith('public/index.html')).toBe(true);
+  });
+
+  it('根路径映射到 index.html', async () => {
+    const { resolveStaticPath } = await import('../src/server/http.js');
+    expect(resolveStaticPath('/').rel).toBe('/index.html');
+    expect(resolveStaticPath('').rel).toBe('/index.html');
+  });
+
+  it('/src/client/** 走另一个 root', async () => {
+    const { resolveStaticPath } = await import('../src/server/http.js');
+    const r = resolveStaticPath('/src/client/views/map.js');
+    expect(r).not.toBeNull();
+    expect(r.full.includes('/src/client/views/map.js')).toBe(true);
+    expect(r.full.includes('/public/')).toBe(false);
+  });
+
+  const ATTACKS = [
+    '/../package.json',
+    '/../../etc/passwd',
+    '/%2e%2e/%2e%2e/etc/passwd',
+    '/%2e%2e%2f%2e%2e%2fpackage.json',
+    '/src/client/../../server.mjs',
+    '/src/client/%2e%2e/%2e%2e/server.mjs',
+    '/a/../../../../etc/hosts',
+    '/%E0%A4%A', // 残缺的百分号序列，decodeURIComponent 会抛
+    '/foo\0.png',
+  ];
+
+  // 核心不变量不是「必须返回 null」，而是「解析结果不能逃出 root」。
+  // 绝对路径经 path.normalize 后前导 ../ 会被吃掉（/../x → /x），再 join
+  // 到 root 上仍落在 root 内 —— 那是安全的 404，不是穿越。
+  const escaped = (r) => {
+    if (!r) return false;
+    return !(r.full === r.root || r.full.startsWith(r.root + pathMod.sep));
+  };
+
+  it('没有任何穿越输入能落到 root 之外', async () => {
+    const { resolveStaticPath } = await import('../src/server/http.js');
+    for (const p of ATTACKS) {
+      expect(escaped(resolveStaticPath(p)), `逃出了 root: ${p}`).toBe(false);
+    }
+  });
+
+  it('尤其拿不到仓库根的 package.json / server.mjs', async () => {
+    const { resolveStaticPath } = await import('../src/server/http.js');
+    for (const p of ATTACKS) {
+      const r = resolveStaticPath(p);
+      if (!r) continue;
+      if (r.full.endsWith('/package.json') || r.full.endsWith('/server.mjs')) {
+        expect(
+          r.full.includes('/public/') || r.full.includes('/src/client/'),
+          `落到了仓库根: ${p} → ${r.full}`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('残缺的百分号序列与 NUL 直接拒绝', async () => {
+    const { resolveStaticPath } = await import('../src/server/http.js');
+    expect(resolveStaticPath('/%E0%A4%A')).toBeNull();
+    expect(resolveStaticPath('/foo\u0000.png')).toBeNull();
   });
 });
