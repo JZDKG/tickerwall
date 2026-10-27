@@ -20,7 +20,7 @@ import { regionBounds, viewForBounds, toggleRegion } from './map/logic/focus.js'
 import { createCamera, destroyCamera, applyTransform, syncCamera } from './map/camera.js';
 import { cityAnchorsHtml, lodClassFor } from './map/layers/markers.js';
 import { broadcastHtml } from './map/layers/broadcast.js';
-import { relayBandHtml, macroCapsuleHtml } from './map/layers/hud.js';
+import { relayBandHtml, macroCapsuleHtml, alertChipHtml, alertCardHtml, alertsNow, ALERT_ANCHOR } from './map/layers/hud.js';
 import {
   createSpotlightState, buildSpotlightQueue, spotlightReducer,
   currentSpotlightEvent, needsIdleTimer, STEP_MS,
@@ -400,6 +400,14 @@ function renderHud() {
     cap.innerHTML = html;
     cap.hidden = !html;
   }
+  // 信标每秒只剩倒计时要变，单独改文本，别重建整个 chip
+  const chip = document.getElementById('cal-chip');
+  if (chip) {
+    const alerts = alertsNow(store.calendar ?? store.events?.calendar, Date.now());
+    if (alerts[0]) chip.innerHTML = alertChipHtml(alerts[0]);
+    else chip.parentElement?.remove();
+  }
+
   // 接力带上的胶囊也要能点（bindMapEvents 每轮重绘后会重绑，这里补一次）
   band?.querySelectorAll('.relay-chip[data-anchor]').forEach((b) => {
     b.onclick = () => {
@@ -686,6 +694,17 @@ export function renderMap() {
   // 标签与火花线：全部行都渲染，超出当前 LOD 的用 CSS 隐藏（跨档不重建 DOM）
   const anchorsHtml = cityAnchorsHtml(MAP_CITIES, quotesById);
 
+  // 48h 日历信标。挂在华盛顿坐标，作为锚点层的子元素 —— 这样它自动复用
+  // updateAnchors 的投影换算，缩放平移都跟着走，不必另写一套。
+  const alerts = alertsNow(store.calendar ?? store.events?.calendar, Date.now());
+  const nextAlert = alerts[0] ?? null;
+  const beaconLxLy = mapProject(ALERT_ANCHOR.lon, ALERT_ANCHOR.lat);
+  const beaconHtml = nextAlert && beaconLxLy
+    ? `<div class="map-anchor cal-beacon" data-lx="${beaconLxLy[0].toFixed(2)}" data-ly="${beaconLxLy[1].toFixed(2)}">`
+      + `<button type="button" class="cal-chip" id="cal-chip">${alertChipHtml(nextAlert)}</button>`
+      + '</div>'
+    : '';
+
   // ---- 事件区域 ----
   const byRegion = new Map();
   for (const ev of items) {
@@ -823,7 +842,7 @@ export function renderMap() {
             ${btcSvg}
           </g>
         </svg>
-        <div class="map-anchors lod-0" id="map-anchors" data-lod="lod-0">${anchorsHtml}</div>
+        <div class="map-anchors lod-0" id="map-anchors" data-lod="lod-0">${anchorsHtml}${beaconHtml}</div>
         <div class="map-broadcast" id="map-broadcast"></div>
         <div class="map-bubbles" id="map-bubbles"></div>
       </div>
@@ -1068,6 +1087,29 @@ export function bindMapEvents() {
       renderMap();
     };
   });
+
+  // 48h 信标：点开预览卡（发布时间双时区 + 关联标的现价）
+  const calChip = document.getElementById('cal-chip');
+  if (calChip) {
+    calChip.onclick = (e) => {
+      e.stopPropagation();
+      const existing = document.getElementById('cal-card');
+      if (existing) { existing.remove(); return; }
+      const alerts = alertsNow(store.calendar ?? store.events?.calendar, Date.now());
+      if (!alerts[0]) return;
+      const quotesById = new Map((store.quotes ?? []).filter((q) => q && q.ok).map((q) => [q.id, q]));
+      const card = document.createElement('div');
+      card.className = 'cal-card';
+      card.id = 'cal-card';
+      card.innerHTML = alertCardHtml(alerts[0], quotesById);
+      // 贴在信标下方
+      const r = calChip.getBoundingClientRect();
+      const host = document.getElementById('map-anchors').getBoundingClientRect();
+      card.style.left = `${Math.round(r.left - host.left)}px`;
+      card.style.top = `${Math.round(r.bottom - host.top + 6)}px`;
+      document.getElementById('map-anchors').appendChild(card);
+    };
+  }
 
   // 播报台：悬停暂停进度、点击跳详情。用 on* 赋值而不是 addEventListener ——
   // bindMapEvents 每轮 renderMap 都会跑，而播报台是同一个常驻元素，

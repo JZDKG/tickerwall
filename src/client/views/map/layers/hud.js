@@ -12,6 +12,7 @@
  * ================================================================== */
 
 import { esc } from '../../../shared/format.js';
+import { upcomingCalendarAlerts, formatCountdown, beijingHm, easternHm, ALERT_ANCHOR } from '../logic/calendar.js';
 
 /** 三大盘面的成分（顺序即展示顺序） */
 export const SESSION_GROUPS = [
@@ -20,8 +21,8 @@ export const SESSION_GROUPS = [
   { key: 'us', label: '美洲', anchor: 'us', ids: ['sp500', 'ndx100', 'dji', 'vix', 'oil', 'tsx', 'bvsp'] },
 ];
 
-/** '2h13m' / '43m' / '3d2h' */
-export function formatCountdown(ms) {
+/** '2h13m' / '43m' / '3d2h' —— 接力带用紧凑写法 */
+export function formatOpenIn(ms) {
   if (ms == null || !Number.isFinite(ms)) return '';
   const total = Math.max(0, Math.round(ms / 1000));
   const d = Math.floor(total / 86400);
@@ -70,7 +71,7 @@ export function summarizeSession(group, quotesById, nowMs = Date.now()) {
     openCount,
     anyOpen,
     // 任意一个开着就是「交易中」；否则报最早的下次开盘
-    statusText: anyOpen ? '交易中' : pretext != null ? `待开盘 · ${formatCountdown(pretext)}` : '休市',
+    statusText: anyOpen ? '交易中' : pretext != null ? `待开盘 · ${formatOpenIn(pretext)}` : '休市',
     nextOpenAt: nextOpenMs != null ? new Date(nextOpenMs).toISOString() : null,
     nextOpenInMs: pretext,
     avgPct: n ? sum / n : null,
@@ -130,3 +131,52 @@ export function macroCapsuleHtml(macro, quotesById) {
 
   return riskHtml + vixHtml + pick('gold-intl') + pick('oil') + pick('btc');
 }
+
+/* ------------------------------------------------------------------ *
+ * 华盛顿 48h 日历倒计时
+ *
+ * 目前的数据源（Fed / BLS）都在美国，统一挂在华盛顿（ALERT_ANCHOR）。
+ * 只认 releaseAt 这个 UTC ISO —— 前端不再自己拼 date + time，也不读服务端
+ * 的 today，那两样都是「按某个时区算的今天」，跨时区必错。
+ * ------------------------------------------------------------------ */
+
+/** 信标胶囊文本：「⚡ 美国 CPI · 20:30 · 03:21:14」 */
+export function alertChipHtml(alert) {
+  if (!alert) return '';
+  const { ev, releaseAt, msLeft } = alert;
+  const title = ev?.title ?? '事件';
+  // 标题常常一长串（「美国9月CPI同比」），只留前半句做标签
+  const short = title.length > 14 ? `${title.slice(0, 14)}…` : title;
+  return `<span class="cal-bolt">⚡</span>`
+    + `<span class="cal-name">${esc(short)}</span>`
+    + `<span class="cal-when">${esc(beijingHm(releaseAt))}</span>`
+    + `<span class="cal-left">${esc(formatCountdown(msLeft))}</span>`;
+}
+
+/**
+ * 悬停/点击预览卡的内容：北京时间 + 美东时间 + 关联标的现价。
+ * 两边时间都写，是因为这类数据源的原生说法是美东 08:30，而读者在北京。
+ */
+export function alertCardHtml(alert, quotesById) {
+  if (!alert) return '';
+  const { ev, releaseAt } = alert;
+  const syms = (ev?.symbols ?? [])
+    .map((id) => quotesById.get(id))
+    .filter((q) => q && q.ok)
+    .map((q) => `<span class="ac-sym">${esc(q.name ?? q.id)} <b>${q.price == null ? '—' : Number(q.price).toFixed(q.decimals ?? 2)}</b></span>`)
+    .join('');
+
+  return `<div class="ac-head">${esc(ev?.title ?? '事件')}</div>`
+    + `<div class="ac-row"><i>北京</i><span>${esc(beijingHm(releaseAt))}</span></div>`
+    + `<div class="ac-row"><i>美东</i><span>${esc(easternHm(releaseAt))}</span></div>`
+    + (ev?.source ? `<div class="ac-row"><i>来源</i><span>${esc(ev.source)}</span></div>` : '')
+    + (syms ? `<div class="ac-syms">${syms}</div>` : '')
+    + `<div class="ac-left">${esc(formatCountdown(alert.msLeft))}</div>`;
+}
+
+/** 48h 内最近的几条（信标只挂一条，其余进悬停列表） */
+export function alertsNow(cal, nowMs = Date.now()) {
+  return upcomingCalendarAlerts(cal, nowMs);
+}
+
+export { ALERT_ANCHOR };
