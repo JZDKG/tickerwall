@@ -20,6 +20,7 @@ import { regionBounds, viewForBounds, toggleRegion } from './map/logic/focus.js'
 import { createCamera, destroyCamera, applyTransform, syncCamera } from './map/camera.js';
 import { cityAnchorsHtml, lodClassFor } from './map/layers/markers.js';
 import { broadcastHtml } from './map/layers/broadcast.js';
+import { relayBandHtml, macroCapsuleHtml } from './map/layers/hud.js';
 import {
   createSpotlightState, buildSpotlightQueue, spotlightReducer,
   currentSpotlightEvent, needsIdleTimer, STEP_MS,
@@ -250,6 +251,9 @@ let bcIdleTimer = null;
 /** 上一次渲染的播报事件 id，用来判断要不要重启进度条动画 */
 let bcRenderedId = null;
 
+/** 接力带倒计时的每秒刷新 */
+let hudTimer = null;
+
 /**
  * 全量事件索引。
  *
@@ -380,6 +384,58 @@ function startBroadcast() {
 }
 
 /**
+ * 接力带与宏观胶囊。
+ *
+ * 单独一个函数是因为它们每秒都要变（倒计时），但不能每秒重建整张地图 ——
+ * 那样相机、锚点、卡片全被打断。这里只改两个容器的 innerHTML。
+ */
+function renderHud() {
+  const band = document.getElementById('relay-band');
+  const cap = document.getElementById('macro-capsule');
+  if (!band && !cap) return;
+  const quotesById = new Map((store.quotes ?? []).filter((q) => q && q.ok).map((q) => [q.id, q]));
+  if (band) band.innerHTML = relayBandHtml(quotesById);
+  if (cap) {
+    const html = macroCapsuleHtml(store.macro, quotesById);
+    cap.innerHTML = html;
+    cap.hidden = !html;
+  }
+  // 接力带上的胶囊也要能点（bindMapEvents 每轮重绘后会重绑，这里补一次）
+  band?.querySelectorAll('.relay-chip[data-anchor]').forEach((b) => {
+    b.onclick = () => {
+      const anchor = b.dataset.anchor;
+      const a = REGION_ANCHORS[anchor];
+      if (!a) return;
+      // 走动画而不是直接赋值 —— 直接改 mapView 会跳变，也和 d3-zoom 的
+      // 内部变换脱钩（后续拖拽会从旧位置接着算）
+      const b2 = regionBounds(anchor);
+      animateMapView(b2 ? viewForBounds(b2) : { k: 2, tx: 0, ty: 0 }, 520);
+    };
+  });
+}
+
+/** 宏观数据懒加载：首屏渲染完之后才拉，失败就静默（胶囊整块不渲染） */
+let macroLoading = false;
+const MACRO_TTL_MS = 5 * 60 * 1000;
+
+async function ensureMacro() {
+  if (macroLoading) return;
+  const at = store.macro?.at ?? 0;
+  if (store.macro?.data && Date.now() - at < MACRO_TTL_MS) return;
+  macroLoading = true;
+  try {
+    const res = await fetch('./api/macro?window=250', { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    store.macro = { data: await res.json(), at: Date.now() };
+    renderHud();
+  } catch {
+    // 这个面板是加分项，不是地图的前提。失败就让它空着。
+  } finally {
+    macroLoading = false;
+  }
+}
+
+/**
  * 窄屏时把播报台从画布内搬出来，作为 .map-body 的独立一行。
  *
  * 390px 宽的地图画布只有 200px 高，浮在底部的播报台会直接压住东南亚一串
@@ -404,6 +460,7 @@ function placeBroadcast() {
 }
 
 function stopBroadcast() {
+  if (hudTimer) { clearInterval(hudTimer); hudTimer = null; }
   if (bcStepTimer) { clearInterval(bcStepTimer); bcStepTimer = null; }
   if (bcIdleTimer) { clearInterval(bcIdleTimer); bcIdleTimer = null; }
 }
@@ -720,6 +777,10 @@ export function renderMap() {
         <button type="button" class="map-btn" id="map-full" title="全屏">⛶ 全屏</button>
       </div>
     </div>
+    <div class="map-relay">
+      <div class="relay-band" id="relay-band"></div>
+      <div class="macro-capsule" id="macro-capsule"></div>
+    </div>
     <div class="map-filters" role="tablist" aria-label="主题筛选">
       ${TOPIC_FILTERS.map((f) => {
         const on = f.key === mapFilter;
@@ -783,6 +844,7 @@ export function renderMap() {
   }
 
   placeBroadcast();
+  renderHud();
   refreshBroadcastQueue(visibleItems);
   applyMapView();
   updateAnchors();
@@ -1143,6 +1205,13 @@ export function mountMap() {
   loadMap();
   mapTimer = setInterval(() => loadMap(), 30000);
   startBroadcast();
+  // 首屏已经渲染完了，现在才去拉宏观（这个接口要拉 13 个市场的全量日线）
+  ensureMacro();
+  hudTimer = setInterval(() => {
+    // 只刷倒计时那部分，别碰地图
+    renderHud();
+    if (!store.macro?.data) ensureMacro();
+  }, 1000);
   // 列表每轮拿到新报价后顺带刷新地图节点（原来由 list 直接调 renderMap）
   unsubscribeQuotes?.();
   unsubscribeQuotes = on('quotes', () => {

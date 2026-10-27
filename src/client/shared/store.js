@@ -37,4 +37,8 @@ export const store = {
   quotes: null,        // 最近一轮报价，供地图节点复用
   calendar: null,      // 财经日历缓存（详情页图上事件竖线 / 事件页 / 地图都用）
   events: null,        // 事件中心的数据 + UI 状态（地图复用同一份）
+  // /api/macro 的载荷 + 拉取时刻（#/macro 与 #/map 共用）。
+  // 这个接口要拉 13 个市场的全量日线，冷启动好几秒，所以地图只在首屏渲染完
+  // 之后懒加载它，绝不阻塞首屏；5 分钟内复用同一份。
+  macro: null,         // { data, at }
 };

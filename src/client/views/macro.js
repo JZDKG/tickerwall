@@ -770,6 +770,8 @@ export async function loadMacro(windowSize = 250, force = false) {
     macroState.data = data;
     macroState.window = windowSize;
     macroState.freq = data.freq ?? 'day';
+    // 同步进共享 store：地图的宏观胶囊用的是同一份，不必再拉一次
+    store.macro = { data, at: Date.now() };
     if (!macroState.pair && data.matrix.ids.length >= 2) {
       // 默认选中「黄金 ~ 美元」这组最常被问到的关系
       const has = (x) => data.matrix.ids.includes(x);
