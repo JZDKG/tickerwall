@@ -41,6 +41,7 @@ import {
   sanitizeText,
   guessRegion,
   isOfficialRoutine,
+  dedupeKey,
   COMPILED_TOPICS,
   TOPIC_RULES,
   REGION_WORDS,
@@ -426,6 +427,95 @@ describe('文本清洗：英文比喻不作数', () => {
   it('产业升级 / 公司治理不是地缘或政治事件', () => {
     expect(wordHit(sanitizeText('消费升级趋势明显'), '升级')).toBe(false);
     expect(wordHit(sanitizeText('股东大会换届选举'), '选举')).toBe(false);
+  });
+});
+
+describe('回归：审查发现的五处缺陷', () => {
+  it('拉丁美洲词形完整：Argentin 词干在词边界匹配下永远不会命中', () => {
+    // 曾经写成词干 'Argentin'，想靠子串匹配 Argentina/Argentine/Argentinian，
+    // 但 ASCII 词走的是全词边界正则，'Argentin' 后面紧跟字母就匹配不上。
+    for (const t of ['Argentina lowers benchmark rate', 'Argentine peso tumbles', 'Argentinian bonds rally']) {
+      expect(guessRegion(t), t).toBe('latam');
+      expect(wordHit(t, 'Argentin'), '裸词干不该再出现').toBe(false);
+    }
+  });
+
+  it('英文 "actions" 不再被法语 equities 词表误命中', () => {
+    // 法文里 actions = 股票，但英文里 enforcement/legal/military actions 太常见。
+    // 美联储夹具那条公告曾被判成 equities 并挂上 sp500/ndx100/sh000001。
+    const eq = COMPILED_TOPICS.find((r) => r.key === 'equities');
+    expect(eq.titleWords).not.toContain('actions');
+    expect(anyWordHit('termination of enforcement actions with Gardner Bancshares', eq.titleWords)).toBe(false);
+    // 法语语境仍要能认出来
+    expect(anyWordHit('Le marché des actions progresse', eq.titleWords)).toBe(true);
+  });
+
+  it('英文 "real" 不再被葡语 fx 词表误命中', () => {
+    // 葡文 real = 巴西雷亚尔，英文 real = 最通用形容词（real estate / real GDP）。
+    const fx = COMPILED_TOPICS.find((r) => r.key === 'fx');
+    expect(fx.titleWords).not.toContain('real');
+    for (const t of ['Real estate prices fall', 'Real GDP growth slows', 'Developments in Real Exports']) {
+      expect(anyWordHit(t, fx.titleWords), t).toBe(false);
+    }
+    // 巴西货币仍要能认出来
+    expect(anyWordHit('O real brasileiro caiu', fx.titleWords)).toBe(true);
+  });
+
+  it('去重键：中文 36 字符、英文 80 字符，模板化标题不再互相误杀', () => {
+    // 中文：36 个字符已经是一整句，保持原口径（省内存、也够判重）
+    const cnA = dedupeKey('欧洲央行贷款调查：净27%的银行报告住房贷款需求下降');
+    expect(cnA.length).toBeLessThanOrEqual(36);
+
+    // 英文：模板化标题前 36 字符完全一样，靠 80 字符拆开
+    const fedA = dedupeKey('Federal Reserve Board announces termination of enforcement actions with Gardner Bancshares');
+    const fedB = dedupeKey('Federal Reserve Board announces termination of enforcement actions with Small Business Bank');
+    expect(fedA).not.toBe(fedB);
+
+    // 印度储备银行三条不同日期的公告
+    const d1 = dedupeKey('Money Market Operations as on October 25, 2026');
+    const d2 = dedupeKey('Money Market Operations as on October 24, 2026');
+    expect(d1).not.toBe(d2);
+
+    // 真正重复的仍要判重（含标点/大小写/空白差异）
+    expect(dedupeKey('Stocks  Plunge on Tariff Fears!')).toBe(dedupeKey('stocks plunge on tariff fears'));
+  });
+
+  it('官方源地区推断不吃正文样板文字', () => {
+    // 美联储公告正文常列出「与 Bank of England / ECB 联合」，
+    // 而 REGION_WORDS 特异优先（uk/eu 在 us 之前），只看正文会被劫持成 uk。
+    const title = 'Federal Reserve issues FOMC statement';
+    const body = 'The Board, together with the Bank of England and the European Central Bank, announces ...';
+    expect(guessRegion(`${title} ${body}`, 'us')).toBe('uk'); // 证明这个陷阱真实存在
+    expect(guessRegion(`${title} `, 'us')).toBe('us');        // 只用标题就对了
+  });
+
+  it('词表内没有重复词条', () => {
+    for (const [region, words] of REGION_WORDS) {
+      const seen = new Set();
+      for (const w of words) {
+        expect(seen.has(w), `${region} 重复词条：${w}`).toBe(false);
+        seen.add(w);
+      }
+    }
+  });
+
+  it('Atom 的 rel / href 属性顺序无关', () => {
+    const mk = (attrs) => `<feed><entry><title>t</title>${attrs}<updated>2026-10-27T09:00:00Z</updated></entry></feed>`;
+    // href 在前也要认出 rel="alternate"
+    const a = parseFeed(mk('<link href="https://e.org/story/1" rel="alternate"/>'), { now: NOW });
+    expect(a.items[0].url).toBe('https://e.org/story/1');
+    // rel="self" 仍应让位给 alternate，且与顺序无关
+    const b = parseFeed(
+      mk('<link href="https://e.org/self" rel="self"/><link href="https://e.org/alt" rel="alternate"/>'),
+      { now: NOW },
+    );
+    expect(b.items[0].url).toBe('https://e.org/alt');
+  });
+
+  it('strike 的冠词可选、可复数', () => {
+    for (const t of ['Both sides strike a deal', 'They strike deals weekly', 'strikes the accord']) {
+      expect(wordHit(sanitizeText(t), 'strike'), t).toBe(false);
+    }
   });
 });
 

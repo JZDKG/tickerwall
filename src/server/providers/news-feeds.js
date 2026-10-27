@@ -158,12 +158,24 @@ function pick(block, tags) {
   return '';
 }
 
-/** 链接：RSS 用 <link>文本</link>，Atom 用 <link href="..."/>，两种都要 */
+/**
+ * 链接：RSS 用 <link>文本</link>，Atom 用 <link href="..."/>，两种都要。
+ *
+ * Atom 的属性顺序不固定：有的生成器写 rel 在前，有的把 href 放前面。
+ * 所以不拼「rel 后面跟 href」的整串正则，而是先取出所有 <link ...> 标签，
+ * 再各自解析 rel 与 href —— 顺序无关。
+ */
 function pickLink(block) {
-  const atomAlternate = /<link[^>]*\brel=["']alternate["'][^>]*\bhref=["']([^"']+)["']/i.exec(block);
-  if (atomAlternate) return decodeEntities(atomAlternate[1]).trim();
-  const atomAny = /<link[^>]*\bhref=["']([^"']+)["']/i.exec(block);
-  if (atomAny) return decodeEntities(atomAny[1]).trim();
+  const tags = [...block.matchAll(/<link\b([^>]*)\/?>/gi)].map((m) => m[1]);
+  for (const attrs of tags) {
+    if (!/\brel=["']alternate["']/i.test(attrs)) continue;
+    const href = /\bhref=["']([^"']+)["']/i.exec(attrs);
+    if (href) return decodeEntities(href[1]).trim();
+  }
+  for (const attrs of tags) {
+    const href = /\bhref=["']([^"']+)["']/i.exec(attrs);
+    if (href) return decodeEntities(href[1]).trim();
+  }
   const rss = /<link(?:\s[^>]*)?>([\s\S]*?)<\/link>/i.exec(block);
   if (rss) {
     const v = unmark(rss[1]).trim();

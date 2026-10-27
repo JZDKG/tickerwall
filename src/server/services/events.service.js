@@ -14,7 +14,7 @@ import fsp from 'node:fs/promises';
 
 import { fetchRaw, toNum } from '../providers/index.js';
 import { fetchFeedCatalog, DIRECT_FEEDS, GOOGLE_FEEDS } from '../providers/news-feeds.js';
-import { COMPILED_TOPICS, IMPACT_WORDS, anyWordHit, sanitizeText, guessRegion, isOfficialRoutine } from '../domain/news-lexicon.js';
+import { COMPILED_TOPICS, IMPACT_WORDS, anyWordHit, sanitizeText, guessRegion, isOfficialRoutine, dedupeKey } from '../domain/news-lexicon.js';
 import { kvGetJson, kvSetJson, appendJsonl, readJsonlField } from '../db/index.js';
 import { DATA_DIR } from '../paths.js';
 
@@ -698,7 +698,7 @@ export async function getEvents({ force = false, limit = 160 } = {}) {
   for (const ev of raw) {
     if (!ev.time || !ev.title) continue;
     if (seenId.has(ev.id)) continue;
-    const key = ev.title.slice(0, 36).replace(/\s/g, '');
+    const key = dedupeKey(ev.title);
     if (seenTitle.has(key)) continue;
     seenId.add(ev.id);
     seenTitle.add(key);
@@ -706,8 +706,13 @@ export async function getEvents({ force = false, limit = 160 } = {}) {
     if (NOISE_RE.test(ev.title)) continue; // 汇总稿/营销稿不进事件流
     if (isOfficialRoutine(ev.title, ev.sourceKind)) continue; // 央行/国际组织的访谈、演讲、统计报表
 
-    // 官方源只看标题（正文是样板文字，见 isOfficialRoutine 上的说明）
-    const info = classify(ev.title, ev.sourceKind === 'official' ? '' : ev.body);
+    // 官方源只看标题（正文是样板文字，见 isOfficialRoutine 上的说明）。
+    // 地区推断必须用同一份输入：官方公告正文常列出「与 Bank of England /
+    // European Central Bank 联合」，而 REGION_WORDS 是特异优先（uk/eu 排在 us 前），
+    // 于是美联储的公告会被正文里的欧洲机构名劫持成 uk。实测确认过。
+    const official = ev.sourceKind === 'official';
+    const textForClassify = official ? '' : ev.body;
+    const info = classify(ev.title, textForClassify);
     if (!info.topics.length) continue;
     // 弱相关（例如公司新闻里顺带提到「人民币」）不算市场事件
     if (info.mainWeight < 1.5) continue;
@@ -718,7 +723,7 @@ export async function getEvents({ force = false, limit = 160 } = {}) {
       publisher: ev.publisher ?? ev.source,
       topics: info.topics,
       symbols: info.symbols,
-      region: guessRegion(`${ev.title} ${ev.body}`, ev.sourceRegion),
+      region: guessRegion(`${ev.title} ${textForClassify}`, ev.sourceRegion),
       score: Math.round(info.rawScore * 10) / 10,
       level: toLevel(info, ev.important),
     });

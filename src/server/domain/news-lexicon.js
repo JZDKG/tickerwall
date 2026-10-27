@@ -211,7 +211,7 @@ export const TOPIC_RULES = [
       en: ['S&P 500', 'Nasdaq', 'Dow Jones', 'Wall Street', 'earnings', 'Nvidia', 'Tesla', 'stock market', 'stocks fall', 'stocks rise', 'shares slump', 'IPO'],
       ja: ['日経平均', '東証', '株価', '決算', '相場'],
       de: ['DAX', 'Aktien', 'Quartalszahlen', 'Börse', 'Kursrutsch'],
-      fr: ['CAC 40', 'Bourse', 'actions', 'résultats'],
+      fr: ['CAC 40', 'Bourse', 'marché des actions', 'cours des actions', 'résultats'],
       es: ['Ibex', 'bolsa', 'acciones', 'resultados'],
       pt: ['Ibovespa', 'bolsa', 'ações', 'balanço'],
       it: ['FTSE MIB', 'Borsa', 'azioni', 'trimestrale'],
@@ -252,7 +252,7 @@ export const TOPIC_RULES = [
       de: ['Wechselkurs', 'Eurokurs', 'Dollar'],
       fr: ['taux de change', 'euro', 'dollar'],
       es: ['tipo de cambio', 'dólar', 'euro'],
-      pt: ['câmbio', 'dólar', 'real'],
+      pt: ['câmbio', 'dólar', 'BRL', 'real brasileiro', 'cotação do real'],
       it: ['cambio', 'dollaro', 'euro'],
       ru: ['рубль', 'доллар', 'курс'],
       ar: ['الدولار', 'سعر الصرف'],
@@ -297,35 +297,54 @@ export const TOPIC_RULES = [
  * 而「美国」两个字本身already命中 us）。这个已被移到 cn。
  */
 export const REGION_WORDS = [
-  // 特异地区先行：这些词一旦出现，指向性最强，不会被宽泛词抢走
-  ['me', ['中东', '伊朗', '伊朗人', '以色列', '沙特', '也门', '胡塞', '阿联酋', '伊拉克', '卡塔尔', '叙利亚', '加沙', '土耳其', '阿富汗', '黎巴嫩', '约旦', '科威特', '阿曼', '巴林',
-    'Middle East', 'Iran', 'Iranian', 'Israel', 'Israeli', 'Saudi', 'Yemen', 'Houthi', 'UAE', 'Emirates', 'Iraq', 'Qatar', 'Syria', 'Gaza', 'Riyadh', 'Netanyahu',
-    'Turkey', 'Turkish', 'Türkei', 'Türkiye', 'CBRT', 'Merkez Bankası', 'Anadolu', 'Turquía', 'Turquie', 'Turchia', 'Турция', '터키', 'तुर्की', 'إيران', 'إسرائيل', 'السعودية', 'تركيا']],
-  ['latam', ['巴西', '阿根廷', '墨西哥', '智利', '委内瑞拉', '哥伦比亚', '秘鲁', '乌拉圭', '厄瓜多尔', '玻利维亚',
-    'Brazil', 'Brazilian', 'Argentin', 'Mexico', 'Mexican', 'Chile', 'Venezuela', 'Colombia', 'Peru', 'Brasil', 'Brasilien', 'BCB', 'Banxico', 'Ibovespa', 'Bovespa', 'Brasilien', 'Brésil', 'Brasile', 'Бразилия', 'Mexiko', 'Mexique', 'México', 'Мехико', 'Мексика', 'البرازيل', '브라질']],
-  ['africa', ['南非', '埃及', '尼日利亚', '非洲', '肯尼亚', '摩洛哥', '加纳', '埃塞俄比亚', '坦桑尼亚', '阿尔及利亚',
-    'South Africa', 'Egypt', 'Nigeria', 'Africa', 'Kenya', 'Morocco', 'Ghana', 'Ethiopia', 'SARB', 'CBN', 'Ägypten', 'Египет', 'مصر']],
-  ['asia', ['韩国', '印度', '新加坡', '越南', '泰国', '印尼', '印度尼西亚', '马来西亚', '菲律宾', '台湾', '巴基斯坦', '孟加拉', '斯里兰卡', '缅甸', '柬埔寨',
-    'Korea', 'Korean', 'India', 'Indian', 'Singapore', 'Vietnam', 'Thailand', 'Indonesia', 'Malaysia', 'Philippines', 'Taiwan', 'Pakistan', 'Bangladesh',
-    'Corée', 'Inde', 'Indien', 'Corea', 'RBI', 'NSE', 'BSE', 'Sensex', 'Nifty', '한국은행', 'Australia', 'Australien', 'Australie', 'Австралия', 'أستراليا', '호주', 'Indonesia', 'Indonesien', 'Indonésie', 'Индония', '인도네시아', 'Việt Nam', 'Viet Nam', 'Индия', 'الهند', '한국', '인도']],
-  ['jp', ['日本', '东京', '日本央行', '日元', '日经', '大阪',
-    'Japan', 'Japanese', 'Tokyo', 'Bank of Japan', 'BOJ', 'Nikkei', 'yen',
-    'Japon', 'japonais', 'Japón', '日銀', '東証', 'JPX', 'Япония', 'اليابان', '일본']],
-  ['uk', ['英国', '伦敦', '英国央行', '英镑', '英格兰银行',
-    'United Kingdom', 'Britain', 'British', 'London', 'Bank of England', 'BoE', 'sterling', 'gilts',
-    'Royaume-Uni', 'britannique', 'Reino Unido', 'Gran Bretaña', 'FCA', 'LSE', 'FTSE', 'Великобритания']],
-  ['eu', ['欧元区', '欧盟', '德国', '法国', '欧洲央行', '拉加德', '意大利', '西班牙', '布鲁塞尔', '荷兰', '比利时', '奥地利', '瑞士', '瑞典', '挪威', '丹麦', '芬兰', '波兰', '希腊', '葡萄牙', '爱尔兰', '捷克', '匈牙利', '欧洲',
-    'euro area', 'eurozone', 'European Union', 'European Central Bank', 'ECB', 'Germany', 'German', 'France', 'French',
-    'Italy', 'Italian', 'Spain', 'Spanish', 'Brussels', 'Netherlands', 'Belgium', 'Austria', 'Switzerland', 'Sweden', 'Norway', 'Denmark', 'Finland',
-    'Poland', 'Greece', 'Portugal', 'Ireland', 'Czech', 'Hungary', 'Europe', 'Europas', 'Deutschland', 'Deutsch', 'allemand', 'Alemania',
-    'Germania', 'Bundesbank', 'Bundesregierung', 'Berlin', 'Russia', 'Russland', 'Russie', 'Rusia', 'Rússia', 'Россия', 'روسيا', '러시아', 'रूस', 'Moscow', 'Москва', 'Moskau', 'Banque de France', 'Banca d\'Italia', 'Banco de España', 'BaFin', 'DAX', 'CAC 40', 'IBEX', 'Германия', 'ألمانيا', '유럽']],
-  ['us', ['美国', '美联储', '华盛顿', '纽约', '纳斯达克', '标普', '道琼斯', '白宫', '鲍威尔', '硅谷', '加拿大', '多伦多',
-    'United States', 'U.S.', 'Washington', 'New York', 'Federal Reserve', 'Wall Street', 'White House', 'Powell', 'Nasdaq',
-    'USA', 'Canada', 'Canadian', 'SEC', 'NYSE', 'S&P 500', 'Dow Jones', 'Nasdaq', 'États-Unis', 'Vereinigte Staaten', 'Stati Uniti', 'Estados Unidos', 'Соединенные Штаты', 'アメリカ', 'アメリカ合衆国', 'États-Unis', 'Estados Unidos', 'США', 'الولايات المتحدة', '미국']],
-  // 最后才是宽泛的中文词：「央行」「财政部」这类在中文财经稿里默认指中国
-  ['cn', ['中国', '北京', '上海', '国务院', '发改委', '央行', '人民币', 'A股', '沪深', '证监会', '财政部', '深圳', '广州', '人民银行', '中国人民银行',
-    'China', 'Chinese', 'Beijing', 'Shanghai', 'PBOC', 'yuan', 'Chinas',
-    '中国経済', 'Chinesen', 'chine', 'CSRC', 'HKEX', '恒生', '香港', '台湾', 'صيني', '중국']],
+  ['me', ['中东', '伊朗', '伊朗人', '以色列', '沙特', '也门', '胡塞', '阿联酋',
+    '伊拉克', '卡塔尔', '叙利亚', '加沙', '土耳其', '阿富汗', '黎巴嫩', '约旦',
+    '科威特', '阿曼', '巴林', 'Middle East', 'Iran', 'Iranian', 'Israel', 'Israeli',
+    'Saudi', 'Yemen', 'Houthi', 'UAE', 'Emirates', 'Iraq', 'Qatar', 'Syria',
+    'Gaza', 'Riyadh', 'Netanyahu', 'Turkey', 'Turkish', 'Türkei', 'Türkiye', 'CBRT',
+    'Merkez Bankası', 'Anadolu', 'Turquía', 'Turquie', 'Turchia', 'Турция', '터키', 'तुर्की',
+    'إيران', 'إسرائيل', 'السعودية', 'تركيا']],
+  ['latam', ['巴西', '阿根廷', '墨西哥', '智利', '委内瑞拉', '哥伦比亚', '秘鲁', '乌拉圭',
+    '厄瓜多尔', '玻利维亚', 'Brazil', 'Brazilian', 'Argentina', 'Argentine', 'Argentinian', 'Argentino',
+    'Mexico', 'Mexican', 'Chile', 'Venezuela', 'Colombia', 'Peru', 'Brasil', 'Brasilien',
+    'BCB', 'Banxico', 'Ibovespa', 'Bovespa', 'Brésil', 'Brasile', 'Бразилия', 'Mexiko',
+    'Mexique', 'México', 'Мехико', 'Мексика', 'البرازيل', '브라질']],
+  ['africa', ['南非', '埃及', '尼日利亚', '非洲', '肯尼亚', '摩洛哥', '加纳', '埃塞俄比亚',
+    '坦桑尼亚', '阿尔及利亚', 'South Africa', 'Egypt', 'Nigeria', 'Africa', 'Kenya', 'Morocco',
+    'Ghana', 'Ethiopia', 'SARB', 'CBN', 'Ägypten', 'Египет', 'مصر']],
+  ['asia', ['韩国', '印度', '新加坡', '越南', '泰国', '印尼', '印度尼西亚', '马来西亚',
+    '菲律宾', '台湾', '巴基斯坦', '孟加拉', '斯里兰卡', '缅甸', '柬埔寨', 'Korea',
+    'Korean', 'India', 'Indian', 'Singapore', 'Vietnam', 'Thailand', 'Indonesia', 'Malaysia',
+    'Philippines', 'Taiwan', 'Pakistan', 'Bangladesh', 'Corée', 'Inde', 'Indien', 'Corea',
+    'RBI', 'NSE', 'BSE', 'Sensex', 'Nifty', '한국은행', 'Australia', 'Australien',
+    'Australie', 'Австралия', 'أستراليا', '호주', 'Indonesien', 'Indonésie', 'Индония', '인도네시아',
+    'Việt Nam', 'Viet Nam', 'Индия', 'الهند', '한국', '인도']],
+  ['jp', ['日本', '东京', '日本央行', '日元', '日经', '大阪', 'Japan', 'Japanese',
+    'Tokyo', 'Bank of Japan', 'BOJ', 'Nikkei', 'yen', 'Japon', 'japonais', 'Japón',
+    '日銀', '東証', 'JPX', 'Япония', 'اليابان', '일본']],
+  ['uk', ['英国', '伦敦', '英国央行', '英镑', '英格兰银行', 'United Kingdom', 'Britain', 'British',
+    'London', 'Bank of England', 'BoE', 'sterling', 'gilts', 'Royaume-Uni', 'britannique', 'Reino Unido',
+    'Gran Bretaña', 'FCA', 'LSE', 'FTSE', 'Великобритания']],
+  ['eu', ['欧元区', '欧盟', '德国', '法国', '欧洲央行', '拉加德', '意大利', '西班牙',
+    '布鲁塞尔', '荷兰', '比利时', '奥地利', '瑞士', '瑞典', '挪威', '丹麦',
+    '芬兰', '波兰', '希腊', '葡萄牙', '爱尔兰', '捷克', '匈牙利', '欧洲',
+    'euro area', 'eurozone', 'European Union', 'European Central Bank', 'ECB', 'Germany', 'German', 'France',
+    'French', 'Italy', 'Italian', 'Spain', 'Spanish', 'Brussels', 'Netherlands', 'Belgium',
+    'Austria', 'Switzerland', 'Sweden', 'Norway', 'Denmark', 'Finland', 'Poland', 'Greece',
+    'Portugal', 'Ireland', 'Czech', 'Hungary', 'Europe', 'Europas', 'Deutschland', 'Deutsch',
+    'allemand', 'Alemania', 'Germania', 'Bundesbank', 'Bundesregierung', 'Berlin', 'Russia', 'Russland',
+    'Russie', 'Rusia', 'Rússia', 'Россия', 'روسيا', '러시아', 'रूस', 'Moscow',
+    'Москва', 'Moskau', 'Banque de France', 'Banca d\'Italia', 'Banco de España', 'BaFin', 'DAX', 'CAC 40',
+    'IBEX', 'Германия', 'ألمانيا', '유럽']],
+  ['us', ['美国', '美联储', '华盛顿', '纽约', '纳斯达克', '标普', '道琼斯', '白宫',
+    '鲍威尔', '硅谷', '加拿大', '多伦多', 'United States', 'U.S.', 'Washington', 'New York',
+    'Federal Reserve', 'Wall Street', 'White House', 'Powell', 'Nasdaq', 'USA', 'Canada', 'Canadian',
+    'SEC', 'NYSE', 'S&P 500', 'Dow Jones', 'États-Unis', 'Vereinigte Staaten', 'Stati Uniti', 'Estados Unidos',
+    'Соединенные Штаты', 'アメリカ', 'アメリカ合衆国', 'США', 'الولايات المتحدة', '미국']],
+  ['cn', ['中国', '北京', '上海', '国务院', '发改委', '央行', '人民币', 'A股',
+    '沪深', '证监会', '财政部', '深圳', '广州', '人民银行', '中国人民银行', 'China',
+    'Chinese', 'Beijing', 'Shanghai', 'PBOC', 'yuan', 'Chinas', '中国経済', 'Chinesen',
+    'chine', 'CSRC', 'HKEX', '恒生', '香港', '台湾', 'صيني', '중국']],
 ];
 
 /** 高影响动词：出现时额外加权，这类词往往意味着盘面会动 */
@@ -387,7 +406,29 @@ export function sanitizeText(text) {
     // 劳工行动不是军事打击（workers strike / rail strike / strike action）
     .replace(/\b(worker|labour|labor|union|staff|teacher|nurse|doctor|rail|transport|postal|dock|civil\s+service)s?'?\s+strikes?\b/gi, 'labour action')
     .replace(/\bstrike\s+action\b/gi, 'labour action')
-    .replace(/\bstrikes?\s+(a|an|the)\s+(deal|agreement|accord|bargain|partnership)\b/gi, 'reach agreement');
+    .replace(/\bstrikes?\s+(?:a\s+|an\s+|the\s+)?(?:deal|deals|agreement|agreements|accord|bargain|partnership)\b/gi, 'reach agreement');
+}
+
+/* ------------------------------------------------------------------ *
+ * 标题去重键
+ * ------------------------------------------------------------------ */
+
+/**
+ * 去重键：中文取 36 字符就够（一个汉字承载的信息量约等于 2~3 个字母），
+ * 但英文 36 个字符只有 5~6 个词，遇到模板化标题会误杀 —— 实测
+ * 「Federal Reserve Board announces termination of enforcement actions with
+ * Gardner Bancshares」和「…with Small Business Bank」前 36 字符完全相同，
+ * 两条不同银行的公告被当成同一条丢掉；印度储备银行的
+ * 「Money Market Operations as on October 25/24/23, 2026」也被合并成一条。
+ *
+ * 所以按字符集分长度，并去掉标点与空白后再比。
+ */
+export const CJK_RE = /[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]/;
+
+export function dedupeKey(title) {
+  const t = String(title ?? '').replace(/\s+/g, ' ').trim();
+  const cut = CJK_RE.test(t) ? 36 : 80;
+  return t.slice(0, cut).replace(/[\s\p{P}]/gu, '').toLowerCase();
 }
 
 /* ------------------------------------------------------------------ *
