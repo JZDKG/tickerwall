@@ -8,7 +8,7 @@
  * 启动：node server.mjs   （默认 http://127.0.0.1:8787）
  */
 import { MARKET_PROFILES, localClock, isMarketOpen } from './src/server/domain/market-hours.js';
-import { takeForce, resolveStaticPath } from './src/server/http.js';
+import { takeForce, sendJson, sendText, serveStatic } from './src/server/http.js';
 import { PORT, HOST, DEBUG_API, DISABLE_BACKGROUND } from './src/server/config.js';
 import { getEvents, getEventHistory, loadLlmStore } from './src/server/services/events.service.js';
 import {
@@ -24,65 +24,17 @@ import { getDetail } from './src/server/services/detail.service.js';
 import { getMacro } from './src/server/services/macro.service.js';
 import { getCalendar, getEventStudy } from './src/server/services/calendar.service.js';
 import http from 'node:http';
-import fsp from 'node:fs/promises';
 import path from 'node:path';
 
 
 
-const MIME = {
-  '.html': 'text/html; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon',
-  '.png': 'image/png',
-  '.woff2': 'font/woff2',
-};
-
-/** 客户端源码目录：Phase 2 起 app.js 拆成 ES 模块，由浏览器原生加载，不需要构建 */
-
-async function serveStatic(res, pathname) {
-  // 路径解析与越界判断在 http.js 里（纯函数，可单测）
-  const resolved = resolveStaticPath(pathname);
-  if (!resolved) {
-    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
-    return res.end('forbidden');
-  }
-  const { root, rel, full } = resolved;
-  try {
-    const st = await fsp.stat(full);
-    // 递归要传**原始 pathname**。传 rel 的话，/src/client/views/ 的 rel 已被
-    // 截成 /views/，再进一次 resolveStaticPath 就会被当成 public/views/ → 404
-    if (st.isDirectory()) return serveStatic(res, path.posix.join(pathname, '/index.html'));
-    const buf = await fsp.readFile(full);
-    res.writeHead(200, {
-      'Content-Type': MIME[path.extname(full).toLowerCase()] ?? 'application/octet-stream',
-      'Content-Length': buf.length,
-      'Cache-Control': 'no-cache',
-    });
-    res.end(buf);
-  } catch {
-    res.writeHead(404, { 'Content-Type': 'text/plain' });
-    res.end('not found');
-  }
-}
 
 /* 不发 Access-Control-Allow-Origin：前端同源，不需要 CORS；一旦为 `*`，
    任何网页都能跨域读本机 API（HOST=0.0.0.0 时更糟）。跨域需求走反向代理。 */
-function sendJson(res, status, obj) {
-  const body = Buffer.from(JSON.stringify(obj));
-  res.writeHead(status, {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Content-Length': body.length,
-    'Cache-Control': 'no-store',
-    'X-Content-Type-Options': 'nosniff',
-  });
-  res.end(body);
-}
 
 const server = http.createServer(async (req, res) => {
-  // 必须在 try 里：`GET //% HTTP/1.1` 会让 new URL 抛 ERR_INVALID_URL 并带崩进程
+  // 必须在 try 里：`GET //% HTTP/1.1` 会让 new URL 抛 ERR_INVALID_URL，
+  // 而它在外面会穿过 handler 把整个进程带崩（客户端错误 → 400，不是 500）
   let url;
   try {
     url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
@@ -90,7 +42,9 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(400, { 'Content-Type': 'text/plain' });
     return res.end('bad request');
   }
-  if (req.method !== 'GET' && req.method !== 'HEAD') { // 405 要在分发之前判
+  // 405 必须在任何分发之前判：原来它只挡静态资源，于是 POST /api/quotes
+  // 会一路落到 /api/quotes 的 GET 分支被当成正常请求处理
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
     res.writeHead(405, { Allow: 'GET, HEAD' });
     return res.end();
   }
@@ -149,7 +103,8 @@ const server = http.createServer(async (req, res) => {
     // 只读自检：给时区/交易时段判断留一个可断言的入口。
     // isMarketOpen 是模块内函数，外部调不到，改时段逻辑时没法验证对错。
     if (url.pathname === '/api/_market') {
-      if (!DEBUG_API) return sendJson(res, 404, { ok: false, error: 'not found' }); // 默认关
+      // 调试端点默认关闭（见 config.js）：它会把内部市场配置整份吐出来
+      if (!DEBUG_API) return sendJson(res, 404, { ok: false, error: 'not found' });
       const m = url.searchParams.get('m') || 'us-index';
       const raw = url.searchParams.get('t');
       const t = raw ? new Date(raw) : new Date();
@@ -164,7 +119,7 @@ const server = http.createServer(async (req, res) => {
     }
     return serveStatic(res, url.pathname);
   } catch (err) {
-    // 对外只给通用文案（err.message 常带绝对路径），完整错误进日志
+    // 对外只给通用文案：err.message 常带路径 / 内部 URL，等于把实现细节发给浏览器
     console.error('[http] 未处理异常', url.pathname, err);
     return sendJson(res, 500, { ok: false, error: '服务器内部错误' });
   }
@@ -186,7 +141,8 @@ await seedHistory();
 await loadLlmStore();
 
 server.listen(PORT, HOST, () => {
-  // 用实际监听地址（PORT=0 时配置值是 :0）。LISTENING 那行给程序消费。
+  // 用实际监听地址：PORT=0 时打印配置值「:0」是错的。LISTENING 那行给程序
+  // 消费（集成测试据此拿端口），改中文文案不该让测试挂。
   const a = server.address();
   const port = a && typeof a === 'object' ? a.port : PORT;
   console.log(`市场看板已启动 → http://${HOST}:${port}`);

@@ -249,7 +249,8 @@ describe('events.service 的 url 出口全部经 sanitizeUrl', () => {
  * ================================================================== */
 describe('serveStatic 目录回退与 405 顺序', () => {
   it('递归传原始 pathname 而不是已截断的 rel', () => {
-    const code = readFileSync(new URL('../server.mjs', import.meta.url), 'utf8');
+    // serveStatic 已搬进 http.js（响应工具层），断言语义不锁文件
+    const code = readFileSync(new URL('../src/server/http.js', import.meta.url), 'utf8');
     expect(code).toContain("path.posix.join(pathname, '/index.html')");
     expect(code).not.toContain("path.posix.join(rel, 'index.html')");
   });

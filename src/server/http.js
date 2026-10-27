@@ -3,6 +3,7 @@
  * ================================================================== */
 
 import path from 'node:path';
+import fsp from 'node:fs/promises';
 import { ROOT, PUBLIC_DIR } from './paths.js';
 
 const CLIENT_SRC_DIR = path.join(ROOT, 'src', 'client');
@@ -102,4 +103,80 @@ export function resolveStaticPath(pathname) {
 /** 仅供测试观测 Map 规模，不参与生产逻辑 */
 export function __forceKeyCount() {
   return lastForceAt.size;
+}
+
+/* ------------------------------------------------------------------ *
+ * 响应工具（从 server.mjs 搬进来）
+ *
+ * 搬家的理由不是「入口好看」：这层是纯传输细节，和路由分发无关，
+ * 而且它决定了「所有响应都带 nosniff」这类一致性 —— 分散在入口里时，
+ * 每加一个响应点都要记得补头，漏一个就不一致（之前 400 就漏了）。
+ * ------------------------------------------------------------------ */
+
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.png': 'image/png',
+  '.woff2': 'font/woff2',
+};
+
+/**
+ * 纯文本响应。所有非 JSON 的响应都走这里，保证 nosniff 不漏。
+ * （之前 400 是手写 writeHead，就没带上这个头。）
+ */
+export function sendText(res, status, body, headers = {}) {
+  const buf = Buffer.from(body);
+  res.writeHead(status, {
+    'Content-Type': headers['Content-Type'] ?? 'text/plain; charset=utf-8',
+    'Content-Length': buf.length,
+    'X-Content-Type-Options': 'nosniff',
+    ...headers,
+  });
+  res.end(buf);
+}
+
+/**
+ * JSON 响应。
+ *
+ * 不发 Access-Control-Allow-Origin：前端同源，不需要 CORS；一旦为 `*`，
+ * 任何网页都能跨域读本机 API（HOST=0.0.0.0 时更糟）。需要跨域请走反向代理。
+ */
+export function sendJson(res, status, obj) {
+  const body = Buffer.from(JSON.stringify(obj));
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': body.length,
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+  });
+  res.end(body);
+}
+
+/** 静态文件。路径解析与越界判断见 resolveStaticPath。 */
+export async function serveStatic(res, pathname) {
+  const resolved = resolveStaticPath(pathname);
+  if (!resolved) return sendText(res, 403, 'forbidden');
+
+  const { full } = resolved;
+  try {
+    const st = await fsp.stat(full);
+    // 递归要传**原始 pathname**：传已被截断的 rel 会让 /src/client/views/
+    // 被再解析成 public/views/ → 404
+    if (st.isDirectory()) return serveStatic(res, path.posix.join(pathname, '/index.html'));
+    const buf = await fsp.readFile(full);
+    res.writeHead(200, {
+      'Content-Type': MIME[path.extname(full).toLowerCase()] ?? 'application/octet-stream',
+      'Content-Length': buf.length,
+      'Cache-Control': 'no-cache',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    res.end(buf);
+  } catch {
+    // charset 回到 utf-8：删掉它属于顺手改行为，不是修 bug
+    sendText(res, 404, 'not found');
+  }
 }
