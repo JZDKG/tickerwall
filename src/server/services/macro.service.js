@@ -26,8 +26,8 @@ export const MACRO_UNIVERSE = [
   { id: 'vxn', name: 'VXN 纳指波动率', short: 'VXN', group: 'vol', cboe: 'VXN', unit: '点', decimals: 2, cat: '风险' },
 ];
 
-export const PORT = Number(process.env.PORT || 8787);
-export const HOST = process.env.HOST || '127.0.0.1';
+// 从唯一来源再导出：直接在这里定义会和 server.mjs 各写一份默认值
+export { PORT, HOST } from '../config.js';
 
 export const MACRO_CACHE_TTL_MS = 120_000;
 export const macroCache = new Map();

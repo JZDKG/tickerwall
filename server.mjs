@@ -9,6 +9,7 @@
  */
 import { MARKET_PROFILES, localClock, isMarketOpen } from './src/server/domain/market-hours.js';
 import { takeForce } from './src/server/http.js';
+import { PORT, HOST, DEBUG_API } from './src/server/config.js';
 import { getEvents, getEventHistory, loadLlmStore } from './src/server/services/events.service.js';
 import {
   CACHE_TTL_MS,
@@ -27,8 +28,7 @@ import http from 'node:http';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 
-const PORT = Number(process.env.PORT || 8787);
-const HOST = process.env.HOST || '127.0.0.1';
+
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -147,6 +147,8 @@ const server = http.createServer(async (req, res) => {
     // 只读自检：给时区/交易时段判断留一个可断言的入口。
     // isMarketOpen 是模块内函数，外部调不到，改时段逻辑时没法验证对错。
     if (url.pathname === '/api/_market') {
+      // 调试端点默认关闭（见 config.js）：它会把内部市场配置整份吐出来
+      if (!DEBUG_API) return sendJson(res, 404, { ok: false, error: 'not found' });
       const m = url.searchParams.get('m') || 'us-index';
       const raw = url.searchParams.get('t');
       const t = raw ? new Date(raw) : new Date();
