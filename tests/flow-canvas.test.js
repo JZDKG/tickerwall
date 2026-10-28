@@ -467,3 +467,270 @@ describe('绘制流程', () => {
     expect(canvas.graph.calls.some((c) => c[0] === 'zoomToFit')).toBe(false);
   });
 });
+
+/* ================================================================== *
+ * 连线的三种状态 × 三种关系类型（drawEdges / drawPills 的分支）
+ *
+ * 这几条分支错了不会抛异常，只会让画布「少一根线」或「多一个箭头」：
+ *   · 共同驱动 / 历史相关不能画箭头（会把「共同被推动」读成「一个推一个」）；
+ *   · 压暗的边不叠加流光（流光本身在表达方向）；
+ *   · 没有 label 的边不生成胶囊；
+ *   · 胶囊取不到路径点时留在原地并排队，不能继续用 (0,0)。
+ * ================================================================== */
+describe('连线与胶囊的分支矩阵', () => {
+  /** 假 view：可控地返回路径点，或抛错模拟「还没渲染完」 */
+  const fakeEdgeView = (points) => ({
+    container: null,
+    getPointAtRatio: (r) => {
+      const p = points?.[r];
+      if (!p && points === 'throw') throw new Error('not ready');
+      return p ?? null;
+    },
+  });
+
+  const build = ({ reality = new Map(), activeEdges = null, hot = new Set(), pairEdge = null } = {}) => {
+    const canvas = new MacroFlowCanvas(makeContainer());
+    // edgeListForDraw 读 this.layout.mode；这里固定成罗盘并直接返回注入的边
+    canvas.layout = { mode: 'compass', nodes: [], links: [] };
+    // isDimEdge 读 this.state.graphMode
+    canvas.state = { graphMode: 'compass' };
+    canvas.style = canvas.style ?? 'default';
+    canvas.edgeList = [];
+    canvas.edgeListForDraw = () => canvas.edgeList;
+    canvas.cardBoxes = new Map();
+    canvas.placedPills = [];
+    canvas.hotEdgeIds = hot;
+    canvas.pairEdge = pairEdge;
+    canvas.activeEdges = activeEdges;
+    canvas.reality = reality;
+    return canvas;
+  };
+
+  it('机制关系画箭头 + 流光（有方向才叠加流光）', () => {
+    const canvas = build();
+    canvas.edgeList = [{ id: 'E1', from: 'a', to: 'b', sign: -1, weight: 3, label: '压制', relationType: 'mechanism' }];
+    canvas.drawEdges();
+    expect(canvas.graph.getEdges().length).toBe(2); // 主线 + 流光
+    expect(canvas.graph.getEdges()[0].cfg.attrs.line.targetMarker).toBeTruthy();
+  });
+
+  it('共同驱动不画箭头、也不叠加流光（共同被推动 ≠ 一个推一个）', () => {
+    const canvas = build();
+    canvas.edgeList = [{ id: 'E2', from: 'a', to: 'b', sign: 1, weight: 1, label: '同涨', relationType: 'co-driver' }];
+    canvas.drawEdges();
+    expect(canvas.graph.getEdges().length).toBe(1); // 只有主线
+    expect(canvas.graph.getEdges()[0].cfg.attrs.line.targetMarker).toBeNull();
+  });
+
+  it('被压暗的边不加流光（dim 已经很淡，再叠一层会看不清）', () => {
+    const canvas = build({ activeEdges: { edges: new Set(), nodes: new Set() } });
+    canvas.edgeList = [{ id: 'E3', from: 'a', to: 'b', sign: 1, weight: 1, label: 'x' }];
+    canvas.drawEdges();
+    expect(canvas.graph.getEdges().length).toBe(1);
+    expect(canvas.graph.getEdges()[0].cfg.attrs.line.opacity).toBe(0.14);
+  });
+
+  it('高亮边更粗、zIndex 更高（被选中的那条要看得出）', () => {
+    const canvas = build({ hot: new Set(['E4']) });
+    canvas.edgeList = [{ id: 'E4', from: 'a', to: 'b', sign: 1, weight: 2, label: 'x' }];
+    canvas.drawEdges();
+    const edge = canvas.graph.getEdges()[0];
+    expect(edge.cfg.zIndex).toBe(8);
+    expect(edge.cfg.attrs.line.strokeWidth).toBeGreaterThan(1 + 2 * 0.42);
+  });
+
+  it('没有 label 的边不生成胶囊（空胶囊会变成一格噪声）', () => {
+    const canvas = build();
+    canvas.edgeList = [{ id: 'E5', from: 'a', to: 'b', sign: 1, weight: 1, label: '' }];
+    canvas.drawPills();
+    expect(canvas.graph.getNodes().length).toBe(0);
+  });
+
+  it('被压暗的边不生成胶囊（看不清的线不要再挂标签）', () => {
+    const canvas = build({ activeEdges: { edges: new Set(), nodes: new Set() } });
+    canvas.edgeList = [{ id: 'E6', from: 'a', to: 'b', sign: 1, weight: 1, label: '压制' }];
+    canvas.drawPills();
+    expect(canvas.graph.getNodes().length).toBe(0);
+  });
+
+  it('胶囊文本：机制关系带 +/−，非因果关系用 ⇄', () => {
+    const canvas = build();
+    expect(canvas.pillHTML({ sign: 1, label: '推升' }, 'pos', false).text).toBe('+ 推升');
+    expect(canvas.pillHTML({ sign: -1, label: '压制' }, 'cold', false).text).toBe('− 压制');
+    expect(canvas.pillHTML({ sign: 1, label: '同涨', relationType: 'co-driver' }, 'pos', false).text).toBe('⇄ 同涨');
+  });
+
+  it('胶囊宽度随文本长度增长（中文按字号全额算）', () => {
+    const canvas = build();
+    const short = canvas.pillHTML({ sign: 1, label: '短' }, 'pos', false);
+    const long = canvas.pillHTML({ sign: 1, label: '一个很长的机理标签名字' }, 'pos', false);
+    expect(long.w).toBeGreaterThan(short.w);
+  });
+
+  it('胶囊取不到路径点时不写坐标，并重新排队（不能卡在 0,0）', () => {
+    const canvas = build();
+    canvas.pillNodes = new Map([['E7', { w: 40, h: 17, text: 'x' }]]);
+    canvas.graph.addNode({ id: 'pill-E7', data: { pill: true } });
+    // edge 存在但 view 还没就绪
+    canvas.graph.addEdge({ id: 'edge-E7', data: {} });
+    canvas.graph.getCellById = (id) => (id === 'pill-E7'
+      ? { position: () => {} }
+      : { findView: () => ({ getPointAtRatio: () => null }) });
+    const before = canvas.pillSyncQueued;
+    canvas.syncPills();
+    expect(canvas.placedPills).toEqual([]);
+    expect(canvas.pillSyncQueued || before).toBeTruthy();
+  });
+
+  it('getPointAtRatio 抛错时按「未就绪」处理，不冒泡', () => {
+    const canvas = build();
+    canvas.pillNodes = new Map([['E8', { w: 40, h: 17, text: 'x' }]]);
+    canvas.graph.getCellById = (id) => (id === 'pill-E8'
+      ? { position: () => {} }
+      : { findView: () => fakeEdgeView('throw') });
+    expect(() => canvas.syncPills()).not.toThrow();
+  });
+
+  it('没有 pillNodes 时 syncPills 是空操作（首次渲染前）', () => {
+    const canvas = build();
+    canvas.pillNodes = null;
+    expect(() => canvas.syncPills()).not.toThrow();
+  });
+});
+
+describe('胶囊避让（placePill）', () => {
+  const build = (boxes = []) => {
+    const canvas = new MacroFlowCanvas(makeContainer());
+    canvas.cardBoxes = new Map(boxes.map((b, i) => [`n${i}`, b]));
+    canvas.placedPills = [];
+    return canvas;
+  };
+
+  it('中点没冲突时就用中点（不为了避让而漂移）', () => {
+    const canvas = build();
+    const view = { getPointAtRatio: () => ({ x: 100, y: 100 }) };
+    const p = canvas.placePill(view, { w: 40, h: 17 });
+    expect(p).toEqual({ x: 100, y: 100 });
+  });
+
+  it('中点压在卡片上时换一个比例或垂直偏移', () => {
+    const canvas = build([{ x: 80, y: 88, w: 60, h: 30 }]);
+    const view = { getPointAtRatio: () => ({ x: 100, y: 100 }) };
+    const p = canvas.placePill(view, { w: 40, h: 17 });
+    expect(p.y).not.toBe(100);
+  });
+
+  it('与已经摆好的胶囊重叠时也要避开（多条边收进同一个焦点卡）', () => {
+    const canvas = build();
+    canvas.placedPills = [{ x: 78, y: 88, w: 44, h: 23 }];
+    const view = { getPointAtRatio: () => ({ x: 100, y: 100 }) };
+    const p = canvas.placePill(view, { w: 40, h: 17 });
+    expect(p).not.toEqual({ x: 100, y: 100 });
+  });
+
+  it('全试完都冲突时留在第一个位置（宁可叠一个，也不飘到无关处）', () => {
+    const canvas = build([{ x: -2000, y: -2000, w: 8000, h: 8000 }]);
+    const view = { getPointAtRatio: () => ({ x: 100, y: 100 }) };
+    expect(canvas.placePill(view, { w: 40, h: 17 })).toEqual({ x: 100, y: 100 });
+  });
+
+  it('取不到任何基准点时退回 (0,0)（不抛）', () => {
+    const canvas = build();
+    const view = { getPointAtRatio: () => null };
+    expect(canvas.placePill(view, { w: 40, h: 17 })).toEqual({ x: 0, y: 0 });
+  });
+});
+
+describe('胶囊贴线的成功路径与缺失分支', () => {
+  const build = () => {
+    const canvas = new MacroFlowCanvas(makeContainer());
+    canvas.layout = { mode: 'compass', nodes: [], links: [] };
+    canvas.state = { graphMode: 'compass' };
+    canvas.cardBoxes = new Map();
+    canvas.placedPills = [];
+    return canvas;
+  };
+
+  it('取到路径点后把胶囊居中放到那一点（要减去自身宽高的一半）', () => {
+    const canvas = build();
+    canvas.pillNodes = new Map([['E1', { w: 40, h: 17, text: 'x' }]]);
+    let moved = null;
+    canvas.graph.getCellById = (id) => {
+      if (id === 'pill-E1') return { position: (x, y) => { moved = { x, y }; } };
+      return { findView: () => ({ getPointAtRatio: () => ({ x: 100, y: 60 }) }) };
+    };
+    canvas.syncPills();
+    expect(moved).toEqual({ x: 80, y: 52 }); // 100−20, 60−8.5→四舍五入 52
+    expect(canvas.placedPills).toHaveLength(1);
+  });
+
+  it('两条边的胶囊会互相避让（第二条不会压第一条）', () => {
+    const canvas = build();
+    canvas.pillNodes = new Map([
+      ['E1', { w: 40, h: 17, text: 'a' }],
+      ['E2', { w: 40, h: 17, text: 'b' }],
+    ]);
+    const placed = [];
+    canvas.graph.getCellById = (id) => {
+      if (id.startsWith('pill-')) return { position: (x, y) => placed.push({ id, x, y }) };
+      return { findView: () => ({ getPointAtRatio: () => ({ x: 100, y: 60 }) }) };
+    };
+    canvas.syncPills();
+    expect(placed).toHaveLength(2);
+    expect(placed[0].y).not.toBe(placed[1].y);
+  });
+
+  it('边没有 view（还没渲染）时跳过，不写坐标', () => {
+    const canvas = build();
+    canvas.pillNodes = new Map([['E1', { w: 40, h: 17 }]]);
+    let moved = false;
+    canvas.graph.getCellById = (id) => (id === 'pill-E1'
+      ? { position: () => { moved = true; } }
+      : null);
+    canvas.syncPills();
+    expect(moved).toBe(false);
+    expect(canvas.placedPills).toEqual([]);
+  });
+
+  it('胶囊节点不存在时跳过（边在但胶囊被删了）', () => {
+    const canvas = build();
+    canvas.pillNodes = new Map([['E1', { w: 40, h: 17 }]]);
+    canvas.graph.getCellById = (id) => (id === 'pill-E1' ? null : { findView: () => ({ getPointAtRatio: () => ({ x: 1, y: 1 }) }) });
+    canvas.syncPills();
+    expect(canvas.placedPills).toEqual([]);
+  });
+
+  it('路径点 x 不是有限数时按未就绪处理', () => {
+    const canvas = build();
+    canvas.pillNodes = new Map([['E1', { w: 40, h: 17 }]]);
+    canvas.graph.getCellById = (id) => (id === 'pill-E1'
+      ? { position: () => {} }
+      : { findView: () => ({ getPointAtRatio: () => ({ x: NaN, y: 1 }) }) });
+    canvas.syncPills();
+    expect(canvas.placedPills).toEqual([]);
+  });
+});
+
+describe('导图模式的边集合', () => {
+  it('导图模式从 layout.links 生成边；没有 edge 的 link 得到一个合成边', () => {
+    const canvas = new MacroFlowCanvas(makeContainer());
+    canvas.layout = {
+      mode: 'mindmap',
+      nodes: [],
+      links: [
+        { edge: { id: 'E1', from: 'a', to: 'b' } },
+        { from: 'a', to: 'c' },
+      ],
+    };
+    const list = canvas.edgeListForDraw();
+    expect(list).toHaveLength(2);
+    expect(list[1].id).toBe('X-a-c');
+    expect(list[1].sign).toBe(1);
+  });
+
+  it('罗盘模式用核心边集合（不依赖 layout.links）', () => {
+    const canvas = new MacroFlowCanvas(makeContainer());
+    canvas.layout = { mode: 'compass', nodes: [], links: [] };
+    expect(canvas.edgeListForDraw().length).toBeGreaterThan(0);
+  });
+});
