@@ -30,11 +30,12 @@ macOS 上也可以直接双击 `启动看板.command`：服务没起就起服务
 
 ## 依赖策略（2026-10 起）
 
-项目已全面工程化，**取消「运行时零依赖」约定**：
+项目已全面工程化：前后端都可以按需引入 npm 依赖，不设「不许用库」这类自我限制。
 
-- 前后端都可以引入成熟的 npm 依赖。选型门槛：维护活跃、提供 ESM、许可证与 MIT 兼容、体积与收益相称；引入时在对应设计文档里写明用途。
-- 浏览器端依赖经 Vite 打包进 `public/vendor/`，产物入库 —— 所以 `node server.mjs` / 双击 `启动看板.command` 仍不需要先 `npm install`。
-- 服务端若引入运行时依赖，要同步让 `启动看板.command` 在缺 `node_modules` 时自动执行 `npm ci`。
+- 选型门槛：维护活跃、提供 ESM、许可证与 MIT 兼容、体积与收益相称；引入时在对应设计文档里写明用途。
+- **`dependencies` 只放运行时真的要 `import` 的包**（现在一个都没有），`devDependencies` 放构建与测试用的包。构建期依赖（`@antv/x6`、`@dagrejs/dagre`、`tslib`、d3 系、`topojson-client`、`world-atlas`、`elkjs`）都在 `devDependencies`，它们只用来产出 `public/vendor/` 与跑单测。
+- 浏览器端依赖经 Vite 打包进 `public/vendor/`，产物入库 —— 所以 `node server.mjs` / 双击 `启动看板.command` 不需要先 `npm install`。这条是「产物已入库」的结果，不是设计前提：仓库里删掉 `public/vendor/` 就得先构建。
+- 将来加了运行时依赖也不用改文档：`启动看板.command` 会检测 `dependencies` 非空且 `node_modules` 缺失，自动执行 `npm ci --omit=dev`，失败就把日志尾巴打出来。
 - 不变的底线：不依赖需要 API Key 或境外瓦片的在线地图服务，断网也能打开页面。
 
 ### 目前打进 vendor 的东西
@@ -388,7 +389,7 @@ RV20 还会给出它在**过去 5 年滚动分布中的分位**，并落成一�
 
 **标签布局是这块最麻烦的事**。纽约 5 个标的、欧洲三国（伦敦/巴黎/法兰克福）、北美三城（纽约/多伦多/芝加哥）在地图上各自只隔十几像素，不手动错开会叠成一团。所以每个城市配了 `dx/dy` 偏移量和引导线，标签朝指定方向展开。
 
-地图数据来自 `world-atlas` 110m TopoJSON，用 `tools/topo2svg.mjs` 一次性转成 177 个国家的 SVG path（130KB），前端零依赖直接渲染。
+地图数据来自 `world-atlas` 110m TopoJSON，用 `tools/topo2svg.mjs` 一次性转成 177 个国家的 SVG path（130KB），前端直接渲染。
 
 **两个必须处理的坑**：
 
@@ -892,7 +893,7 @@ A 股 15:00 收盘后，美股/美债/美元/黄金/原油还在走。第二天�
 
 ## 本地存储改用 SQLite
 
-`node:sqlite` 是 Node 22+ 的内置模块，**零依赖**，正合适这个项目。单文件 `data/kanban.db`，WAL 模式。
+`node:sqlite` 是 Node 22+ 的内置模块，不需要额外驱动，正合适这个项目。单文件 `data/kanban.db`，WAL 模式。
 
 | 表 | 用途 | 主键 |
 | --- | --- | --- |
@@ -1355,7 +1356,7 @@ $ npm test
 
 ### 零构建怎么保住的
 
-`public/app.js` 只剩 `import './../src/client/main.js';`，浏览器原生加载 ES 模块。`server.mjs` 的 `serveStatic` 加了一段 `/src/client/**` → 仓库 `src/client/` 的映射（只开放这一个子树，越界与 `../` 穿越都已被拦），所以**不装依赖、不打包也能跑**。Phase 3 切到 `dist → public` 回退后，这段映射会被替换成构建产物路径。
+`public/app.js` 只剩 `import './../src/client/main.js';`，浏览器原生加载 ES 模块。`server.mjs` 的 `serveStatic` 加了一段 `/src/client/**` → 仓库 `src/client/` 的映射（只开放这一个子树，越界与 `../` 穿越都已被拦），所以改完源码刷新即可生效，不必先构建；要打包时走 `npm run build`。Phase 3 切到 `dist → public` 回退后，这段映射会被换成构建产物路径。
 
 
 ## Phase 3 第一步：抽「市场时段 / 新鲜度」与「分时护栏」两个纯逻辑域

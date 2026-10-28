@@ -254,7 +254,7 @@ function evaluateEdgeReality(edge, macroData) {
 
 ---
 
-## 五、 代码工程落地计划（零依赖、模块化）
+## 五、 代码工程落地计划（模块化与可测）
 
 遵循项目现有的 **原生 ES Module + 纯手写 SVG + 零外部前端依赖** 工程规范（与 `public/worldmap.js` 保持一致）：
 

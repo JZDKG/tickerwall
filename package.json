@@ -11,7 +11,6 @@
     "stock",
     "crypto",
     "macro",
-    "zero-dependency",
     "x6",
     "flowchart"
   ],
@@ -29,12 +28,10 @@
   "engines": {
     "node": ">=20"
   },
-  "dependencies": {
+  "dependencies": {},
+  "devDependencies": {
     "@antv/x6": "^3.1.8",
     "@dagrejs/dagre": "^3.1.3",
-    "tslib": "^2.8.1"
-  },
-  "devDependencies": {
     "@vitest/coverage-v8": "^5.0.5",
     "d3-geo": "^3.1.1",
     "d3-interpolate": "^3.0.1",
@@ -44,9 +41,10 @@
     "elkjs": "^0.12.0",
     "jsdom": "^30.1.3",
     "topojson-client": "^3.1.0",
+    "tslib": "^2.8.1",
     "vite": "^8.3.5",
     "vitest": "^5.0.5",
     "world-atlas": "^2.0.2"
   },
-  "//": "依赖策略见 README「依赖策略」：允许引入依赖；浏览器端依赖由 `npm run build` 打进 public/vendor/（产物入库，运行看板不需要 node_modules）。dependencies 只放「产物会间接 require」的包：tslib 是 @antv/x6 构建产物实际 import 但没写进它自己 dependencies 的包，必须显式装上。devDependencies 里 elkjs 只给 tools/layout-lab.mjs 做离线布局实验；d3-geo/d3-zoom/d3-selection/d3-transition/d3-interpolate/topojson-client/world-atlas 只用于构建 vendor/geo-kit.js 与跑单测，不进运行时。"
+  "//": "依赖策略见 README「依赖策略」：前端与构建期依赖都放 devDependencies，由 `npm run build` 打进 public/vendor/（产物入库，运行看板不需要 node_modules）。dependencies 只放「运行时真的要 import」的包 —— 现在一个都没有，因此 `node server.mjs` 不需要先装依赖；将来加了运行时依赖，`启动看板.command` 会在缺 node_modules 时自动 `npm ci --omit=dev`。构建期：@antv/x6 / @dagrejs/dagre / tslib 只用于打 vendor/macro-flow.js（tslib 是 @antv/x6 产物实际 import 但没写进它自己 dependencies 的包，必须显式装）；elkjs 只给 tools/layout-lab.mjs 做离线布局实验；d3-geo / d3-zoom / d3-selection / d3-transition / d3-interpolate / topojson-client / world-atlas 只用于构建 vendor/geo-kit.js 与跑单测。"
 }

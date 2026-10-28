@@ -4,7 +4,7 @@
  * 现阶段（Phase 1）只把 `#/macro` 顶部的传导图谱打成一个 ES 模块，
  * 输出到 `public/vendor/macro-flow.js`，由 `public/app.js` 动态 import() 懒加载。
  *
- * 依赖策略（2026-10 起）：取消「运行时零依赖」约定，允许引入 npm 依赖；
+ * 依赖策略（2026-10 起）：前后端都可以按需引入 npm 依赖，只在需要时评估选型；
  * 浏览器端依赖统一打进 public/vendor/ 并入库，详见 README「依赖策略」。
  *
  * 为什么不直接改成「整站 Vite、输出 dist/」：
@@ -14,7 +14,8 @@
  *   其余 3500 行原生前端原样保留；等 Phase 2 把五大视图都搬进 src/client 之后，
  *   再把这里切成 `build.outDir: 'dist'` 的多页构建，服务端按 dist → public 的顺序回退。
  *
- * 产物入库（不写进 .gitignore）：保证 clone 下来不装依赖也能跑。
+ * 产物入库（不写进 .gitignore）：clone 下来直接 `node server.mjs` 就能打开页面，
+ * 不必先 `npm install`；要改前端源码时再装依赖跑构建。
  * 改了 src/ 之后手动 `npm run build` 重新生成。
  */
 

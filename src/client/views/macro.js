@@ -22,7 +22,7 @@ import { isExplainable } from './explanations/state.js';
  *
  * public/vendor/macro-flow.js 是 `npm run build` 由 src/client/views/macro/ 打出来的
  * 单文件 ES 模块（X6 + dagre，约 860KB / gzip 224KB）。只有进 #/macro 才会 import，
- * 首页零成本。仓库里带着产物，所以 clone 下来不装依赖也能跑。
+ * 首页零成本。仓库里带着构建产物，所以 clone 下来直接就能用，不必先装依赖。
  * 加载失败（文件被删 / 老浏览器）时 macroFlowMod 保持 null，refreshGraph()
  * 走 macroGraphSectionHTML 那条老路，功能不缺，只是没有拖拽缩放。
  * ------------------------------------------------------------------ */

@@ -13,6 +13,27 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
+# 运行时依赖检查：package.json 的 dependencies 非空、但 node_modules 不在时先装。
+# 现在一个运行时依赖都没有，所以这段平时不会触发；将来加了依赖也不用改说明文档。
+needs_runtime_deps() {
+  node -e 'const p=require("./package.json");process.exit(Object.keys(p.dependencies||{}).length?0:1)' >/dev/null 2>&1
+}
+
+if [ ! -d node_modules ] && needs_runtime_deps; then
+  if ! command -v npm >/dev/null 2>&1; then
+    echo "这个版本需要先安装依赖，但找不到 npm。请装 Node.js（自带 npm）后重试。"
+    read -r -p "按回车键关闭…" _
+    exit 1
+  fi
+  echo "首次运行：安装运行时依赖…"
+  if ! npm ci --omit=dev >/tmp/market-kanban-install.log 2>&1; then
+    echo "依赖安装失败，日志见 /tmp/market-kanban-install.log"
+    tail -n 20 /tmp/market-kanban-install.log
+    read -r -p "按回车键关闭…" _
+    exit 1
+  fi
+fi
+
 if curl -s -m 1 -o /dev/null "${URL}api/health"; then
   echo "看板已在运行，直接打开页面。"
 else

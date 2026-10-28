@@ -142,7 +142,7 @@ export function historyNoteFor(id) {
 export const HISTORY_FILE = path.join(DATA_DIR, 'history.json');
 // 日线落盘缓存：源全挂时详情页直接读盘，不再白屏
 export const DAILY_CACHE_DIR = path.join(DATA_DIR, 'daily');
-// SQLite 单文件库（node:sqlite 内置，零依赖）
+// SQLite 单文件库（node:sqlite 是 Node 内置模块，不需要额外驱动）
 
 // getDb() 已下沉到 src/server/db/sqlite.js
 
