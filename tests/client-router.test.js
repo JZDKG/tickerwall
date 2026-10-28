@@ -43,7 +43,7 @@ vi.mock('../src/client/views/macro.js', () => ({
   unmountMacro: () => calls.push(['unmount', 'macro']),
 }));
 
-const { route, currentView } = await import('../src/client/router.js');
+const { route, currentView, resetMountedForTests } = await import('../src/client/router.js');
 const els = {
   list: document.getElementById('rows'),
   detail: document.getElementById('detail'),
@@ -62,6 +62,8 @@ beforeEach(() => {
   location.hash = '';
   calls.length = 0;
   for (const el of Object.values(els)) el.hidden = true;
+  // route() 现在带幂等键：不清掉会让下一个用例直接早退
+  resetMountedForTests();
 });
 
 describe('路由解析', () => {
@@ -137,10 +139,19 @@ describe('生命周期契约', () => {
     expect(els.list.hidden).toBe(false);
   });
 
-  it('mount 的参数在每次 hashchange 都传（同一路由再进也要刷新）', () => {
-    go('#/d/gold-intl');
+  /**
+   * 契约变更（第 68 轮）：同一路由再进**不再重挂**。
+   *
+   * 原来这里断言「每次 hashchange 都传参数、重挂一次」。那条契约的代价是：
+   * 重挂会走 unmountDetail() → explainState = null，把刚取到的解释扔掉，
+   * 卡片停在「正在整理解释…」（真实浏览器里复现）。所以改成幂等：
+   * 同 name + 同 arg 直接返回，mount 一次都不再调。
+   */
+  it('同一路由再进不重挂（重挂会清掉视图内部状态）', () => {
     go('#/d/gold-intl');
     expect(calls.filter((c) => c[0] === 'mount' && c[1] === 'detail')).toHaveLength(1);
+    go('#/d/gold-intl');
+    expect(calls.filter((c) => c[0] === 'mount' && c[1] === 'detail')).toHaveLength(0);
   });
 });
 
@@ -165,5 +176,46 @@ describe('键盘', () => {
     go('#/map');
     document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'a', bubbles: true }));
     expect(currentView()).toBe('map');
+  });
+});
+
+/* ================================================================== *
+ * 幂等：同一视图同一参数不重挂
+ *
+ * 重挂的代价很具体：unmountDetail() 会 explainState = null，于是刚取到的
+ * 解释被扔掉、卡片画回骨架并停在「正在整理解释…」。真实浏览器里就是这样。
+ * ================================================================== */
+describe('重复 route 不重挂', () => {
+  const mountCount = () => calls.filter(([k, v]) => k === 'mount' && v === 'detail').length;
+  const unmountCount = () => calls.filter(([k, v]) => k === 'unmount' && v === 'detail').length;
+
+  it('同一 hash 连续两次只 mount 一次', () => {
+    resetMountedForTests();
+    location.hash = '#/d/gold-intl';
+    route();
+    const first = mountCount();
+    route();
+    route();
+    expect(mountCount()).toBe(first);
+  });
+
+  it('换到另一个详情 id 会重挂（不同资产必须换状态）', () => {
+    resetMountedForTests();
+    location.hash = '#/d/gold-intl';
+    route();
+    const first = mountCount();
+    location.hash = '#/d/oil';
+    route();
+    expect(mountCount()).toBe(first + 1);
+  });
+
+  it('离开详情页会 unmount（幂等不等于不换页）', () => {
+    resetMountedForTests();
+    location.hash = '#/d/gold-intl';
+    route();
+    location.hash = '#/events';
+    route();
+    expect(unmountCount()).toBeGreaterThan(0);
+    expect(currentView()).toBe('events');
   });
 });

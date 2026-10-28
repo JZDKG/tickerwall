@@ -138,9 +138,30 @@ jsdom 单测结构上就抓不到 —— 必须开真浏览器。**
    所以是**路由在这一页上发生了 mount/unmount 抖动**，每次抖动把状态清掉、
    再被 `renderDetail` 末尾的 `repaintExplainCard()` 画回骨架。
 
-下一步：在 `mountDetail` / `unmountDetail` 里打点确认抖动来源（很可能是
-`route()` 被重复调用，或 hashchange 与定时器叠加）。这属于**未修**项，
-已在 §13 的待办里挂号。
+#### 第 68 轮追加：抓到一次真实 churn，但它不是唯一原因
+
+打点（含 `new Error().stack` 取调用点）拿到的栈：
+
+```
+[unmount] at route (router.js:82)      ← route() 确实重复跑了一遍
+[mount] gold-intl detailState  phase   ← 重挂，explainState 已是空
+[ensure] gold-intl existing  phase     ← 新建状态
+[repaint] ready                        ← 解释其实取到了
+[repaint] loading                      ← 又画回骨架
+```
+
+第一件事据此修掉了：`route()` 现在带**幂等键**（name + arg），同视图同参数
+不再重挂；`mounted` 从「只给测试看的变量」变成真正的幂等键。
+新增 3 条用例（同 hash 不重挂 / 换资产要重挂 / 换页要 unmount），
+并把一条**旧契约用例改向**：原来断言「同一路由再进也要重挂一次」，
+那条契约正是本次故障的成因，改为断言不重挂。
+
+第二件事没修掉：修完 `route()` 后真实浏览器里 `data-phase` 仍是 `loading`，
+说明还有第二个来源在 `ready` 之后把卡片画回骨架（`loading` 的 repaint 里
+有一次调用点取不到，栈深度不足）。这一条仍是**未修**。
+
+结论：`route()` 幂等是一个独立的、正确的修复（重挂会丢视图状态，这对
+map/events/macro 同样成立），但它不是这个 bug 的完整解。
 
 ### 顺带确认的正常项
 

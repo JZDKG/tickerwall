@@ -42,7 +42,18 @@ const mapView = { el: mapEl, mount: mountMap, unmount: unmountMap };
 const eventsView = { el: eventsEl, mount: mountEvents, unmount: unmountEvents };
 const macroView = { el: macroEl, mount: mountMacro, unmount: unmountMacro };
 
-/** 当前挂载的视图名，只用于避免「同一视图重复 unmount」 */
+/**
+ * 当前挂载的视图（名字 + 参数）。
+ *
+ * 它不只是一个观察用的变量 —— 它是**幂等键**：
+ * 同一个 name+arg 的 `route()` 重复触发时直接返回，不重挂。
+ *
+ * 为什么必须这样：`route()` 每轮都会把其余视图 unmount、目标视图 mount，
+ * 而 `unmountDetail()` 会 `explainState = null`。于是「同一次渲染里多跑一遍
+ * route()」就会把刚取到的解释状态扔掉，卡片被画回骨架并永远停在
+ * 「正在整理解释…」—— 真实浏览器里就是这样，jsdom 里因为 route 只跑一次
+ * 一直没暴露。
+ */
 let mounted = null;
 
 function resolve(hash) {
@@ -62,6 +73,9 @@ export function route() {
 
   const { name, view, arg } = resolve(location.hash);
 
+  // 0) 幂等：同一视图同一参数不再重挂（重挂会清掉视图内部状态）
+  if (mounted && mounted.name === name && mounted.arg === (arg ?? null)) return;
+
   // 1) 其余视图全部退场（含上一次的 detail/map/events/macro）
   for (const [key, v] of Object.entries(ALL)) {
     if (key === name) continue;
@@ -69,7 +83,7 @@ export function route() {
   }
 
   // 2) 目标视图进场
-  mounted = name;
+  mounted = { name, arg: arg ?? null };
   view.mount(arg);
 }
 
@@ -82,5 +96,10 @@ document.addEventListener('keydown', (e) => {
 
 /** 供测试观察：当前挂载的视图名 */
 export function currentView() {
-  return mounted;
+  return mounted?.name ?? null;
+}
+
+/** 供测试与调试：重置挂载记录（等价于「已离开所有视图」） */
+export function resetMountedForTests() {
+  mounted = null;
 }
