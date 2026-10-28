@@ -122,10 +122,26 @@ describe('takeForce：强制刷新的预算', () => {
   });
 
   it('detail 的 key 有硬顶，不会随 id 无限增长', async () => {
-    const { takeForce, __forceKeyCount } = await import('../src/server/http.js');
-    for (let i = 0; i < 400; i += 1) takeForce(u(`/api/detail/id-${i}`, true));
-    // 上限 128，超出后丢掉最早的一半
-    expect(__forceKeyCount()).toBeLessThanOrEqual(128);
+    // 用独立实例断言状态 —— 原来模块导出 __forceKeyCount() 专供测试读内部
+    // Map，那是生产模块给测试留的后门，而且测试之间共享同一份预算
+    const { createForceLimiter } = await import('../src/server/http.js');
+    const limiter = createForceLimiter();
+    for (let i = 0; i < 400; i += 1) limiter.take(u(`/api/detail/id-${i}`, true));
+    expect(limiter.size()).toBeLessThanOrEqual(128);
+  });
+
+  it('限流器可注入时钟与参数，不依赖真实时间', async () => {
+    const { createForceLimiter } = await import('../src/server/http.js');
+    let t = 0;
+    const limiter = createForceLimiter({ minIntervalMs: 1000, maxKeys: 4, now: () => t });
+    expect(limiter.take(u('/api/quotes', true))).toBe(true);
+    t = 999;
+    expect(limiter.take(u('/api/quotes', true))).toBe(false); // 未到间隔
+    t = 1000;
+    expect(limiter.take(u('/api/quotes', true))).toBe(true); // 刚好到期
+    // maxKeys=4：塞 6 个不同 key 后应被裁剪到上限内
+    for (let i = 0; i < 6; i += 1) limiter.take(u(`/api/detail/k${i}`, true));
+    expect(limiter.size()).toBeLessThanOrEqual(4);
   });
 
   it('不在白名单的路径不消耗也不放行', async () => {

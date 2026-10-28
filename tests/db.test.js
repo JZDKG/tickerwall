@@ -30,7 +30,6 @@ import {
   snapshotCount,
   resetSnapshotGuard,
   SNAPSHOT_ANCHOR_WINDOW,
-  getDb,
   writeJsonAtomic,
   readJson,
   appendJsonl,

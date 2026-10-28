@@ -29,11 +29,8 @@ const FORCE_ENDPOINTS = [
   // detail 带 id 维度：5 秒内连刷两个不同标的，第二个不该被前一个的预算连累
   '/api/detail',
 ];
-const lastForceAt = new Map();
-
 /** key 数量上限。detail 的 id 集合有限，但仍是外部输入，兜一层硬顶 */
 const MAX_FORCE_KEYS = 128;
-
 /**
  * 归到某个端点（带 id 的端点连同 id 一起计）。
  * 归不上返回 null —— 不在白名单的路径不计预算，也不放行。
@@ -47,37 +44,49 @@ function forceKey(pathname) {
   return pathname.length > ep.length ? pathname : ep;
 }
 
-/** Map 有界：超上限时丢掉最早插入的一半（Map 保持插入顺序，天然是 FIFO） */
-function trimForceKeys() {
-  if (lastForceAt.size <= MAX_FORCE_KEYS) return;
-  const drop = [...lastForceAt.keys()].slice(0, Math.ceil(MAX_FORCE_KEYS / 2));
-  for (const k of drop) lastForceAt.delete(k);
+/**
+ * 造一个限流器。
+ *
+ * 做成工厂而不是模块级单例，是为了让测试拿独立实例断言状态 ——
+ * 原来模块里导出了一个 `__forceKeyCount()` 专供测试读内部 Map，
+ * 那是生产模块给测试留的后门：读得到就能被误用，而且测试之间共享状态。
+ *
+ * @param {{ maxKeys?: number, minIntervalMs?: number, now?: () => number }} opts
+ */
+export function createForceLimiter(opts = {}) {
+  const maxKeys = opts.maxKeys ?? MAX_FORCE_KEYS;
+  const minIntervalMs = opts.minIntervalMs ?? FORCE_MIN_INTERVAL_MS;
+  const now = opts.now ?? (() => Date.now());
+  const lastAt = new Map();
+
+  /** Map 有界：超上限时丢掉最早插入的一半（Map 保持插入顺序，天然是 FIFO） */
+  function trim() {
+    if (lastAt.size <= maxKeys) return;
+    const drop = [...lastAt.keys()].slice(0, Math.ceil(maxKeys / 2));
+    for (const k of drop) lastAt.delete(k);
+  }
+
+  return {
+    /**
+     * 取本次请求是否允许强制刷新。超预算返回 false（调用方自然走缓存），
+     * 不抛错 —— 「刷新得太快」不该让用户看到红色报错。
+     */
+    take(url) {
+      if (url.searchParams.get('force') !== '1') return false;
+      const key = forceKey(url.pathname);
+      if (!key) return false;
+      const t = now();
+      const prev = lastAt.get(key);
+      if (prev != null && t - prev < minIntervalMs) return false;
+      lastAt.set(key, t);
+      trim();
+      return true;
+    },
+    /** 当前记账的 key 数（断言用，不是生产接口） */
+    size: () => lastAt.size,
+  };
 }
 
-/**
- * 取本次请求是否允许强制刷新。超预算返回 false（调用方自然走缓存），
- * 不抛错 —— 「刷新得太快」不该让用户看到红色报错。
- */
-export function takeForce(url) {
-  if (url.searchParams.get('force') !== '1') return false;
-  const key = forceKey(url.pathname);
-  if (!key) return false;
-  const now = Date.now();
-  if (now - (lastForceAt.get(key) ?? 0) < FORCE_MIN_INTERVAL_MS) return false;
-  lastForceAt.set(key, now);
-  trimForceKeys();
-  return true;
-}
-
-/**
- * 把 URL pathname 映射成磁盘路径，越界就返回 null。
- *
- * 抽成纯函数是为了能测：路径穿越是少数「错了就是安全事故」的逻辑，而它
- * 原本埋在 server.mjs 里没法单测。判据是 `full` 必须以 `root + sep` 开头 ——
- * 只比 `startsWith(root)` 的话，`/publicX/foo` 会因为前缀相同而通过。
- *
- * 拒绝的三类：解码失败（恶意 % 序列）、含 NUL、normalize 之后越界。
- */
 export function resolveStaticPath(pathname) {
   let rel;
   try {
@@ -100,10 +109,10 @@ export function resolveStaticPath(pathname) {
   return { root, rel, full };
 }
 
-/** 仅供测试观测 Map 规模，不参与生产逻辑 */
-export function __forceKeyCount() {
-  return lastForceAt.size;
-}
+/** 生产用的单例：全进程一份预算 */
+const defaultLimiter = createForceLimiter();
+
+export const takeForce = (url) => defaultLimiter.take(url);
 
 /* ------------------------------------------------------------------ *
  * 响应工具（从 server.mjs 搬进来）
