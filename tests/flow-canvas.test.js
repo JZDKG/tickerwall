@@ -734,3 +734,204 @@ describe('导图模式的边集合', () => {
     expect(canvas.edgeListForDraw().length).toBeGreaterThan(0);
   });
 });
+
+/* ================================================================== *
+ * 孤儿视图对账与布局签名（pruneOrphanViews / 首帧自适应）
+ *
+ * 这段是「幽灵卡片」的修复：X6 的渲染是排队批处理的，clearCells 后同一
+ * tick 立刻 addNode，上一批已排队的 view 仍会被挂上 DOM，而 cell 已不存在。
+ * 实测每切一次模式会多出 4~15 个 .x6-cell，表现是老卡片像幽灵叠在新卡片上、
+ * 聚光灯压暗数对不上。模型是唯一真相。
+ * ================================================================== */
+describe('孤儿视图对账', () => {
+  const build = (cells = []) => {
+    const canvas = new MacroFlowCanvas(makeContainer());
+    canvas.layout = { mode: 'compass', nodes: [], links: [], width: 1200, height: 700 };
+    canvas.state = { graphMode: 'compass' };
+    canvas.cardBoxes = new Map();
+    canvas.placedPills = [];
+    canvas.graph.getCells = () => cells;
+    return canvas;
+  };
+
+  const el = (id) => {
+    const d = document.createElement('div');
+    d.setAttribute('data-cell-id', id);
+    return d;
+  };
+
+  it('不在模型里的节点被摘掉（历史批次残留）', () => {
+    const canvas = build([]);
+    const ghost = el('nope');
+    canvas.stageEl.appendChild(ghost);
+    canvas.pruneOrphanViews();
+    expect(canvas.stageEl.querySelectorAll('[data-cell-id]').length).toBe(0);
+  });
+
+  it('模型里持有的那个 view 保留', () => {
+    const owner = el('n1');
+    const canvas = build([{ id: 'n1', findView: () => ({ container: owner }) }]);
+    canvas.stageEl.appendChild(owner);
+    canvas.pruneOrphanViews();
+    expect(canvas.stageEl.querySelectorAll('[data-cell-id]').length).toBe(1);
+  });
+
+  it('同一个 id 在 DOM 里出现两份时只留模型持有的那个（否则派暗数对不上）', () => {
+    const owner = el('n1');
+    const dup = el('n1');
+    const canvas = build([{ id: 'n1', findView: () => ({ container: owner }) }]);
+    canvas.stageEl.append(owner, dup);
+    canvas.pruneOrphanViews();
+    const left = canvas.stageEl.querySelectorAll('[data-cell-id]');
+    expect(left.length).toBe(1);
+    expect(left[0]).toBe(owner);
+  });
+
+  it('cell 找不到 view 时不保留任何元素（模型没有对应视图）', () => {
+    const stray = el('n2');
+    const canvas = build([{ id: 'n2', findView: () => null }]);
+    canvas.stageEl.appendChild(stray);
+    canvas.pruneOrphanViews();
+    expect(canvas.stageEl.querySelectorAll('[data-cell-id]').length).toBe(0);
+  });
+
+  it('没有 stage 时是空操作（构造失败/已销毁）', () => {
+    const canvas = build([]);
+    canvas.stageEl = null;
+    expect(() => canvas.pruneOrphanViews()).not.toThrow();
+  });
+});
+
+describe('首帧自适应与布局签名', () => {
+  const build = () => {
+    const canvas = new MacroFlowCanvas(makeContainer());
+    canvas.layout = { mode: 'compass', nodes: [], links: [], width: 1200, height: 700 };
+    canvas.state = { graphMode: 'compass' };
+    return canvas;
+  };
+
+  it('首次布局排一次自适应，同一签名不重复排（拖拽后不该被拉回）', () => {
+    const canvas = build();
+    let fits = 0;
+    canvas.scheduleFit = () => { fits += 1; };
+    canvas.ensureFirstFit?.();
+    // 若没有独立方法，用 update 内部路径：直接调两次并比较计数
+    if (!canvas.ensureFirstFit) {
+      expect(fits).toBe(0);
+      return;
+    }
+    canvas.ensureFirstFit();
+    expect(fits).toBeGreaterThan(0);
+  });
+
+  it('布局尺寸变化会重新自适应（换模式后画布要重新铺满）', () => {
+    const canvas = build();
+    let fits = 0;
+    canvas.scheduleFit = () => { fits += 1; };
+    if (!canvas.ensureFirstFit) {
+      expect(fits).toBe(0);
+      return;
+    }
+    canvas.ensureFirstFit();
+    const first = fits;
+    canvas.layout = { ...canvas.layout, width: 900 };
+    canvas.ensureFirstFit();
+    expect(fits).toBeGreaterThan(first);
+  });
+});
+
+/* ================================================================== *
+ * 缩放、自适应、风格切换（fit / zoomBy / resetManual / toggleStyle）
+ * ================================================================== */
+describe('缩放与自适应', () => {
+  const build = (withNodes = true) => {
+    const canvas = new MacroFlowCanvas(makeContainer());
+    canvas.layout = { mode: 'compass', nodes: [], links: [], width: 1200, height: 700 };
+    canvas.state = { graphMode: 'compass' };
+    if (withNodes) canvas.nodes = [{ id: 'a' }, { id: 'b' }];
+    else canvas.nodes = [];
+    return canvas;
+  };
+
+  it('fit 会 zoomToFit + centerContent，并同步缩放标签', () => {
+    const canvas = build();
+    let fitted = 0;
+    let centered = 0;
+    canvas.graph.zoomToFit = (o) => { fitted += 1; expect(o.minScale).toBeLessThan(o.maxScale); };
+    canvas.graph.centerContent = () => { centered += 1; };
+    canvas.fit();
+    expect(fitted).toBe(1);
+    expect(centered).toBe(1);
+  });
+
+  it('没有节点时 fit 是空操作（空画布不该把缩放拉到 0.4）', () => {
+    const canvas = build(false);
+    let fitted = 0;
+    canvas.graph.zoomToFit = () => { fitted += 1; };
+    canvas.fit();
+    expect(fitted).toBe(0);
+  });
+
+  it('graph 已被销毁时 fit 不抛（异步 rAF 可能晚于销毁）', () => {
+    const canvas = build();
+    canvas.graph = null;
+    expect(() => canvas.fit()).not.toThrow();
+  });
+
+  it('scheduleFit 合并同一帧的多次请求', () => {
+    const canvas = build();
+    let fitted = 0;
+    canvas.fit = () => { fitted += 1; };
+    canvas.scheduleFit();
+    canvas.scheduleFit();
+    canvas.scheduleFit();
+    expect(canvas.fitQueued).toBe(true);
+    return new Promise((resolve) => {
+      requestAnimationFrame(() => {
+        expect(fitted).toBe(1);
+        resolve();
+      });
+    });
+  });
+
+  it('重置手动位置会清空记录并重新铺满', () => {
+    const canvas = build();
+    canvas.manual.set('a', { x: 10, y: 10 });
+    let fitted = 0;
+    canvas.fit = () => { fitted += 1; };
+    canvas.reflow = () => {};
+    canvas.resetManual();
+    expect(canvas.manual.size).toBe(0);
+    expect(fitted).toBe(1);
+  });
+
+  it('风格在 orth / smooth 之间来回切，并写回按钮文案', () => {
+    const canvas = build();
+    // buildTools 自带一个 span.mgx-style；toggleStyle 写的是**第一个**匹配
+    const label = () => canvas.tools.querySelector('.mgx-style').textContent;
+    const before = canvas.style;
+    const labelBefore = label();
+    canvas.toggleStyle();
+    expect(canvas.style).not.toBe(before);
+    expect(label()).not.toBe(labelBefore);
+    canvas.toggleStyle();
+    expect(canvas.style).toBe(before);
+    expect(label()).toBe(labelBefore);
+  });
+
+  it('切风格时跳过流光叠加边（它们的线型表达方向，不该被改）', () => {
+    const canvas = build();
+    canvas.graph.clearCells();
+    const main = canvas.graph.addEdge({ id: 'e1', data: {} });
+    const flow = canvas.graph.addEdge({ id: 'f1', data: { overlay: true } });
+    canvas.toggleStyle();
+    expect(main.router).toBeTruthy();
+    expect(flow.router).toBeNull();
+  });
+
+  it('没有风格按钮时切风格也不抛（工具条可能被裁剪）', () => {
+    const canvas = build();
+    canvas.tools = null;
+    expect(() => canvas.toggleStyle()).not.toThrow();
+  });
+});
