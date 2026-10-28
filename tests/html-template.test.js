@@ -302,7 +302,7 @@ describe('棘轮：innerHTML 里的裸插值', () => {
    * 逐文件列入比「列一个文件但允许它有裸插值」有意义得多 —— 后者只是把
    * 数字挪个地方，没有守住任何东西。
    */
-  const MIGRATED = new Set(['views/events.js', 'views/map.js']);
+  const MIGRATED = new Set(['views/events.js', 'views/map.js', 'views/macro.js']);
 
   /**
    * 全站基线。这个数字只允许变小，不许变大。
@@ -313,7 +313,8 @@ describe('棘轮：innerHTML 里的裸插值', () => {
    * 必须为 0」来守，两者合起来才有意义。195 是 `innerHTML` 这一类当前
    * 的实测值（detail 82 / macro 45 / events 33 / map 28 / 其余 7）。
    */
-  const BASELINE = 134;
+  /** 全站基线：134 → 89（macro.js 归零）。 */
+  const BASELINE = 89;
 
   function bareInterpolations(code) {
     // 数 `innerHTML = \`…\`` 之后的模板里出现的 ${，粗略但足够做棘轮
@@ -506,6 +507,14 @@ describe('macro.js 子组件返回 SafeHtml', async () => {
     const out = mod.macroLeadLagHTML({ freq: 'day', universe: [], leadLag: [] });
     expect(out).toBeInstanceOf(SafeHtml);
     expect(String(out)).toContain('chart-empty');
+  });
+
+  it('macroCompareHTML / PairSection 的子片段不被外层当纯文本转义', () => {
+    // 与 events.js 那次整页空白同源的风险：子组件返回普通 string 时，
+    // 外层 html`` 会整体转义，表格/图表变成 &lt;table&gt; 文本。
+    const out = mod.macroCompareHTML(DATA);
+    expect(String(out)).not.toContain('&lt;div class="chart-legend"');
+    expect(String(out)).not.toContain('&amp;lt;');
   });
 
   it('macroMatrixHTML 返回 SafeHtml，星号是真实标签而非转义文本', () => {

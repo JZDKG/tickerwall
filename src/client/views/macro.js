@@ -595,7 +595,7 @@ export function onGraphDblClick(e, host) {
 export function renderMacro() {
   const data = macroState.data;
   if (!data) {
-    macroEl.innerHTML = '<div class="d-loading">正在采集 13 个市场的历史数据…</div>';
+    macroEl.innerHTML = html`<div class="d-loading">正在采集 13 个市场的历史数据…</div>`.toString();
     return;
   }
   const ra = data.riskAppetite ?? {};
@@ -607,7 +607,7 @@ export function renderMacro() {
     [0, '全部'],
   ];
 
-  macroEl.innerHTML = `
+  macroEl.innerHTML = html`
     <div class="d-top">
       <button type="button" class="back-btn" id="back-macro">← 返回列表</button>
       <div class="d-id">
@@ -617,12 +617,10 @@ export function renderMacro() {
       <div class="macro-status">
         ${
           ra.label
-            ? `<span class="risk-badge ${ra.label === 'Risk-On' ? 'on' : ra.label === 'Risk-Off' ? 'off' : 'neutral'}">${esc(ra.label)}</span>
-               <span class="risk-note" title="${esc(
-                 `风险篮子（${(ra.riskMembers ?? []).join(' / ')}）与避险篮子（${(ra.hedgeMembers ?? []).join(' / ')}，美债按债券价格口径）各自按 60 期波动率标准化后的 Z 值均值之差。单位是标准差，不是百分比；${
-                   ra.aligned ? '成员已对齐到同一交易日' : `成员日期不一致（${(ra.memberDates ?? []).join(' / ')}），存在跨日错位`
-                 }`,
-               )}">风险端 ${ra.risk == null ? '—' : `${ra.risk >= 0 ? '+' : ''}${ra.risk.toFixed(2)}σ`} · 避险端 ${
+            ? html`<span class="risk-badge ${ra.label === 'Risk-On' ? 'on' : ra.label === 'Risk-Off' ? 'off' : 'neutral'}">${ra.label}</span>
+               <span class="risk-note" title="风险篮子（${(ra.riskMembers ?? []).join(' / ')}）与避险篮子（${(ra.hedgeMembers ?? []).join(' / ')}，美债按债券价格口径）各自按 60 期波动率标准化后的 Z 值均值之差。单位是标准差，不是百分比；${
+                 ra.aligned ? '成员已对齐到同一交易日' : `成员日期不一致（${(ra.memberDates ?? []).join(' / ')}），存在跨日错位`
+               }">风险端 ${ra.risk == null ? '—' : `${ra.risk >= 0 ? '+' : ''}${ra.risk.toFixed(2)}σ`} · 避险端 ${
                  ra.hedge == null ? '—' : `${ra.hedge >= 0 ? '+' : ''}${ra.hedge.toFixed(2)}σ`
                }${ra.aligned === false ? ' · 跨日错位' : ''}</span>
                <span class="risk-note" title="VRP = VIX − 标普 500 的 20 日实现年化波动率。溢价被压缩说明保护性期权便宜、市场自满；溢价飙升说明在抢买保护。">${
@@ -645,12 +643,10 @@ export function renderMacro() {
           <button type="button" data-f="week" class="${data.freq === 'week' ? 'on' : ''}">周频</button>
         </div>
         <div class="seg" id="macro-window">
-          ${windows
-            .map(
-              ([w, label]) =>
-                `<button type="button" data-w="${w}" class="${data.windowSize === w ? 'on' : ''}">${label}</button>`,
-            )
-            .join('')}
+          ${windows.map(
+            ([w, label]) =>
+              html`<button type="button" data-w="${w}" class="${data.windowSize === w ? 'on' : ''}">${label}</button>`,
+          )}
         </div>
       </div>
       ${macroMatrixHTML(data)}
@@ -681,9 +677,8 @@ export function renderMacro() {
           .filter((u) => u.ok)
           .map(
             (u) =>
-              `<button type="button" class="pick ${macroState.picked.has(u.id) ? 'on' : ''}" data-pick="${esc(u.id)}">${esc(u.short)}</button>`,
-          )
-          .join('')}
+              html`<button type="button" class="pick ${macroState.picked.has(u.id) ? 'on' : ''}" data-pick="${u.id}">${u.short}</button>`,
+          )}
       </div>
       <div id="macro-compare-host">${macroCompareHTML(data)}</div>
     </section>
@@ -692,7 +687,7 @@ export function renderMacro() {
       <span>收益率口径：对数收益率（美债10年期用百分点差）· 相关性按两两共同${data.freq === 'week' ? '周' : '交易日'}计算</span>
       <span>生成于 ${clockText(new Date(data.generatedAt))}</span>
     </footer>
-  `;
+  `.toString();
 
   // 图谱默认先走手绘 SVG（同步、无等待），X6 画布模块到位后再原地升级一次。
   refreshGraph();
@@ -746,7 +741,7 @@ export function renderMacro() {
 }
 
 export async function loadMacro(windowSize = 250, force = false) {
-  macroEl.innerHTML = '<div class="d-loading">正在采集 13 个市场的历史数据…</div>';
+  macroEl.innerHTML = html`<div class="d-loading">正在采集 13 个市场的历史数据…</div>`.toString();
   try {
     const freq = macroState?.freq ?? 'day';
     const res = await fetch(
@@ -781,7 +776,7 @@ export async function loadMacro(windowSize = 250, force = false) {
     }
     renderMacro();
   } catch (err) {
-    macroEl.innerHTML = `<div class="d-top"><button type="button" class="back-btn" id="back-macro">← 返回列表</button><div class="d-id"><h2>世界经济关联</h2><p>加载失败</p></div></div><div class="d-error">${esc(err?.message ?? String(err))}</div>`;
+    macroEl.innerHTML = html`<div class="d-top"><button type="button" class="back-btn" id="back-macro">← 返回列表</button><div class="d-id"><h2>世界经济关联</h2><p>加载失败</p></div></div><div class="d-error">${err?.message ?? String(err)}</div>`.toString();
     document.getElementById('back-macro')?.addEventListener('click', () => {
       location.hash = '';
     });
