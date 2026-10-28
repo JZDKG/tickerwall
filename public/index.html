@@ -44,10 +44,22 @@
       <h1>市场看板</h1>
       <span class="tag">23 标的 · 跨资产宏观终端</span>
     </div>
-    <div class="status">
-      <a class="nav-link" href="#/map">全球地图</a>
-      <a class="nav-link" href="#/events">事件中心</a>
-      <a class="nav-link" href="#/macro">关联分析</a>
+    <!-- 导航收敛（产品 §3.2）：三个任务，深链接全部保留；任务只是分组，不是中间页 -->
+    <nav class="status tasks" id="tasks" aria-label="任务">
+      <div class="task-group" data-task="today">
+        <span class="task-label">今日理解</span>
+        <a class="nav-link" data-nav-hash="" href="#">行情与问题</a>
+        <a class="nav-link" data-nav-hash="#/events" href="#/events">事件中心</a>
+      </div>
+      <div class="task-group" data-task="explore">
+        <span class="task-label">探索关系</span>
+        <a class="nav-link" data-nav-hash="#/map" href="#/map">全球地图</a>
+        <a class="nav-link" data-nav-hash="#/macro" href="#/macro">关联分析</a>
+      </div>
+      <div class="task-group" data-task="watch">
+        <span class="task-label">我的关注</span>
+        <a class="nav-link" data-nav-hash="#/events" href="#/events">今天重点</a>
+      </div>
       <button id="briefing-btn" type="button" class="nav-link btn-link" title="A股收盘后，隔夜各资产走了多少">隔夜复盘</button>
       <span id="updated" class="updated">连接中…</span>
       <span id="countdown" class="muted"></span>

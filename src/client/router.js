@@ -18,6 +18,7 @@ import { mountDetail, unmountDetail } from './views/detail.js';
 import { mountEvents, unmountEvents } from './views/events.js';
 import { mountMacro, unmountMacro } from './views/macro.js';
 import { mountMap, unmountMap } from './views/map.js';
+import { applyNavActive } from './nav.js';
 
 /**
  * 列表页：它是默认视图，DOM 由 main 的轮询持续维护。
@@ -56,6 +57,9 @@ function resolve(hash) {
 const ALL = { list: listView, detail: detailView, map: mapView, events: eventsView, macro: macroView };
 
 export function route() {
+  // 导航收敛（产品 §3.2）：当前任务由 hash 反推，不另存状态
+  applyNavActive(document.getElementById('tasks'), location.hash);
+
   const { name, view, arg } = resolve(location.hash);
 
   // 1) 其余视图全部退场（含上一次的 detail/map/events/macro）

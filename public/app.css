@@ -1,0 +1,15 @@
+
+/* 导航收敛（产品 §3.2）：三个任务分组。
+   任务标签只做视觉分组，不是可点的一层 —— 点任务不会先到中间页。 */
+.tasks { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.task-group { display: flex; align-items: center; gap: 6px; }
+.task-group .task-label {
+  font-size: 11px; letter-spacing: .04em; color: var(--muted, #8a8f98);
+  padding: 2px 6px; border-radius: 4px;
+}
+.task-group.is-active .task-label { color: var(--fg, #e6e8eb); background: rgba(255,255,255,.06); }
+.task-group .nav-link.is-active { color: var(--fg, #e6e8eb); text-decoration: underline; text-underline-offset: 3px; }
+@media (max-width: 720px) {
+  .tasks { gap: 8px; }
+  .task-group .task-label { display: none; }
+}

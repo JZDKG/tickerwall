@@ -16,6 +16,7 @@ import { sigmaOfHistory } from './views/explanations/questions.js';
 // 副作用式导入，不需要任何导出。
 import './views/briefing.js';
 import { refreshHomeBrief } from './views/home-brief-wiring.js';
+import { applyNavActive } from './nav.js';
 
 /** 首页问题优先区（产品 2.3 + 2.4）：容器不存在时整段跳过 */
 const homeBriefEl = document.getElementById('home-brief');
