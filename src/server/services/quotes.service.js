@@ -17,14 +17,7 @@ import {
   humanAge,
 } from '../domain/market-hours.js';
 import { MOVE_SUSPECT_PCT } from '../domain/instruments.js';
-import {
-  getDb,
-  readDailyCache,
-  writeDailyCache,
-  takeSnapshot,
-  readJson,
-  writeHistoryFile,
-} from '../db/index.js';
+import { readDailyCache, takeSnapshot } from '../db/index.js';
 import {
   fetchRaw,
   toNum,
@@ -108,6 +101,16 @@ export {
 };
 
 import {
+  HISTORY_FILE,
+  DAILY_CACHE_DIR,
+  dailyCacheFile,
+  LLM_STORE_FILE,
+  EVENTS_DIR,
+  SNAPSHOT_FILE,
+  scheduleHistorySave,
+  loadPersistedHistory,
+  migrateLegacyStorage,
+  resetStorageTimerForTests,
   HISTORY_LIMIT,
   ring,
   pushHistory,
@@ -123,6 +126,15 @@ import {
 // 走势存储已下沉到 db/quotes-storage.js；转发保持导出面不变
 // （server.mjs 启动时调 loadPersistedHistory、测试里 resetRuntimeState 都从这取）
 export {
+  HISTORY_FILE,
+  DAILY_CACHE_DIR,
+  dailyCacheFile,
+  LLM_STORE_FILE,
+  EVENTS_DIR,
+  SNAPSHOT_FILE,
+  scheduleHistorySave,
+  loadPersistedHistory,
+  migrateLegacyStorage,
   HISTORY_LIMIT,
   ring,
   pushHistory,
@@ -135,34 +147,9 @@ export {
   historyNoteFor,
 };
 
-import { DATA_DIR } from '../paths.js';
-import path from 'node:path';
-import fsp from 'node:fs/promises';
-
-export const HISTORY_FILE = path.join(DATA_DIR, 'history.json');
-// 日线落盘缓存：源全挂时详情页直接读盘，不再白屏
-export const DAILY_CACHE_DIR = path.join(DATA_DIR, 'daily');
-// SQLite 单文件库（node:sqlite 内置，零依赖）
-
-// getDb() 已下沉到 src/server/db/sqlite.js
 
 export const CACHE_TTL_MS = Number(process.env.CACHE_TTL_MS || 15000);
 export const FETCH_TIMEOUT_MS = DEFAULT_FETCH_TIMEOUT_MS;
-
-/**
- * 日线落盘缓存。
- *
- * 起因：2026-10-26 实测东财整段返回空、Yahoo 返回 429，四个标的的详情页
- * 变成「0 条」。多源能缓解，但所有源同时不可用时就只剩缓存这一条路。
- *
- * 策略：新鲜（8h 内）直接用、不打源；过期则请求源，源全失败时回退到旧缓存
- * 并标注陈旧时长。这样图表永远有东西可画，只是明确告诉用户数据截止到哪天。
- */
-
-export function dailyCacheFile(id) {
-  return path.join(DAILY_CACHE_DIR, `${id}.json`);
-}
-
 
 /* ------------------------------------------------------------------ *
  * 基础工具
@@ -192,8 +179,6 @@ export function dailyCacheFile(id) {
 export const lastGood = new Map(); // id -> 最近一次成功快照
 
 
-export let saveTimer = null;
-
 /**
  * 仅供测试：清掉模块级节流状态。
  *
@@ -202,146 +187,10 @@ export let saveTimer = null;
  * 直接 early-return）。生产代码不调用它。
  */
 export function __resetRuntimeStateForTests() {
-  if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = null;
+  resetStorageTimerForTests();
   lastSnapshotAt = 0;
 }
 
-export function scheduleHistorySave() {
-  if (saveTimer) return;
-  saveTimer = setTimeout(async () => {
-    saveTimer = null;
-    try {
-      // 注脚记录走势的真实来源（例如现货金用了期货形态），必须随历史一起持久化
-      await writeHistoryFile(HISTORY_FILE, {
-        notes: Object.fromEntries([...seedNotes].map(([id, rec]) => [id, rec])),
-        history: Object.fromEntries(ring.entries()),
-      });
-    } catch {
-      /* 落盘失败不影响主流程 */
-    }
-  }, 2000);
-}
-
-/**
- * 一次性迁移：把旧的 JSON / JSONL 落盘数据导入 SQLite。
- * 只跑一次（kv 里记 migrated-sqlite-v1 标记），迁移完保留原文件不删，
- * 方便回滚核对。新数据一律只写库。
- */
-export async function migrateLegacyStorage() {
-  try {
-    const db = getDb();
-    const done = db.prepare("SELECT v FROM kv WHERE k = 'migrated-sqlite-v1'").get();
-    if (done) return;
-
-    let importedBars = 0;
-    let importedSnaps = 0;
-    let importedLlm = 0;
-
-    // 1) data/daily/*.json
-    try {
-      const files = await fsp.readdir(DAILY_CACHE_DIR);
-      for (const f of files) {
-        if (!f.endsWith('.json')) continue;
-        try {
-          const obj = JSON.parse(await fsp.readFile(path.join(DAILY_CACHE_DIR, f), 'utf8'));
-          if (Array.isArray(obj?.rows) && obj.rows.length >= 2 && obj.id) {
-            await writeDailyCache(obj.id, obj.source, obj.rows);
-            importedBars += obj.rows.length;
-          }
-        } catch {
-          /* 单个坏文件跳过 */
-        }
-      }
-    } catch {
-      /* 目录不存在 */
-    }
-
-    // 2) data/snapshots.jsonl
-    try {
-      const raw = await fsp.readFile(SNAPSHOT_FILE, 'utf8');
-      const ins = db.prepare(
-        'INSERT OR REPLACE INTO snapshots (at, id, name, price, change_pct) VALUES (?, ?, ?, ?, ?)',
-      );
-      db.exec('BEGIN');
-      try {
-        for (const line of raw.split('\n')) {
-          if (!line.trim()) continue;
-          // 只把「JSON 解析失败」当半截行跳过。写入失败（约束冲突、磁盘满）
-          // 必须冒到事务层，否则整批 0 行也会静默 COMMIT，迁移看起来成功。
-          let obj;
-          try {
-            obj = JSON.parse(line);
-          } catch {
-            continue;
-          }
-          if (!obj?.at || !Array.isArray(obj.quotes)) continue;
-          for (const snap of obj.quotes) {
-            if (!snap?.id || !(snap.price > 0)) continue;
-            ins.run(obj.at, snap.id, snap.name ?? null, snap.price, snap.changePct ?? null);
-            importedSnaps += 1;
-          }
-        }
-        db.exec('COMMIT');
-      } catch (err) {
-        db.exec('ROLLBACK');
-        throw err;
-      }
-    } catch (err) {
-      // 文件不存在是正常情况（首次运行）；写库失败不能一起被吞掉
-      if (err?.code !== 'ENOENT') throw err;
-    }
-
-    // 3) data/llm-cache.json
-    try {
-      const obj = JSON.parse(await fsp.readFile(LLM_STORE_FILE, 'utf8'));
-      if (obj && Object.keys(obj).length) {
-        db.prepare(
-          `INSERT INTO kv (k, v, at) VALUES ('llm-cache', ?, ?)
-           ON CONFLICT(k) DO UPDATE SET v = excluded.v, at = excluded.at`,
-        ).run(JSON.stringify(obj), Date.now());
-        importedLlm = Object.keys(obj).length;
-      }
-    } catch {
-      /* 文件不存在 */
-    }
-
-    db.prepare("INSERT INTO kv (k, v, at) VALUES ('migrated-sqlite-v1', ?, ?)").run(
-      JSON.stringify({ importedBars, importedSnaps, importedLlm }),
-      Date.now(),
-    );
-    console.log(
-      `SQLite 迁移完成：日线 ${importedBars} 行 / 快照 ${importedSnaps} 行 / LLM 缓存 ${importedLlm} 条`,
-    );
-  } catch (err) {
-    console.warn('SQLite 迁移失败:', err?.message ?? err);
-  }
-}
-
-export async function loadPersistedHistory() {
-  try {
-    const obj = await readJson(HISTORY_FILE);
-    if (!obj) return;
-    // 兼容旧格式（直接是 id -> points 的扁平对象）
-    const points = obj.history && typeof obj.history === 'object' ? obj.history : obj;
-    for (const [id, arr] of Object.entries(points)) {
-      if (Array.isArray(arr) && arr.length) {
-        ring.set(id, arr);
-      }
-    }
-    if (obj.notes && typeof obj.notes === 'object') {
-      for (const [id, rec] of Object.entries(obj.notes)) {
-        if (rec && typeof rec.note === 'string' && Number.isFinite(rec.at)) seedNotes.set(id, rec);
-      }
-    }
-  } catch {
-    /* 首次运行没有历史文件 */
-  }
-}
-
-/** 用真实的分时/K 线补齐走势，避免打开看板时空空如也。
- *  只补「当前标的本身」的日内数据；确有代理标的时（如现货金→黄金期货），
- *  会在卡片上注明，并在 12 小时后自动不再显示（届时历史已由真实报价填满）。 */
 /* ------------------------------------------------------------------ *
  * 聚合刷新
  * ------------------------------------------------------------------ */
@@ -659,10 +508,6 @@ export async function getQuotes({ force = false } = {}) {
   return inflight;
 }
 
-export const LLM_STORE_FILE = path.join(DATA_DIR, 'llm-cache.json');
-export const EVENTS_DIR = path.join(DATA_DIR, 'events');
-export const SNAPSHOT_FILE = path.join(DATA_DIR, 'snapshots.jsonl');
-// 快照节流：15 秒刷一次全量落盘会让文件半年就上 GB
 export const SNAPSHOT_MIN_GAP_MS = 5 * 60_000;
 export let lastSnapshotAt = 0;
 

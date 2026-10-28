@@ -225,6 +225,7 @@ describe('分层：跨层符号必须导入（防静默降级）', () => {
     'src/server/db/daily-cache.js',
     'src/server/db/snapshots.js',
     'src/server/db/files.js',
+    'src/server/db/quotes-storage.js',
     'src/server/providers/http.js',
     'src/server/providers/sina.js',
     'src/server/providers/cboe.js',
