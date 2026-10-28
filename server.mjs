@@ -25,7 +25,7 @@ import { getCalendar, getEventStudy } from './src/server/services/calendar.servi
 import { handleExplanationRoutes } from './src/server/routes.js';
 import { startCollector } from './src/server/jobs/collector.js';
 import { handleSystemRoutes } from './src/server/routes/system.js';
-import { buildDefaultJobs } from './src/server/jobs/index.js';
+import { buildDefaultJobs, recoverPendingJobs } from './src/server/jobs/index.js';
 import http from 'node:http';
 import path from 'node:path';
 
@@ -144,6 +144,9 @@ const server = http.createServer((req, res) => {
 /* 后台采集：报价 / 新闻 / 日历 / 日频指标 / 解释重建，各自独立退避。
    即使没有浏览器打开也照常运行（§7.3）；同键任务由调度器合并。 */
 function startBackground() {
+  // 上次进程退出时卡在 running 的可恢复任务，先放回 pending 再开始调度
+  const recovered = recoverPendingJobs();
+  if (recovered) console.log(`[bg] 恢复 ${recovered} 个中断任务`);
   const started = startCollector({
     jobs: buildDefaultJobs(),
     everyMs: 15_000,

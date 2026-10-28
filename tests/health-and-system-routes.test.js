@@ -68,6 +68,20 @@ describe('健康状态：三种状态分开', () => {
     expect(h.sources.registered).toBeGreaterThan(10);
   });
 
+  it('队列积压与 dead 任务能在健康接口里看到', async () => {
+    const { useDatabase, closeDb } = await import('../src/server/db/index.js');
+    const queue = await import('../src/server/jobs/queue.js');
+    useDatabase(':memory:');
+    try {
+      queue.enqueue({ taskKey: 'demo', dedupeKey: 'demo:health' });
+      const h = buildHealth({ uptime: 1, ttlMs: 1, jobs: [], env: {} });
+      expect(h.queue.pending).toBe(1);
+      expect(h.queue.oldestPendingAt).toBeTruthy();
+    } finally {
+      closeDb();
+    }
+  });
+
   it('缺凭据的来源在健康接口里被点名，而不是静默缺席', () => {
     const h = buildHealth({ uptime: 1, ttlMs: 1, jobs: [], env: {} });
     expect(h.sources.unavailable.map((s) => s.id)).toContain('goldapi');

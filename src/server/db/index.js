@@ -74,6 +74,7 @@ export {
   recordCollectionFailure,
   readCollectionState,
   listCollectionStates,
+  recordCollectionWatermark,
   explanationStorageStatus,
 } from './explanations.js';
 

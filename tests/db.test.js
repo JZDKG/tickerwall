@@ -83,8 +83,12 @@ describe('sqlite：连接与建表', () => {
     'observation_revisions',
   ];
 
-  /** E05 之后由迁移 v2 带来的运维表 */
-  const MAINTENANCE_TABLES = ['import_ledger', 'schema_migrations'];
+  /**
+   * 迁移 v2 / v3 带来的运维表：导入台账、迁移记账、可恢复任务队列。
+   * `sqlite_sequence` 是 SQLite 为 `collection_jobs.id INTEGER PRIMARY KEY
+   * AUTOINCREMENT` 自动建的内部表 —— 它出现说明自增语义生效，不是脏表。
+   */
+  const MAINTENANCE_TABLES = ['collection_jobs', 'import_ledger', 'schema_migrations', 'sqlite_sequence'];
 
   it('老表仍在，解释相关的 7 张表与运维表都由版本化迁移建出', () => {
     const names = getDb()

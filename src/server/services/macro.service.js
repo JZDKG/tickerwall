@@ -8,6 +8,7 @@
 import { alignSeries, pairwiseCorr, nwCorrT, benjaminiHochberg } from '../stats/index.js';
 import { readDailyCache, writeDailyCache, DAILY_FRESH_MS } from '../db/index.js';
 import { historySourcesFor } from '../providers/index.js';
+import { createCoalescer } from '../jobs/coalesce.js';
 
 /** 关联分析的标的池：覆盖股 / 债 / 汇 / 商品 / 加密 / 波动率 */
 export const MACRO_UNIVERSE = [
@@ -539,11 +540,25 @@ export async function buildMacro(windowSize = 250, freq = 'day') {
   };
 }
 
+/**
+ * 请求级同键合并（方案 E06 / §7.1）：宏观页一次要拉十几个品种，
+ * 两个页面同时进入时原来会把整批上游抓两遍。
+ */
+const macroCoalescer = createCoalescer();
+
 export async function getMacro(windowSize, freq = 'day', { force = false } = {}) {
   const key = `${freq}:${windowSize}`;
-  const cached = macroCache.get(key);
-  if (!force && cached && Date.now() - cached.at < MACRO_CACHE_TTL_MS) return cached.data;
-  const data = await buildMacro(windowSize, freq);
-  macroCache.set(key, { at: Date.now(), data });
-  return data;
+  const served = await macroCoalescer.get(key, {
+    ttlMs: MACRO_CACHE_TTL_MS,
+    maxServeAgeMs: MACRO_CACHE_TTL_MS * 10,
+    force,
+    load: () => buildMacro(windowSize, freq),
+  });
+  macroCache.set(key, { at: served.at ?? Date.now(), data: served.value });
+  return served.value;
+}
+
+/** 诊断用：某个时间窗的命中 / 合并 / 失败计数 */
+export function macroServeStats(key) {
+  return macroCoalescer.statsFor(key);
 }

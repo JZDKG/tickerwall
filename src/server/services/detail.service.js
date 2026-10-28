@@ -8,6 +8,7 @@
 import path from 'node:path';
 
 import { MARKET_PROFILES, marketStatusOf, parseDataTime, gradeFreshness } from '../domain/market-hours.js';
+import { createCoalescer } from '../jobs/coalesce.js';
 import {
   readDailyCache,
   writeDailyCache,
@@ -519,12 +520,34 @@ export async function fetchBinanceSnapshot(symbol) {
   };
 }
 
+/**
+ * 请求级同键合并（方案 E06 / §7.1）。
+ *
+ * 原来只有「缓存命中」没有「进行中合并」：两个页面同时打开同一个标的，
+ * 双方都没命中缓存，于是同一份上游被并行抓两次。合并后后来者直接复用
+ * 那次结果（`_merged` 标记，便于诊断）。
+ *
+ * 返回值形状不变（这是既有 API 契约），合并/降级信息挂在 `_serve` 上，
+ * 由路由层决定要不要暴露给前端。
+ */
+const detailCoalescer = createCoalescer();
+
 export async function getDetail(id, { force = false } = {}) {
   const inst = findInstrument(id);
   if (!inst) return null;
-  const cached = detailCache.get(id);
-  if (!force && cached && Date.now() - cached.at < DETAIL_CACHE_TTL_MS) return cached.data;
-  const data = await buildDetail(inst);
-  detailCache.set(id, { at: Date.now(), data });
-  return data;
+  const served = await detailCoalescer.get(id, {
+    ttlMs: DETAIL_CACHE_TTL_MS,
+    // 详情页的图表可以显示「N 分钟前」，超过 10 分钟就别再说这是当前行情
+    maxServeAgeMs: DETAIL_CACHE_TTL_MS * 10,
+    force,
+    load: () => buildDetail(inst),
+  });
+  detailCache.set(id, { at: served.at ?? Date.now(), data: served.value });
+  if (!served.value) return null;
+  return served.value;
+}
+
+/** 诊断用：某个标的的命中 / 合并 / 失败计数 */
+export function detailServeStats(id) {
+  return detailCoalescer.statsFor(id);
 }

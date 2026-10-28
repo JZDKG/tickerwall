@@ -16,10 +16,10 @@ import {
 } from '../src/server/domain/explanations/quality.js';
 
 describe('默认任务表', () => {
-  it('五个任务齐全且 key 唯一', () => {
+  it('六个任务齐全且 key 唯一（含可恢复任务队列）', () => {
     const jobs = buildDefaultJobs();
     const keys = jobs.map((j) => j.key);
-    expect(keys).toEqual(['quotes', 'events', 'calendar', 'daily-series', 'explanations']);
+    expect(keys).toEqual(['quotes', 'events', 'calendar', 'daily-series', 'explanations', 'job-queue']);
     expect(new Set(keys).size).toBe(keys.length);
   });
 
@@ -59,7 +59,8 @@ describe('默认任务表', () => {
       observations: mark('observations'),
       explain: mark('explain'),
     });
-    for (const j of jobs) await j.run();
+    // job-queue 会真的去消费队列；这里只想验证 overrides，所以只跑前五个
+    for (const j of jobs.filter((x) => x.key !== 'job-queue')) await j.run();
     expect(calls).toEqual(['quotes', 'events', 'calendar', 'observations', 'explain']);
   });
 
@@ -186,5 +187,69 @@ describe('窗口可用性', () => {
     expect(r.usable).toBe(true);
     expect(r.unavailableDrivers).toEqual(['us10y']);
     expect(r.staleDrivers).toEqual(['oil']);
+  });
+});
+
+/* ================================================================== *
+ * 队列驱动的解释重建（方案 E06 / §7.2）
+ *
+ * 解释重建从「tick 里直接跑」改成「入队 + 队列消化」，换来两件事：
+ *   · 进程在重建中途被杀 → 下次启动恢复（sweepExpiredLeases）
+ *   · 同一资产同一窗口被触发三次 → 只排一个任务
+ * ================================================================== */
+describe('解释重建走队列', () => {
+  it('explanations 任务入队而不是直接重建', async () => {
+    const { useDatabase, closeDb } = await import('../src/server/db/index.js');
+    const queue = await import('../src/server/jobs/queue.js');
+    useDatabase(':memory:');
+    try {
+      const jobs = buildDefaultJobs({});
+      const explainJob = jobs.find((j) => j.key === 'explanations');
+      await explainJob.run();
+      const pending = queue.listJobs({ status: 'pending' });
+      expect(pending.length).toBeGreaterThanOrEqual(1);
+      expect(pending[0].taskKey).toBe('explanation-rebuild');
+      expect(pending[0].dedupeKey).toContain('explain:');
+
+      // 再触发一次：去重，不新增任务
+      const before = queue.listJobs({ status: 'pending' }).length;
+      await explainJob.run();
+      expect(queue.listJobs({ status: 'pending' }).length).toBe(before);
+    } finally {
+      closeDb();
+    }
+  });
+
+  it('drainQueue 用处理器执行任务，成功后进 done', async () => {
+    const { useDatabase, closeDb } = await import('../src/server/db/index.js');
+    const queue = await import('../src/server/jobs/queue.js');
+    const { drainQueue } = await import('../src/server/jobs/index.js');
+    useDatabase(':memory:');
+    try {
+      queue.enqueue({ taskKey: 'demo', dedupeKey: 'demo:1', payload: { n: 1 } });
+      const out = await drainQueue({
+        handlers: { demo: async (job) => ({ doubled: job.payload.n * 2 }) },
+        batch: 5,
+      });
+      expect(out.processed).toBe(1);
+      expect(queue.queueStats().done).toBe(1);
+    } finally {
+      closeDb();
+    }
+  });
+
+  it('没有处理器 → 任务回到 pending 并带上原因（不会静默消失）', async () => {
+    const { useDatabase, closeDb } = await import('../src/server/db/index.js');
+    const queue = await import('../src/server/jobs/queue.js');
+    const { drainQueue } = await import('../src/server/jobs/index.js');
+    useDatabase(':memory:');
+    try {
+      queue.enqueue({ taskKey: 'ghost', dedupeKey: 'ghost:1' });
+      await drainQueue({ handlers: {}, batch: 1 });
+      const job = queue.listJobs({ status: 'pending' })[0];
+      expect(job.lastError).toContain('没有 taskKey=ghost 的处理器');
+    } finally {
+      closeDb();
+    }
   });
 });

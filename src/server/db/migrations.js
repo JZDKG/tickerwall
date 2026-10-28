@@ -151,6 +151,51 @@ export const MIGRATIONS = [
       )`);
     },
   },
+  {
+    version: 3,
+    name: 'job-queue-and-watermarks',
+    up(db) {
+      /**
+       * 可恢复任务表（方案 E06 / §7.2）。
+       *
+       * 什么进这里：**可恢复**的长任务 —— 历史回补、批量解释重算。它们值在
+       * 「进程被杀之后还能接着做」，不是「多线程调度」。
+       * 什么不进这里：15 秒一次的报价轮询。把那也持久化，重启后要补跑一堆
+       * 早就过期的轮询，纯属自找麻烦。
+       *
+       * dedupe_key 唯一：同一个解释重建请求被触发三次，只该排一个任务。
+       */
+      db.exec(`CREATE TABLE IF NOT EXISTS collection_jobs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_key TEXT NOT NULL,
+        dedupe_key TEXT NOT NULL,
+        payload TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        max_attempts INTEGER NOT NULL DEFAULT 5,
+        lease_until INTEGER,
+        next_attempt_at INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        result TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        finished_at INTEGER
+      )`);
+      db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_dedupe ON collection_jobs(dedupe_key)');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_jobs_status ON collection_jobs(status, next_attempt_at)');
+
+      /**
+       * 数据水位：最后一次成功采集时「数据本身截止到哪一刻」。
+       * 与 last_success_at 不同 —— 抓取成功不代表拿到了新数据（休市、源延迟）。
+       * 页面上「数据截止 15:00」读的是这一列。
+       */
+      try {
+        db.exec('ALTER TABLE collection_state ADD COLUMN data_cutoff_at TEXT');
+      } catch {
+        /* 列已存在（重复升级） */
+      }
+    },
+  },
 ];
 
 /** 当前代码期望的 schema 版本 */

@@ -11,6 +11,7 @@
 
 import { createHash } from 'node:crypto';
 import { fetchRaw, toNum } from '../providers/index.js';
+import { createCoalescer } from '../jobs/coalesce.js';
 import { fetchFeedCatalog, DIRECT_FEEDS, GOOGLE_FEEDS } from '../providers/news-feeds.js';
 import { COMPILED_TOPICS, IMPACT_WORDS, anyWordHit, sanitizeText, sanitizeUrl, guessRegion, isOfficialRoutine, dedupeKey } from '../domain/news-lexicon.js';
 import { kvGetJson, kvSetJson } from '../db/index.js';
@@ -758,6 +759,14 @@ export async function getEventHistory({ hours = 24, limit = 600, nowMs = Date.no
   };
 }
 
+/**
+ * 请求级同键合并（方案 E06 / §7.1）。
+ *
+ * 事件列表是「多源并行抓 + 去重 + 聚类」的重活，两个标签页同时刷新就会把
+ * 四五个上游各打两遍。这里把「构建」整体当成一个同键任务：同键并发只跑一次。
+ */
+const eventsCoalescer = createCoalescer();
+
 export async function getEvents({ force = false, limit = 160 } = {}) {
   const cached = eventsCache.get('ev');
   if (!force && cached && Date.now() - cached.at < EVENTS_CACHE_TTL_MS) {
@@ -770,6 +779,32 @@ export async function getEvents({ force = false, limit = 160 } = {}) {
     return data;
   }
 
+  const served = await eventsCoalescer.get('ev', {
+    ttlMs: EVENTS_CACHE_TTL_MS,
+    maxServeAgeMs: EVENTS_CACHE_TTL_MS * 10,
+    force,
+    load: () => loadEvents({ force, limit }),
+  });
+  if (served.value) return served.value;
+
+  // 全部失败且没有旧值：返回一个「明确不可用」的形状，而不是抛出 500
+  return {
+    ok: false,
+    status: 'unavailable',
+    items: [],
+    clusters: [],
+    errors: [{ key: 'events', source: '全部来源', error: served.error }],
+    llm: { applied: 0, pending: llmInFlight, ...llmStats },
+  };
+}
+
+/** 诊断用：事件列表的命中 / 合并 / 失败计数 */
+export function eventsServeStats() {
+  return eventsCoalescer.statsFor('ev');
+}
+
+/** 真正去抓、去重、聚类的那一段（同键只跑一次） */
+async function loadEvents({ force = false, limit = 160 } = {}) {
   // 国内三源是快讯流（秒级更新），全球源是报道流（分钟级）—— 两条并行，
   // 各自吃各自的缓存，合并后才做去重与分类。
   const DOMESTIC = [

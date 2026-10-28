@@ -15,6 +15,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { contractInfo } from '../contracts/index.js';
+import { queueStats } from '../jobs/queue.js';
 import { SOURCES, sourceAvailability, validateRegistry } from '../providers/registry.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -71,6 +72,17 @@ export function buildHealth({ uptime, ttlMs, jobs = [], env = process.env }) {
     contracts = { compiled: 0, names: [] };
   }
 
+  /**
+   * 队列积压也要能看见（§9.3「数据健康」）。
+   * 只看 HTTP 200 是看不出「重建任务全卡在 dead」的。
+   */
+  let jobsQueue = null;
+  try {
+    jobsQueue = queueStats();
+  } catch {
+    jobsQueue = null; // 库还没就绪时不该让健康接口整体失败
+  }
+
   return {
     ok: readiness.ready,
     uptime,
@@ -79,5 +91,6 @@ export function buildHealth({ uptime, ttlMs, jobs = [], env = process.env }) {
     readiness,
     contracts,
     sources: { registered: Object.keys(SOURCES).length, unavailable },
+    queue: jobsQueue,
   };
 }

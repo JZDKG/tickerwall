@@ -579,7 +579,20 @@ export function readCollectionState(jobKey) {
     fails: row.fails,
     backoffUntil: row.backoff_until,
     inflight: row.inflight,
+    dataCutoffAt: row.data_cutoff_at ?? null,
   };
+}
+
+/**
+ * 记录数据水位：「这次成功采集到的数据本身截止到哪一刻」。
+ * 抓取成功不等于有新数据（休市/源延迟），页面上「数据截止」读的是它。
+ */
+export function recordCollectionWatermark(jobKey, cutoffAt) {
+  db()
+    .prepare(
+      `UPDATE collection_state SET data_cutoff_at = ? WHERE job_key = ?`,
+    )
+    .run(cutoffAt == null ? null : String(cutoffAt), String(jobKey));
 }
 
 export function listCollectionStates() {
@@ -593,6 +606,7 @@ export function listCollectionStates() {
       lastErrorAt: row.last_error_at,
       fails: row.fails,
       backoffUntil: row.backoff_until,
+      dataCutoffAt: row.data_cutoff_at ?? null,
     }));
 }
 
