@@ -163,6 +163,43 @@ jsdom 单测结构上就抓不到 —— 必须开真浏览器。**
 结论：`route()` 幂等是一个独立的、正确的修复（重挂会丢视图状态，这对
 map/events/macro 同样成立），但它不是这个 bug 的完整解。
 
+#### 第 69 轮：**已修**。根因是「取历史」覆盖了「取解释」
+
+把 repaint 的**完整栈**打出来，一行就定位了：
+
+```
+at repaintExplainCard (detail.js:1267)
+at hydrateHistory     (detail.js:1225)
+```
+
+`hydrateHistory` 原来是：
+
+```js
+const next = await refreshHistory(explainState);   // next 来自 await 之前捕获的旧状态
+explainState = { ...next, ... };                   // ← 把 loading 整体盖回来
+```
+
+`refreshHistory` 只是 `{...state, history}`，而它手里的 `state` 是
+**await 之前**那个 phase=loading 的对象。于是并发的「取解释」刚写好的
+ready 被这个次要动作覆盖回 loading。修法：只合并 `history` / `historyStatus`，
+不整体替换状态。
+
+修后真实浏览器复测（同一台 Chrome）：
+
+| 观测 | 结果 |
+| --- | --- |
+| `data-phase` | **ready（2 秒内）** |
+| 渠道按钮 | 6 个 |
+| 分层标签 | `事实` / `本次候选解释` / `一般机制` ×6 |
+| 渠道展开 | `aria-expanded` false → true，展开体可见 |
+| 变化记录 | 点开 `open=1`；再点 `open=0` 且清空 |
+| 追问展开 | `.fu-item` open=true |
+| 页面异常 | 0 |
+
+变化记录面板显示「变化记录暂时不可用」是**正确行为**：库里只有一版，
+没有可比对象；接口本身有 `before`（说明有更早一版），面板文案按
+「不可比」处理而不是留空白。
+
 ### 顺带确认的正常项
 
 | 页面 | 结果 |

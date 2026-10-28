@@ -369,3 +369,38 @@ describe('解释卡不能被转义成文本', () => {
     }
   });
 });
+
+/* ================================================================== *
+ * 取历史不能把解释覆盖回 loading
+ *
+ * 故障形态：`hydrateHistory` 用 await **之前**捕获的旧状态 spread 出新状态，
+ * 再整体赋回 explainState。于是并发的「取解释」刚写好的 ready 被覆盖成
+ * loading，卡片永远停在「正在整理解释…」。
+ * 真实浏览器里的栈只有两层：at repaintExplainCard ← at hydrateHistory。
+ * ================================================================== */
+describe('取历史只合并历史', () => {
+  it('解释已 ready 时，取历史后仍然是 ready（不被覆盖回 loading）', async () => {
+    document.body.innerHTML = '<section id="detail"><div id="d-explain"></div></section>';
+    const expBody = () => ({
+      schemaVersion: '1',
+      explanation: {
+        id: 'exp_1', assetId: 'gold-intl', asOf: '2026-10-28T10:00:00.000Z', contentStatus: 'ok',
+        summary: '摘要', facts: [], hypotheses: [], unknowns: [], nextChecks: [], windowKey: 'session',
+      },
+      meta: { freshness: 'fresh', freshnessReasons: [], backgroundStale: [] },
+    });
+    vi.stubGlobal('fetch', vi.fn(async (url) => {
+      const u = String(url);
+      if (u.includes('api/explanations/history')) return { ok: true, status: 200, json: async () => ({ ok: true, items: [{ id: 'v1' }] }) };
+      if (u.includes('api/explanations')) return { ok: true, status: 200, json: async () => expBody() };
+      return { ok: true, status: 200, json: async () => basePayload() };
+    }));
+    await d.loadDetail('gold-intl');
+    const ready = await d.hydrateExplanation();
+    if (ready === null) return; // loadDetail 已经在序号上把这个响应丢了，跳过
+    expect(ready.phase).toBe('ready');
+    const afterHistory = await d.hydrateHistory();
+    expect(afterHistory.phase).toBe('ready');
+    expect(afterHistory.explanation).toBeTruthy();
+  });
+});

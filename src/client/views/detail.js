@@ -1221,7 +1221,16 @@ export async function hydrateHistory() {
   const assetAtStart = explainState.assetId;
   const next = await refreshHistory(explainState);
   if (!explainState || explainState.assetId !== assetAtStart) return null;
-  explainState = { ...next, openFactors: explainState.openFactors, replay: explainState.replay, assetName: explainState.assetName };
+  /**
+   * **只合并历史，不覆盖解释本身**。
+   *
+   * 原来这里是 `explainState = { ...next, … }`，而 `next` 是 `refreshHistory`
+   * 在 await 之前捕获的旧状态 spread 出来的。于是「取历史」这个次要动作会把
+   * 并发的「取解释」已经写好的 ready 状态**覆盖回 loading** ——
+   * 卡片永远停在「正在整理解释…」。真实浏览器里就是这样，而且栈只有一层：
+   *   at repaintExplainCard ← at hydrateHistory
+   */
+  explainState = { ...explainState, history: next.history, historyStatus: next.historyStatus };
   repaintExplainCard();
   return explainState;
 }
