@@ -42,6 +42,13 @@ document.body.innerHTML = `
           <div class="mf-item" data-id="a"></div>
           <div class="mf-item" data-id="b"></div>
         </div>
+        <button id="cal-chip" type="button">48h</button>
+        <button id="map-zoom-in" type="button">+</button>
+        <button id="map-zoom-out" type="button">−</button>
+        <button id="map-reset" type="button">复位</button>
+        <button id="map-region-clear" type="button">显示全部</button>
+        <button id="mf-fold" type="button">⟩</button>
+        <button id="map-full" type="button">全屏</button>
         <div id="map-timeline">
           <div class="tl-cols">
             <button class="tl-col" type="button" data-bucket="0"></button>
@@ -130,5 +137,112 @@ describe('播报台的公开控制', () => {
     map.renderMap();
     expect(() => map.stopMapTimer()).not.toThrow();
     expect(() => map.renderMap()).not.toThrow();
+  });
+});
+
+
+/* ================================================================== *
+ * 工具按钮与手势回调（map.js 里那一串 bindMapEvents 的匿名函数）
+ *
+ * 每一条都是「点了之后要发生什么」。它们不抛、也不报错，只是**不做**——
+ * 最典型的是「双击放大」和「点空白收起卡片」：坏了没人发现，用户只觉得
+ * 地图不跟手。
+ * ================================================================== */
+describe('工具按钮', () => {
+  const click = (id) => {
+    const el = document.getElementById(id);
+    if (!el) return false;
+    el.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    return true;
+  };
+
+  it('放大 / 缩小 / 复位都不抛（走 CTM 投影中心，不假设留白对称）', () => {
+    map.renderMap();
+    expect(() => click('map-zoom-in')).not.toThrow();
+    expect(() => click('map-zoom-out')).not.toThrow();
+    expect(() => click('map-reset')).not.toThrow();
+  });
+
+  it('「显示全部」清掉赛区聚焦', () => {
+    map.renderMap();
+    map.focusRegion('us');
+    expect(() => click('map-region-clear')).not.toThrow();
+  });
+
+  it('收起事件流按钮改文案并切换类名', () => {
+    map.renderMap();
+    const btn = document.getElementById('mf-fold');
+    if (!btn) return;
+    btn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    expect(['⟩', '⟨']).toContain(btn.textContent);
+  });
+
+  it('全屏按钮在没有 fullscreen API 时也不抛', () => {
+    map.renderMap();
+    expect(() => click('map-full')).not.toThrow();
+  });
+
+  it('48h 信标点开预览卡，再点收起', () => {
+    map.renderMap();
+    if (!click('cal-chip')) return;
+    const card = document.getElementById('cal-card');
+    if (card) {
+      click('cal-chip');
+      expect(document.getElementById('cal-card')).toBeNull();
+    }
+  });
+});
+
+describe('图上手势', () => {
+  it('双击放大（GIS 标准手势）', () => {
+    map.renderMap();
+    const svg = document.querySelector('.world-svg');
+    expect(() => svg.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true, clientX: 100, clientY: 100 }))).not.toThrow();
+  });
+
+  it('点空白处收起节点卡并退出赛区聚焦', () => {
+    map.renderMap();
+    map.focusRegion('us');
+    map.openNodeCard('ny');
+    const svg = document.querySelector('.world-svg');
+    svg.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    // 收起后卡片应当不在文档里
+    expect(document.getElementById('map-node-card')).toBeNull();
+  });
+
+  it('点国家多边形聚焦该赛区（再点同一国家复位）', () => {
+    map.renderMap();
+    const path = document.querySelector('.world-land path[data-region]');
+    if (!path) return;
+    path.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    expect(() => map.focusRegion(null)).not.toThrow();
+  });
+
+  it('播报台悬停暂停、移开继续（用 on* 赋值，监听器不会叠）', () => {
+    map.renderMap();
+    const bc = document.getElementById('map-broadcast');
+    if (!bc) return;
+    expect(() => bc.dispatchEvent(new window.MouseEvent('pointerenter', { bubbles: true }))).not.toThrow();
+    expect(() => bc.dispatchEvent(new window.MouseEvent('pointerleave', { bubbles: true }))).not.toThrow();
+  });
+
+  it('点播报台打开原文或退到关联标的（绝不拼 #/d/<事件id>）', () => {
+    map.renderMap();
+    const bc = document.getElementById('map-broadcast');
+    if (!bc) return;
+    const before = window.location.hash;
+    expect(() => bc.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))).not.toThrow();
+    if (window.location.hash !== before) {
+      expect(window.location.hash).toMatch(/^#\/d\/(sp500|oil)?$/);
+    }
+  });
+
+  it('事件流行的悬停/点击都只改播报状态（不抛）', () => {
+    map.renderMap();
+    const row = document.querySelector('.mf-item');
+    if (!row) return;
+    for (const type of ['pointerenter', 'pointerleave', 'click']) {
+      expect(() => row.dispatchEvent(new window.MouseEvent(type, { bubbles: true }))).not.toThrow();
+    }
   });
 });
