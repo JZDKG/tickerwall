@@ -236,3 +236,13 @@ describe('生活场景接进同一屏', () => {
     el.remove();
   });
 });
+
+describe('启动时真的会拉（不是只有函数定义）', () => {
+  it('main.js 在启动流程里调用了 refreshHomeBriefSafe 与 scheduleHomeBrief', async () => {
+    const src = await import('node:fs').then((fs) => fs.readFileSync('src/client/main.js', 'utf8'));
+    // 必须有**调用**（带括号），不能只有定义
+    expect(src).toMatch(/refreshHomeBriefSafe\s*\(/);
+    expect(src).toMatch(/^\s*scheduleHomeBrief\s*\(/m);
+    expect(src).toMatch(/void refreshHomeBriefSafe\(\)/);
+  });
+});

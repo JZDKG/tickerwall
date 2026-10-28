@@ -154,4 +154,12 @@ setInterval(paintCountdown, 250);
 renderSkeleton();
 // 每次打开页面都强制向数据源拉一次最新值，而不是命中服务端缓存
 loadQuotes(true);
+/**
+ * 问题优先区（产品 2.3 / 2.4 / 2.6）：启动时拉一次，之后按 5 分钟刷新。
+ *
+ * 这一句之前漏了 —— 两个函数写好了、也有测试，但**没有任何人调用**，
+ * 结果 #home-brief 永远是 hidden。真实浏览器自检才照出来。
+ */
+void refreshHomeBriefSafe();
+scheduleHomeBrief();
 route();

@@ -108,24 +108,24 @@ describe('只答适用的问题', () => {
 describe('面板', () => {
   it('每个问题是一个可折叠项，点开看回答', () => {
     const el = document.createElement('div');
-    el.innerHTML = followupsHTML(scopedFollowups({ explanation: exp() }));
+    el.innerHTML = String(followupsHTML(scopedFollowups({ explanation: exp() })));
     expect(el.querySelectorAll('details.fu-item')).toHaveLength(3);
     expect(el.querySelector('summary').textContent).toContain('实际收益率');
   });
 
   it('回答里带上下文那一行（读者知道回答的是哪个资产哪个窗口）', () => {
     const el = document.createElement('div');
-    el.innerHTML = followupsHTML(scopedFollowups({ explanation: exp() }));
+    el.innerHTML = String(followupsHTML(scopedFollowups({ explanation: exp() })));
     expect(el.querySelector('.fu-context').textContent).toContain('gold-intl');
   });
 
-  it('空列表不渲染任何东西', () => {
-    expect(followupsHTML([])).toBe('');
-    expect(followupsHTML(null)).toBe('');
+  it('空列表不渲染任何东西（返回空 SafeHtml，String 后为空串）', () => {
+    expect(String(followupsHTML([]))).toBe('');
+    expect(String(followupsHTML(null))).toBe('');
   });
 
   it('整屏不出现买卖建议', () => {
-    const html = followupsHTML(scopedFollowups({ explanation: exp() }));
+    const html = String(followupsHTML(scopedFollowups({ explanation: exp() })));
     for (const word of ['买入', '卖出', '加仓', '抄底']) expect(html).not.toContain(word);
   });
 });
@@ -195,7 +195,7 @@ describe('上下文缺失时的兜底（真实存在的情况）', () => {
   });
 
   it('条目缺少 answer 时不输出 undefined（面板健壮性）', () => {
-    const html = followupsHTML([{ id: 'x', ask: '问题' }]);
+    const html = String(followupsHTML([{ id: 'x', ask: '问题' }]));
     expect(html).not.toContain('undefined');
   });
 });

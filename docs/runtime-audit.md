@@ -46,9 +46,29 @@
 
 `/tmp/k61b.log` 中 `error` 计数 0。
 
+## 四之二、真实浏览器自检（Chrome 156 headless，`--dump-dom`）
+
+用真实 Chrome 打开三个页面并 dump 最终 DOM。**这一步找到三个 bug，都是 jsdom 测试照不出来的**：
+
+| # | 现象 | 原因 | 修法 |
+| --- | --- | --- | --- |
+| 1 | `#home-brief` 永远 `hidden=""` 且为空 | `refreshHomeBriefSafe()` 与 `scheduleHomeBrief()` **只定义了、没有任何人调用** | `main.js` 启动流程里补上调用，并加一条守卫测试（断言源码里有**调用**而不只是定义） |
+| 2 | `#today-focus-slot` 一直空 | `hydrateTodayFocus()` 在 `loadEvents()` **之前**跑；后者重写 `eventsEl.innerHTML`，把刚填的槽位冲掉 | 改成 `loadEvents(true).then(() => hydrateTodayFocus())` |
+| 3 | `#d-followups` 里显示成一串 `&lt;details…` 文本 | `followupsHTML` 返回**裸字符串**，嵌进 `html\`\`` 时被自动转义 | 改成用 `` html`` `` 拼、返回 SafeHtml；空面板返回空 SafeHtml |
+
+修后复测：
+
+| 页面 | 标记 | 结果 |
+| --- | --- | --- |
+| 首页 | `wb-card` / `exp-card` / `lp-card` | 各 1，`#home-brief` 无 `hidden` |
+| 事件中心 | `tf-card` / `下一件关键发布` | 各 1，槽位有内容 |
+| 详情 | `d-followups` / `fu-item` | 有内容，且不再是转义文本 |
+
+**结论：这类「只定义没调用」「顺序被重建冲掉」「裸字符串被转义」的问题，
+jsdom 单测结构上就抓不到 —— 必须开真浏览器。**
+
 ## 五、还没覆盖的
 
-- 三个页面（首页 / 事件中心 / 详情）的**浏览器端渲染**没有跑真实浏览器验证，
-  只有 jsdom 测试。最近三轮的 jsdom 与真实 DOM 差距出过两次问题
-  （`renderMap` 整块重建、模块加载时抓节点），所以这一条仍是已知缺口。
+- 三个页面的浏览器端渲染**已用真实 Chrome 验证**（见上节），并据此修了三个 bug。
+  仍未覆盖：交互路径（点击展开、切换窗口）在真实浏览器里的行为只有 jsdom 验证。
 - 覆盖金币/原油的源当前滞后，接口会把状态标成 `stale`，这是预期行为而非故障。

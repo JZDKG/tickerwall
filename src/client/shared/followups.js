@@ -14,6 +14,8 @@
  * ================================================================== */
 
 /** 三类与任何机制都相关的问题（顺序即展示顺序） */
+import { html } from './format.js';
+
 export const FOLLOWUP_KINDS = [
   {
     id: 'why',
@@ -153,17 +155,26 @@ function answerFor(kind, exp, h) {
   };
 }
 
-/** 追问面板：可点的问题 + 点开后的回答 */
+/**
+ * 追问面板：可点的问题 + 点开后的回答。
+ *
+ * 返回 SafeHtml（用 html`` 拼）而不是裸字符串：调用方会把它嵌进另一个
+ * html`` 里，裸字符串会被**转义成文本**显示（真实浏览器里就是这样，
+ * 页面上一串 `&lt;details`）。
+ */
 export function followupsHTML(list) {
   const items = (list ?? []).filter((x) => x?.ask);
-  if (!items.length) return '';
-  return items
-    .map(
-      (f) => `<details class="fu-item" data-kind="${f.id}">
+  if (!items.length) return htmlEmpty();
+  return html`${items.map(
+    (f) => html`<details class="fu-item" data-kind="${f.id}">
         <summary>${f.ask}</summary>
         <p class="fu-answer">${f.answer?.text ?? ''}</p>
         <p class="fu-context">${f.answer?.context ?? ''}</p>
       </details>`,
-    )
-    .join('');
+  )}`;
+}
+
+/** 空面板：返回同样类型的空 SafeHtml，调用方不必判类型 */
+function htmlEmpty() {
+  return html``;
 }

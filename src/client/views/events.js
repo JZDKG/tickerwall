@@ -628,9 +628,11 @@ export async function hydrateTodayFocus({ fetchImpl = null } = {}) {
 export function mountEvents() {
   eventsEl.hidden = false;
   window.scrollTo({ top: 0 });
-  loadEvents(true);
-  // 顶部结构单独一路取：取不到就保持空槽，不挡事件流
-  void hydrateTodayFocus();
+  /**
+   * 顺序很关键：`loadEvents` 会重写 eventsEl.innerHTML，槽位是它的一部分。
+   * 先 hydrate 再 loadEvents，会把刚填好的内容冲掉（真实浏览器里槽位一直是空的）。
+   */
+  void loadEvents(true).then(() => hydrateTodayFocus());
   eventsTimer = setInterval(() => loadEvents(false), 30000);
 }
 
