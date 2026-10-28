@@ -935,3 +935,140 @@ describe('缩放与自适应', () => {
     expect(() => canvas.toggleStyle()).not.toThrow();
   });
 });
+
+
+/* ================================================================== *
+ * 图事件回调（bindEvents）
+ *
+ * 这些回调是 X6 事件 → 业务动作的唯一通路。它们的特征是「静默」：
+ * 判错一个 data 标记，点击就没反应，控制台一片干净。
+ * ================================================================== */
+describe('图事件回调', () => {
+  const makeNode = (id, data) => ({ id, getData: () => data, getPosition: () => ({ x: 1, y: 2 }) });
+  const makeEdge = (data) => ({ id: 'e', getData: () => data });
+
+  const build = () => {
+    const calls = { edge: [], node: [], dbl: [], spotlight: [] };
+    const canvas = new MacroFlowCanvas(makeContainer(), {
+      onEdge: (id) => calls.edge.push(id),
+      onNode: (id) => calls.node.push(id),
+      onNodeDbl: (id) => calls.dbl.push(id),
+    });
+    canvas.layout = { mode: 'compass', nodes: [], links: [] };
+    canvas.state = { graphMode: 'compass' };
+    canvas.manual = new Map();
+    canvas.cardBoxes = new Map();
+    canvas.placedPills = [];
+    canvas.setSpotlight = (id) => calls.spotlight.push(id);
+    canvas.syncPills = () => {};
+    canvas.pruneOrphanViews = () => {};
+    canvas.bindEvents();
+    return { canvas, calls };
+  };
+
+  const emit = (canvas, evt, payload) => canvas.graph.emit(evt, payload);
+
+  it('点普通节点 → onNode', () => {
+    const { canvas, calls } = build();
+    emit(canvas, 'node:click', { node: makeNode('n1', {}) });
+    expect(calls.node).toEqual(['n1']);
+  });
+
+  it('点胶囊 → 走 onEdge（胶囊是边的替身）', () => {
+    const { canvas, calls } = build();
+    emit(canvas, 'node:click', { node: makeNode('p1', { pill: true, edgeId: 'E01' }) });
+    expect(calls.edge).toEqual(['E01']);
+  });
+
+  it('点分组带 → 什么都不做（它不是可交互节点）', () => {
+    const { canvas, calls } = build();
+    emit(canvas, 'node:click', { node: makeNode('b1', { band: true }) });
+    emit(canvas, 'node:dblclick', { node: makeNode('b1', { band: true }) });
+    emit(canvas, 'node:moving', { node: makeNode('b1', { band: true }) });
+    emit(canvas, 'node:moved', { node: makeNode('b1', { band: true }) });
+    expect(calls.node).toEqual([]);
+    expect(calls.dbl).toEqual([]);
+    expect(canvas.manual.size).toBe(0);
+  });
+
+  it('双击节点 → onNodeDbl（切到单点导图）', () => {
+    const { canvas, calls } = build();
+    emit(canvas, 'node:dblclick', { node: makeNode('n1', {}) });
+    expect(calls.dbl).toEqual(['n1']);
+  });
+
+  it('点主线 → onEdge', () => {
+    const { canvas, calls } = build();
+    emit(canvas, 'edge:click', { edge: makeEdge({ edgeId: 'E02' }) });
+    expect(calls.edge).toEqual(['E02']);
+  });
+
+  it('点流光叠加边 → 忽略（它只是视觉层，不对应用户心智里的那条边）', () => {
+    const { canvas, calls } = build();
+    emit(canvas, 'edge:click', { edge: makeEdge({ overlay: true, edgeId: 'E02' }) });
+    expect(calls.edge).toEqual([]);
+  });
+
+  it('没有 edgeId 的边 → 忽略', () => {
+    const { canvas, calls } = build();
+    emit(canvas, 'edge:click', { edge: makeEdge({ edgeId: null }) });
+    expect(calls.edge).toEqual([]);
+  });
+
+  it('拖动中/拖动结束都会重贴胶囊；结束还记下手动位置', () => {
+    const { canvas } = build();
+    emit(canvas, 'node:moving', { node: makeNode('n1', {}) });
+    emit(canvas, 'node:moved', { node: makeNode('n1', {}) });
+    expect(canvas.manual.get('n1')).toEqual({ x: 1, y: 2 });
+  });
+
+  it('悬停点亮一阶上下游，移开清掉', () => {
+    const { canvas, calls } = build();
+    emit(canvas, 'node:mouseenter', { node: makeNode('n1', {}) });
+    emit(canvas, 'node:mouseleave', {});
+    expect(calls.spotlight).toEqual(['n1', null]);
+  });
+
+  it('渲染完成与缩放事件都会补一次对账/标签同步', () => {
+    const { canvas } = build();
+    let labels = 0;
+    canvas.syncZoomLabel = () => { labels += 1; };
+    emit(canvas, 'render:done', {});
+    emit(canvas, 'scale', {});
+    expect(labels).toBe(1);
+  });
+
+  it('点击空白处不抛（只收起卡片，无副作用）', () => {
+    const { canvas } = build();
+    expect(() => emit(canvas, 'blank:click', {})).not.toThrow();
+  });
+});
+
+describe('冲击触达集合与销毁', () => {
+  it('setShockTouched 写入后可读（沙盘压暗靠它）', () => {
+    const canvas = new MacroFlowCanvas(makeContainer());
+    canvas.setShockTouched(new Set(['E01']));
+    expect(canvas.touchedEdges.has('E01')).toBe(true);
+  });
+
+  it('dispose 断开 ResizeObserver、移除工具条并释放图', () => {
+    const canvas = new MacroFlowCanvas(makeContainer());
+    let disconnected = 0;
+    let removed = 0;
+    let disposed = 0;
+    canvas.ro = { disconnect: () => { disconnected += 1; } };
+    canvas.tools = { remove: () => { removed += 1; } };
+    canvas.graph = { dispose: () => { disposed += 1; } };
+    canvas.dispose();
+    expect(disconnected).toBe(1);
+    expect(removed).toBe(1);
+    expect(disposed).toBe(1);
+    expect(canvas.graph).toBeNull();
+  });
+
+  it('dispose 之后再 dispose 不抛（卸载路径要幂等）', () => {
+    const canvas = new MacroFlowCanvas(makeContainer());
+    canvas.dispose();
+    expect(() => canvas.dispose()).not.toThrow();
+  });
+});

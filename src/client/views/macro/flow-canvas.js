@@ -775,10 +775,13 @@ export class MacroFlowCanvas {
   }
 
   dispose() {
+    // 每一步都要能重复执行：卸载路径可能被调用两次（路由切走 + 组件销毁），
+    // 第二次进来 this.graph 已经是 null，不能再假设它还有 dispose 方法。
     this.ro?.disconnect();
     this.ro = null;
     this.tools?.remove();
-    this.graph?.dispose();
+    this.tools = null;
+    this.graph?.dispose?.();
     this.graph = null;
   }
 }
