@@ -126,6 +126,18 @@ export function createApp(deps) {
         const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(30, Math.floor(rawLimit)) : 12;
         return sendJson(res, 200, await deps.getExpectationLedger({ limit, force: takeForce(url) }));
       }
+      /**
+       * 关注简报（产品 2.3）：只看你关心的问题有没有新变化。
+       * 关注项存在前端本地，所以 assets / since 都由查询参数带上来 ——
+       * 服务端不猜「最近 24 小时」，猜了会让三天没来的用户漏看。
+       */
+      if (url.pathname === '/api/brief') {
+        const assets = (url.searchParams.get('assets') ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+        const keys = (url.searchParams.get('keys') ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+        const rawSince = Number(url.searchParams.get('since'));
+        const sinceMs = url.searchParams.get('since') && Number.isFinite(rawSince) && rawSince > 0 ? rawSince : null;
+        return sendJson(res, 200, await deps.getWatchBrief({ assets, watchedKeys: keys, sinceMs }));
+      }
       // 解释读取与事件版本（方案 §8.1）：实现在 routes.js，这里只委派一次
       if (await handleExplanationRoutes(url, res, { takeForce })) return;
       if (url.pathname === '/api/calendar') {
