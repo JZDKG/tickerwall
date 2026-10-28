@@ -191,8 +191,15 @@ describe('raw() 的使用范围', () => {
    *
    * views/macro.js —— 同类：multiLineSVG / richRollingSVG 产出的是纯 SVG
    *   几何（路径坐标由数值算出），不是 HTML 文本，必须原样嵌入。
+   *
+   * views/detail.js —— 同上：chartSVG / candleSVG / volumeSVG / intradaySVG
+   *   四个图表生成器输出 SVG 几何，内部已对坐标标签做 esc。
    */
-  const RAW_ALLOWED = new Set([path.join('views', 'map.js'), path.join('views', 'macro.js')]);
+  const RAW_ALLOWED = new Set([
+    path.join('views', 'map.js'),
+    path.join('views', 'macro.js'),
+    path.join('views', 'detail.js'),
+  ]);
 
   function walk(dir) {
     const out = [];
@@ -322,6 +329,7 @@ describe('棘轮：innerHTML 里的裸插值', () => {
     'views/macro.js',
     'views/briefing.js',
     'views/list.js',
+    'views/detail.js',
     path.join('views', 'macro', 'flow-canvas.js'),
   ]);
 
@@ -338,7 +346,7 @@ describe('棘轮：innerHTML 里的裸插值', () => {
    * 全站基线：195 → 134（map）→ 89（macro）→ 82（三个小文件）。
    * 现在只剩 detail.js 一个未迁移文件，它就是 82。
    */
-  const BASELINE = 82;
+  const BASELINE = 0;
 
   function bareInterpolations(code) {
     // 数 `innerHTML = \`…\`` 之后的模板里出现的 ${，粗略但足够做棘轮

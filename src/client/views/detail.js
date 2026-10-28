@@ -8,7 +8,7 @@
  * 详情页
  * ================================================================== */
 import { detailEl } from '../shared/dom.js';
-import { clockText, dirOf, esc, fmtPct, fmtPrice, fmtSigned, html, prettySource } from '../shared/format.js';
+import { clockText, dirOf, esc, fmtPct, fmtPrice, fmtSigned, html, prettySource, raw } from '../shared/format.js';
 import { store } from '../shared/store.js';
 import { loadCalendarCached } from '../shared/calendar.js';
 
@@ -474,10 +474,10 @@ export function bindChartCrosshair(host, payload) {
     const pctTxt =
       pctVal == null
         ? ''
-        : `<span class="${pctVal >= 0 ? 'up' : 'down'}">${pctVal >= 0 ? '+' : ''}${pctVal.toFixed(2)}%</span>`;
+        : html`<span class="${pctVal >= 0 ? 'up' : 'down'}">${pctVal >= 0 ? '+' : ''}${pctVal.toFixed(2)}%</span>`;
     const chg = Number.isFinite(c) && Number.isFinite(o) ? c - o : null;
     const chgTxt =
-      chg == null ? '' : `<span class="${chg >= 0 ? 'up' : 'down'}">${chg >= 0 ? '+' : ''}${fmtPrice(chg, d)}</span>`;
+      chg == null ? '' : html`<span class="${chg >= 0 ? 'up' : 'down'}">${chg >= 0 ? '+' : ''}${fmtPrice(chg, d)}</span>`;
 
     // 当天撞上的宏观事件
     const key = payload.monthMode ? String(date).slice(0, 7) : String(date);
@@ -886,12 +886,12 @@ export function renderDetail(data) {
   const chartH = Math.round(Math.min(320, Math.max(180, chartW * 0.29)));
   const intraH = Math.round(Math.min(210, Math.max(132, chartW * 0.185)));
 
-  detailEl.innerHTML = `
+  detailEl.innerHTML = html`
     <div class="d-top">
       <button type="button" class="back-btn" id="back">← 返回列表</button>
       <div class="d-id">
-        <h2>${esc(data.name)}</h2>
-        <p>${esc(data.sub)} · ${esc(data.unit)}</p>
+        <h2>${data.name}</h2>
+        <p>${data.sub} · ${data.unit}</p>
       </div>
     </div>
 
@@ -904,11 +904,11 @@ export function renderDetail(data) {
       <div class="d-hero-meta">
         ${
           data.marketStatus
-            ? `<span class="mkt-badge ${data.marketStatus.open ? 'open' : 'closed'}">${esc(data.marketStatus.label)}</span><span class="sep">·</span>`
+            ? html`<span class="mkt-badge ${data.marketStatus.open ? 'open' : 'closed'}">${data.marketStatus.label}</span><span class="sep">·</span>`
             : ''
         }
-        ${q.sessionTime ? `<span>行情 ${esc(q.sessionTime)}</span><span class="sep">·</span>` : ''}
-        <span>${esc(prettySource(q.source))}</span>
+        ${q.sessionTime ? html`<span>行情 ${q.sessionTime}</span><span class="sep">·</span>` : ''}
+        <span>${prettySource(q.source)}</span>
         ${q.stale ? '<span class="stale-tag">数据过期</span>' : ''}
       </div>
     </div>
@@ -917,7 +917,7 @@ export function renderDetail(data) {
 
     <section class="d-block">
       <div class="chart-head">
-        <h3>历史走势 <span class="h3-note">${esc(ranged[0]?.[0] ?? '')} ~ ${esc(data.history.endDate ?? '')} · ${ranged.length} 条</span></h3>
+        <h3>历史走势 <span class="h3-note">${ranged[0]?.[0] ?? ''} ~ ${data.history.endDate ?? ''} · ${ranged.length} 条</span></h3>
         <div class="chart-controls">
           <div class="seg" id="range-seg">
             ${[
@@ -926,8 +926,7 @@ export function renderDetail(data) {
               ['5y', '5年'],
               ['all', '全部'],
             ]
-              .map(([k, label]) => `<button type="button" data-r="${k}" class="${range === k ? 'on' : ''}">${label}</button>`)
-              .join('')}
+              .map(([k, label]) => html`<button type="button" data-r="${k}" class="${range === k ? 'on' : ''}">${label}</button>`)}
           </div>
           <div class="seg" id="period-seg">
             <button type="button" data-p="day" class="${period === 'day' ? 'on' : ''}">日K</button>
@@ -951,19 +950,18 @@ export function renderDetail(data) {
       <div class="chart-legend">
         ${
           chartType === 'candle'
-            ? `<span><i class="candle-swatch up"></i>阳线</span><span><i class="candle-swatch down"></i>阴线</span>`
-            : `<span><i style="background:${chartDir === 'up' ? 'var(--up)' : chartDir === 'down' ? 'var(--down)' : 'var(--flat)'}"></i>收盘</span>`
+            ? html`<span><i class="candle-swatch up"></i>阳线</span><span><i class="candle-swatch down"></i>阴线</span>`
+            : html`<span><i style="background:${chartDir === 'up' ? 'var(--up)' : chartDir === 'down' ? 'var(--down)' : 'var(--flat)'}"></i>收盘</span>`
         }
         ${
           showMA
-            ? `<span><i style="background:#5b9cf8"></i>MA20</span><span><i style="background:#e0a83c"></i>MA60</span>`
+            ? html`<span><i style="background:#5b9cf8"></i>MA20</span><span><i style="background:#e0a83c"></i>MA60</span>`
             : ''
         }
         ${
           eventKinds.length
-            ? `<span class="legend-events">${eventKinds
-                .map((k) => `<i class="evt-swatch k-${k}"></i>${esc(EVENT_KIND_LABEL[k] ?? k)}`)
-                .join('')}</span>`
+            ? html`<span class="legend-events">${eventKinds
+                .map((k) => html`<i class="evt-swatch k-${k}"></i>${EVENT_KIND_LABEL[k] ?? k}`)}</span>`
             : ''
         }
         ${showLog ? '<span class="legend-note">对数坐标</span>' : ''}
@@ -971,7 +969,7 @@ export function renderDetail(data) {
       </div>
       <div class="chart-host" id="chart-host">${
         chartType === 'candle'
-          ? candleSVG(series, {
+          ? raw(candleSVG(series, {
               width: chartW,
               height: chartH,
               decimals: d,
@@ -979,8 +977,8 @@ export function renderDetail(data) {
               overlays,
               events: drawnEvents,
               monthMode,
-            })
-          : chartSVG(points, {
+            }))
+          : raw(chartSVG(points, {
               width: chartW,
               height: chartH,
               decimals: d,
@@ -989,26 +987,26 @@ export function renderDetail(data) {
               overlays,
               events: drawnEvents,
               monthMode,
-            })
+            }))
       }</div>
       ${historyEmptyNotice(data.history)}
       ${historyCacheNotice(data.history)}
       ${
         chartType === 'candle' && (series.length > 320 || (chartW < 520 && series.length > 140))
-          ? `<p class="macro-hint">当前 ${series.length} 根 K 线过密，实体已压到 1px、影线已省略。看形态建议缩短区间或切周K / 月K。</p>`
+          ? html`<p class="macro-hint">当前 ${series.length} 根 K 线过密，实体已压到 1px、影线已省略。看形态建议缩短区间或切周K / 月K。</p>`
           : ''
       }
-      ${volumeSVG(
+      ${raw(volumeSVG(
         series.map((r) => ({ v: r[5], pct: r[7] })),
         { width: chartW, height: Math.round(chartH * 0.26), decimals: d },
-      )}
+      ))}
     </section>
 
     ${
       data.intraday?.points?.length
-        ? `<section class="d-block">
-            <h3>当日分时 <span class="h3-note">${esc(data.intraday.date ?? '')} · ${data.intraday.points.length} 个点</span></h3>
-            ${intradaySVG(data.intraday.points, { width: chartW, height: intraH, decimals: d, prevClose: q.prevClose })}
+        ? html`<section class="d-block">
+            <h3>当日分时 <span class="h3-note">${data.intraday.date ?? ''} · ${data.intraday.points.length} 个点</span></h3>
+            ${raw(intradaySVG(data.intraday.points, { width: chartW, height: intraH, decimals: d, prevClose: q.prevClose }))}
           </section>`
         : ''
     }
@@ -1025,11 +1023,11 @@ export function renderDetail(data) {
     ${historyTable(daily, d, detailState.tableRows)}
 
     <footer class="d-foot">
-      <span>历史数据：${esc(prettySource(data.history.source ?? ''))}${data.history.code ? ` · ${esc(data.history.code)}` : ''} · ${data.history.count} 个交易日（${esc(data.history.startDate ?? '')} ~ ${esc(data.history.endDate ?? '')}）</span>
+      <span>历史数据：${prettySource(data.history.source ?? '')}${data.history.code ? ` · ${data.history.code}` : ''} · ${data.history.count} 个交易日（${data.history.startDate ?? ''} ~ ${data.history.endDate ?? ''}）</span>
       ${altSources(data.history)}
       <span>生成于 ${clockText(new Date(data.generatedAt))}</span>
     </footer>
-  `;
+  `.toString();
 
   document.getElementById('back')?.addEventListener('click', () => {
     location.hash = '';
@@ -1097,13 +1095,13 @@ export function renderDetail(data) {
 }
 
 export function renderDetailError(id, message) {
-  detailEl.innerHTML = `
+  detailEl.innerHTML = html`
     <div class="d-top">
       <button type="button" class="back-btn" id="back">← 返回列表</button>
-      <div class="d-id"><h2>${esc(id)}</h2><p>详情加载失败</p></div>
+      <div class="d-id"><h2>${id}</h2><p>详情加载失败</p></div>
     </div>
-    <div class="d-error">${esc(message)}</div>
-  `;
+    <div class="d-error">${message}</div>
+  `.toString();
   document.getElementById('back')?.addEventListener('click', () => {
     location.hash = '';
   });
@@ -1150,7 +1148,7 @@ export function mountDetail(id) {
   window.scrollTo({ top: 0 });
   if (!detailState || detailState.id !== id) {
     detailState = { id, data: null, period: 'day', range: 'all', scale: 'lin', ma: true, type: 'line', tableRows: 30 };
-    detailEl.innerHTML = '<div class="d-loading">正在加载历史数据…</div>';
+    detailEl.innerHTML = html`<div class="d-loading">正在加载历史数据…</div>`.toString();
   }
   loadDetail(id, { force: true });
   stopDetailTimer();
