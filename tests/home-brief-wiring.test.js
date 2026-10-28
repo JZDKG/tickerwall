@@ -201,3 +201,38 @@ describe('选择面板', () => {
     expect(await openPicker({ host: null, storage: memory() })).toBeNull();
   });
 });
+
+describe('生活场景接进同一屏', () => {
+  const routes = (over = {}) => async (p) => {
+    if (p.startsWith('api/brief')) return { ok: true, reason: 'NO_CHANGES', items: [], empty: true, count: 0 };
+    if (p.startsWith('api/life-path')) return over.life ?? { ok: true, title: '油价与出行成本', headline: '上行', steps: [], gaps: [], disclaimer: '不预测' };
+    return { ok: true, total: 0, released: [], pending: [], deviated: [] };
+  };
+
+  it('三块一起渲染', async () => {
+    const el = host();
+    const s = memory();
+    writeWatched(s, ['oil-cost']);
+    await refreshHomeBrief({ host: el, storage: s, nowMs: 1, fetchJson: routes() });
+    // 场景卡的标题来自 path.title；「与生活的连接」只出现在入口清单里
+    expect(el.textContent).toContain('油价与出行成本');
+    el.remove();
+  });
+
+  it('生活场景取数失败不影响其它两块（它是额外一块）', async () => {
+    const el = host();
+    const s = memory();
+    writeWatched(s, ['oil-cost']);
+    await refreshHomeBrief({
+      host: el,
+      storage: s,
+      nowMs: 1,
+      fetchJson: async (p) => {
+        if (p.startsWith('api/life-path')) throw new Error('502');
+        return routes()(p);
+      },
+    });
+    expect(el.textContent).not.toContain('502');
+    el.remove();
+  });
+});

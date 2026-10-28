@@ -122,3 +122,45 @@ describe('选择面板', () => {
     expect(el.textContent).toContain('最多选三个');
   });
 });
+
+describe('生活场景作为第三块', () => {
+  const life = {
+    ok: true,
+    title: '油价与出行成本',
+    plain: '会不会传导到我的加油与出行开销',
+    headline: '国际原油价格本窗口上行',
+    steps: [{ label: '国际原油价格', basis: 'mechanism', basisText: '机制可解释', note: 'x' }],
+    gaps: ['缺本地零售价数据'],
+    disclaimer: '只说明机制，不预测',
+    needsLocalData: true,
+  };
+
+  it('传了生活场景就多渲染一块', () => {
+    const el = document.createElement('div');
+    el.innerHTML = homeBriefHTML(briefItems, ledgerOk, life);
+    expect(el.querySelector('.lp-card')).not.toBeNull();
+  });
+
+  it('没传就不渲染（不占位）', () => {
+    const el = document.createElement('div');
+    el.innerHTML = homeBriefHTML(briefItems, ledgerOk);
+    expect(el.querySelector('.lp-card')).toBeNull();
+  });
+
+  it('前两块都空但有生活场景时仍然显示（否则这一块永远看不到）', () => {
+    const host = document.createElement('section');
+    document.body.appendChild(host);
+    const shown = renderHomeBrief(host, { reason: 'NO_WATCH' }, { total: 0 }, { lifePath: life });
+    expect(shown).toBe(true);
+    expect(host.hidden).toBe(false);
+    host.remove();
+  });
+
+  it('生活场景 ok=false 时不撑开容器', () => {
+    const host = document.createElement('section');
+    document.body.appendChild(host);
+    const shown = renderHomeBrief(host, { reason: 'NO_WATCH' }, { total: 0 }, { lifePath: { ok: false } });
+    expect(shown).toBe(false);
+    host.remove();
+  });
+});

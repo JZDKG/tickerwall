@@ -44,6 +44,16 @@ export async function fetchBrief({ watched, sinceMs, fetchJson = null }) {
   }
 }
 
+export async function fetchLifePath({ scenario = 'fuel-cost', fetchJson = null } = {}) {
+  const get = fetchJson ?? (async (p) => (await api.get(p)).data);
+  try {
+    return await get(`api/life-path?scenario=${encodeURIComponent(scenario)}`);
+  } catch {
+    // 生活场景取不到就不渲染那一块（它本来就是「额外一块」）
+    return null;
+  }
+}
+
 export async function fetchLedger({ fetchJson = null } = {}) {
   const get = fetchJson ?? (async (p) => (await api.get(p)).data);
   try {
@@ -63,12 +73,14 @@ export async function refreshHomeBrief({ host, storage, nowMs = Date.now(), fetc
   const watched = readWatched(storage);
   const sinceMs = readLastSeen(storage);
 
-  const [brief, ledger] = await Promise.all([
+  const [brief, ledger, lifePath] = await Promise.all([
     fetchBrief({ watched, sinceMs, fetchJson }),
     fetchLedger({ fetchJson }),
+    fetchLifePath({ fetchJson }),
   ]);
 
   renderHomeBrief(host, brief, ledger, {
+    lifePath,
     onPick: () => openPicker({ host, storage, fetchJson, nowMs }),
   });
 

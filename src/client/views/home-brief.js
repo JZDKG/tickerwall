@@ -17,6 +17,7 @@
 import { esc, html } from '../shared/format.js';
 import { watchBriefHTML } from './watch-brief.js';
 import { expectationsCardHTML } from './expectations.js';
+import { lifePathHTML } from './life-path.js';
 
 export const HOME_BRIEF_ID = 'home-brief';
 
@@ -29,8 +30,15 @@ export function shouldHideHomeBrief(brief, ledger) {
   return Boolean(briefEmptyOrNone && ledgerEmpty);
 }
 
-export function homeBriefHTML(brief, ledger) {
-  return `${watchBriefHTML(brief)}${expectationsCardHTML(ledger)}`;
+/**
+ * @param {object} brief 关注简报
+ * @param {object} ledger 预期台账
+ * @param {object|null} lifePath 生活场景（可选；没取到就不渲染那一块）
+ */
+export function homeBriefHTML(brief, ledger, lifePath = null) {
+  return `${watchBriefHTML(brief)}${expectationsCardHTML(ledger)}${
+    lifePath && lifePath.ok !== false ? lifePathHTML(lifePath) : ''
+  }`;
 }
 
 /**
@@ -43,12 +51,15 @@ export function homeBriefHTML(brief, ledger) {
  */
 export function renderHomeBrief(host, brief, ledger, handlers = {}) {
   if (!host) return false;
-  if (shouldHideHomeBrief(brief, ledger)) {
+  const lifePath = handlers.lifePath ?? null;
+  // 生活场景是「额外一块」：有内容时即使前两块为空也值得显示
+  const hasLife = Boolean(lifePath && lifePath.ok !== false);
+  if (!hasLife && shouldHideHomeBrief(brief, ledger)) {
     host.hidden = true;
     host.innerHTML = '';
     return false;
   }
-  host.innerHTML = homeBriefHTML(brief, ledger);
+  host.innerHTML = homeBriefHTML(brief, ledger, lifePath);
   host.hidden = false;
   host.querySelector('#wb-pick')?.addEventListener('click', () => handlers.onPick?.());
   return true;

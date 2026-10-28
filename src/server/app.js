@@ -138,6 +138,14 @@ export function createApp(deps) {
         const sinceMs = url.searchParams.get('since') && Number.isFinite(rawSince) && rawSince > 0 ? rawSince : null;
         return sendJson(res, 200, await deps.getWatchBrief({ assets, watchedKeys: keys, sinceMs }));
       }
+      /**
+       * 生活场景（产品 2.6）：一条有资料支持的传导路径 + 已知缺口。
+       * 上游取不到也照样返回机制，所以这里不做 5xx。
+       */
+      if (url.pathname === '/api/life-path') {
+        const scenario = url.searchParams.get('scenario') || 'fuel-cost';
+        return sendJson(res, 200, await deps.getLifePath({ scenario }));
+      }
       // 解释读取与事件版本（方案 §8.1）：实现在 routes.js，这里只委派一次
       if (await handleExplanationRoutes(url, res, { takeForce })) return;
       if (url.pathname === '/api/calendar') {

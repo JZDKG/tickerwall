@@ -29,6 +29,7 @@ import { getCalendar, getEventStudy } from './src/server/services/calendar.servi
 import { getGoldComparison } from './src/server/services/comparison.service.js';
 import { getExpectationLedger } from './src/server/services/expectations.service.js';
 import { getWatchBrief } from './src/server/services/watch-brief.service.js';
+import { getLifePath } from './src/server/services/life-path.service.js';
 import { startCollector } from './src/server/jobs/collector.js';
 import { buildDefaultJobs, recoverPendingJobs } from './src/server/jobs/index.js';
 import { installShutdown } from './src/server/lifecycle.js';
@@ -54,6 +55,7 @@ const handle = createApp({
   getGoldComparison,
   getExpectationLedger,
   getWatchBrief,
+  getLifePath,
   ttlMs: CACHE_TTL_MS,
   jobs: () => collector?.status?.() ?? [],
 });
