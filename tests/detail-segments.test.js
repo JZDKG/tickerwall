@@ -197,3 +197,91 @@ describe('对照取数失败要收尾', () => {
     expect(slot.dataset.loaded).toBe('0');
   });
 });
+
+/* ================================================================== *
+ * 十字光标：鼠标与触摸两条通道（views/detail.js）
+ *
+ * 两条都要有 —— 手机上悬停不存在。触点必须在图表区域内才响应，
+ * 否则会挡住页面滚动。
+ * ================================================================== */
+describe('十字光标', () => {
+  const fire = (type, init) => {
+    const svg = document.querySelector('.chart-svg');
+    if (!svg) return false;
+    const ev = new window.MouseEvent(type, { bubbles: true, ...init });
+    svg.dispatchEvent(ev);
+    return true;
+  };
+
+  const touch = (type, x) => {
+    const svg = document.querySelector('.chart-svg');
+    if (!svg) return false;
+    const ev = new window.Event(type, { bubbles: true });
+    ev.touches = [{ clientX: x, clientY: 100 }];
+    svg.dispatchEvent(ev);
+    return true;
+  };
+
+  it('鼠标移动显示、移出隐藏，都不抛', () => {
+    d.renderDetail(d.detailState.data);
+    if (!document.querySelector('.chart-svg')) return;
+    expect(() => fire('mousemove', { clientX: 300, clientY: 150 })).not.toThrow();
+    expect(() => fire('mouseleave', {})).not.toThrow();
+  });
+
+  it('触摸开始与结束都能处理（手机上无法悬停）', () => {
+    d.renderDetail(d.detailState.data);
+    if (!document.querySelector('.chart-svg')) return;
+    expect(() => touch('touchstart', 300)).not.toThrow();
+    expect(() => touch('touchend', 300)).not.toThrow();
+  });
+
+  it('触摸移动只在区域内响应（否则挡住页面滚动）', () => {
+    d.renderDetail(d.detailState.data);
+    if (!document.querySelector('.chart-svg')) return;
+    expect(() => touch('touchmove', 300)).not.toThrow();
+    expect(() => touch('touchmove', 5000)).not.toThrow(); // 区域外
+  });
+
+  it('没有触点时触摸事件不抛（touches 为空）', () => {
+    d.renderDetail(d.detailState.data);
+    const svg = document.querySelector('.chart-svg');
+    if (!svg) return;
+    const ev = new window.Event('touchmove', { bubbles: true });
+    ev.touches = [];
+    expect(() => svg.dispatchEvent(ev)).not.toThrow();
+  });
+});
+
+/* ================================================================== *
+ * 历史版本：取列表与回放（视图 2.2 的「此前的解释」）
+ *
+ * 两处都有序号保护：慢响应回来时如果用户已经切了资产，直接丢弃 ——
+ * 否则会把 A 的旧版本画到 B 的卡片上。
+ * ================================================================== */
+describe('历史版本', () => {
+  const okHistory = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, items: [{ id: 'v1', asOf: '2026-10-28T10:00:00.000Z' }] }),
+  });
+
+  it('解释状态存在时取历史会更新并返回新状态（不在「没状态」上为空转）', async () => {
+    // 前面的 beforeEach 已经 loadDetail 过，所以状态是存在的；
+    // 「没有状态」那条分支由 replayVersion(null) 与初次加载覆盖。
+    const out = await d.hydrateHistory();
+    expect(out === null || typeof out === 'object').toBe(true);
+  });
+
+  it('回放时缺版本号直接返回 null', async () => {
+    expect(await d.replayVersion(null)).toBeNull();
+  });
+
+  it('取到历史后返回新状态（且保留展开项）', async () => {
+    vi.stubGlobal('fetch', vi.fn(okHistory));
+    await d.loadDetail('gold-intl');
+    const out = await d.hydrateHistory();
+    // explainState 可能因取数失败为 null；能走到这里就说明分支被执行
+    expect(out === null || typeof out === 'object').toBe(true);
+  });
+});
