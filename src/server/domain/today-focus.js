@@ -82,16 +82,31 @@ export function pickTodayFocus({ items = [], day, explainable = EXPLAINABLE, lim
  * 只报「什么时候、还有多久」，不预测结果 —— 这一条是方案里最容易被写成
  * 「即将公布，市场预期…」的地方，所以刻意只留事实。
  */
+/**
+ * 重要性有两套词表：日历服务给的是**数字** 1..3，别处给的是 high/medium/low。
+ * 这里统一成数字档位 —— 只认一套会在真实数据上把所有条目过滤掉（曾经就是这样：
+ * next 永远是 null，界面一直显示「日历里暂时没有」，而其实有 16 条待发布）。
+ */
+const IMPORTANCE_RANK = { high: 0, medium: 1, low: 2, 3: 0, 2: 1, 1: 2 };
+
+function rankOf(value) {
+  if (typeof value === 'number') {
+    if (value >= 3) return 0;
+    if (value === 2) return 1;
+    return 2;
+  }
+  return IMPORTANCE_RANK[value] ?? 2;
+}
+
 export function nextKeyRelease({ calendar, nowMs = Date.now(), minImportance = 'medium' } = {}) {
   const upcoming = Array.isArray(calendar?.upcoming) ? calendar.upcoming : [];
-  const rank = { high: 0, medium: 1, low: 2 };
-  const floor = rank[minImportance] ?? 1;
+  const floor = rankOf(minImportance);
 
   const candidates = [];
   for (const ev of upcoming) {
     const at = Date.parse(String(ev?.releaseAt ?? ''));
     if (!Number.isFinite(at) || at < nowMs) continue;
-    if ((rank[ev.importance] ?? 2) > floor) continue;
+    if (rankOf(ev.importance) > floor) continue;
     if (!ev.title) continue;
     candidates.push({
       id: ev.id ?? null,

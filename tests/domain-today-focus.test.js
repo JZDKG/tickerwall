@@ -144,3 +144,48 @@ describe('下一件关键发布', () => {
     for (const word of ['预期', '预计', '将会', '可能']) expect(text).not.toContain(word);
   });
 });
+
+/* ================================================================== *
+ * 重要性词表（真实数据用数字 1..3，别处用 high/medium/low）
+ *
+ * 这条是线上发现的：日历服务给 importance: 3，而代码只认字符串，
+ * 于是**所有条目都被过滤掉** —— next 永远是 null，界面一直显示
+ * 「日历里暂时没有」，而其实有 16 条待发布。单元测试用的是自造夹具
+ * （字符串档位），所以一直没暴露。
+ * ================================================================== */
+describe('数字与文字两种重要性', () => {
+  const numeric = {
+    upcoming: [
+      { id: 'n3', title: '非农', releaseAt: '2026-10-29T12:30:00.000Z', importance: 3 },
+      { id: 'n1', title: '低等级', releaseAt: '2026-10-28T06:00:00.000Z', importance: 1 },
+    ],
+  };
+
+  it('数字 3 视为高等级', () => {
+    expect(nextKeyRelease({ calendar: numeric, nowMs: NOW, minImportance: 'high' }).id).toBe('n3');
+  });
+
+  it('数字 1 被视为低等级（默认门槛下不进候选）', () => {
+    expect(nextKeyRelease({ calendar: numeric, nowMs: NOW }).id).toBe('n3');
+  });
+
+  it('只有低等级事件时默认门槛返回 null（不是硬给一条）', () => {
+    const onlyLow = { upcoming: [{ id: 'n1', title: '低', releaseAt: '2026-10-29T06:00:00.000Z', importance: 1 }] };
+    expect(nextKeyRelease({ calendar: onlyLow, nowMs: NOW })).toBeNull();
+  });
+
+  it('字符串与数字混用时按同一把尺子排', () => {
+    const mixed = {
+      upcoming: [
+        { id: 's', title: '字符串中等级', releaseAt: '2026-10-28T08:00:00.000Z', importance: 'medium' },
+        { id: 'n', title: '数字高等级', releaseAt: '2026-10-29T08:00:00.000Z', importance: 3 },
+      ],
+    };
+    expect(nextKeyRelease({ calendar: mixed, nowMs: NOW, minImportance: 'high' }).id).toBe('n');
+  });
+
+  it('缺失或无法识别的重要性按低等级处理（不冒充重要）', () => {
+    const odd = { upcoming: [{ id: 'x', title: 'x', releaseAt: '2026-10-29T08:00:00.000Z' }] };
+    expect(nextKeyRelease({ calendar: odd, nowMs: NOW })).toBeNull();
+  });
+});
