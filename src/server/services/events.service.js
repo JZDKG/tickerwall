@@ -8,7 +8,6 @@
  * 对外只暴露三样：getEvents（路由用）、loadLlmStore（启动用）、archiveEvents（调试用）。
  * ================================================================== */
 
-import { readFileSync } from 'node:fs';
 
 import { fetchRaw, toNum } from '../providers/index.js';
 import { fetchFeedCatalog, DIRECT_FEEDS, GOOGLE_FEEDS } from '../providers/news-feeds.js';
@@ -26,6 +25,16 @@ import {
 // 快讯源已下沉到 providers/fast-news.js；转发保持导出面不变
 // （测试直接断言 stripHtml / bjTimeString，服务层内部也用 NOISE_RE 过滤噪声稿）
 export { stripHtml, bjTimeString, NOISE_RE, fetchJin10, fetchSinaLive, fetchWscn };
+
+import {
+  readDshConfig,
+  readDshLlmConfig,
+  parseLooseJsonArray,
+} from '../providers/llm.js';
+
+// 网关配置解析已下沉到 providers/llm.js
+// （tests/llm-config.test.js 直接从服务层取 readDshLlmConfig 断言）
+export { readDshLlmConfig };
 
 import { archiveEvents, readArchiveRowsForSpan } from '../db/event-archive.js';
 
@@ -202,36 +211,6 @@ const LLM_SYSTEM = `你是金融市场的新闻分类器。输入是一批编号
  *
  * 只在 `LLM_CONFIG_SOURCE` 不是 `env` 时被调用；读不到就返回全 null。
  */
-function readDshConfig() {
-  const home = process.env.DSH_HOME || `${process.env.HOME}/.dsh`;
-  const out = { baseURL: null, apiKeyEnv: 'CLINE_API_KEY', models: [], apiKey: null, source: null };
-
-  try {
-    const patch = readFileSync(`${home}/profiles/web/cordis.patch.yml`, 'utf8');
-    const idx = patch.indexOf('cline:');
-    if (idx >= 0) {
-      const seg = patch.slice(idx, idx + 2500);
-      out.baseURL = /baseURL:\s*(\S+)/.exec(seg)?.[1] ?? null;
-      out.apiKeyEnv = /apiKeyEnv:\s*(\S+)/.exec(seg)?.[1] ?? 'CLINE_API_KEY';
-      out.models = [...seg.matchAll(/-\s*id:\s*(cline-pass\/[A-Za-z0-9._-]+)/g)].map((m) => m[1]);
-      out.source = 'dsh:profiles/web';
-    }
-  } catch {
-    /* 读不到就算了 */
-  }
-
-  out.apiKey = process.env[out.apiKeyEnv] || null;
-  if (!out.apiKey) {
-    try {
-      const cred = readFileSync(`${home}/.credentials.yaml`, 'utf8');
-      out.apiKey = new RegExp(`${out.apiKeyEnv}:\\s*(\\S+)`).exec(cred)?.[1] ?? null;
-      if (out.apiKey) out.source = `${out.source ?? 'dsh'}:credentials.yaml`;
-    } catch {
-      /* 无凭据 */
-    }
-  }
-  return out;
-}
 
 /**
  * LLM 复核的配置来源：环境变量与 dsh 配置**逐字段合并**。
@@ -246,49 +225,7 @@ function readDshConfig() {
  *
  * cfg.source 会写明实际用了哪几路，便于排查「为什么没在复核」。
  */
-const ENV_LLM = { baseURL: 'LLM_BASE_URL', apiKey: 'LLM_API_KEY', model: 'LLM_MODEL' };
-const FALLBACK_BASE_URL = 'https://api.cline.bot/api/v1';
-const FALLBACK_MODEL = 'cline-pass/deepseek-v4.1-flash-1017';
 
-export function readDshLlmConfig() {
-  const useEnvOnly = String(process.env.LLM_CONFIG_SOURCE ?? 'auto').toLowerCase() === 'env';
-
-  const envBase = process.env[ENV_LLM.baseURL] || null;
-  const envKey = process.env[ENV_LLM.apiKey] || null;
-  const envModel = process.env[ENV_LLM.model] || null;
-
-  // 三个字段都在环境变量里给全了，就没有任何理由再碰外部文件 ——
-  // 少一次 IO，也少一处凭据暴露面。只在缺字段时才回落去读 dsh。
-  const envComplete = Boolean(envBase && envKey && envModel);
-  const dsh = useEnvOnly || envComplete ? null : readDshConfig();
-
-  // 逐字段：有了就用，没有才回落
-  const apiKey = envKey ?? dsh?.apiKey ?? null;
-  // baseURL 取决于**有没有密钥**，而不是「有没有配置」：
-  // 有 key 却没网关地址，请求根本发不出去 —— 这比「用默认地址」更难排查。
-  // 反过来没有 key 时给 null，让 env:missing 一眼看出「压根没配」。
-  const baseURL = envBase ?? dsh?.baseURL ?? (apiKey ? FALLBACK_BASE_URL : null);
-  const models = envModel ? [envModel] : (dsh?.models ?? []);
-
-  let model = envModel;
-  if (!model) {
-    const preferred = ['cline-pass/deepseek-v4.1-flash-1017', 'cline-pass/glm-5.3-flash'];
-    model = preferred.find((m) => models.includes(m)) ?? models[0] ?? FALLBACK_MODEL;
-  }
-
-  const from = [];
-  if (envBase || envKey || envModel) from.push('env');
-  if (dsh?.source) from.push(dsh.source);
-
-  return {
-    baseURL,
-    apiKey,
-    apiKeyEnv: dsh?.apiKeyEnv ?? 'CLINE_API_KEY',
-    models,
-    model,
-    source: from.length ? from.join('+') : 'env:missing',
-  };
-}
 
 /** LLM 常返回同义词（原油供应 / wti / 纳指），做一次归一 */
 const TOPIC_ALIAS = new Map([
@@ -311,33 +248,6 @@ const SYMBOL_ALIAS = new Map([
   ['比特币', 'btc'], ['美元', 'dxy'], ['美债', 'us10y'],
 ]);
 
-/**
- * LLM 输出的 JSON 偶尔会被截断（reasoning 吃掉预算）或带多余字符，
- * 先标准解析，失败就逐个抠出完整的 {...} 对象，尽量不浪费这一批请求。
- */
-function parseLooseJsonArray(text) {
-  const bracket = /\[[\s\S]*\]/.exec(text);
-  if (bracket) {
-    try {
-      const arr = JSON.parse(bracket[0]);
-      if (Array.isArray(arr)) return arr;
-    } catch {
-      /* 落到逐个解析 */
-    }
-  }
-  const out = [];
-  const re = /\{[^{}]*\}/g;
-  let m;
-  while ((m = re.exec(text)) !== null) {
-    try {
-      const obj = JSON.parse(m[0]);
-      if (obj && obj.i != null) out.push(obj);
-    } catch {
-      /* 跳过坏片段 */
-    }
-  }
-  return out;
-}
 
 function normalizeTopicLabel(raw) {
   const t = String(raw).trim();
