@@ -366,12 +366,12 @@ SQLite 提供 Online Backup API，也支持 `VACUUM INTO`。后续在线备份�
 
 ### 13.2 覆盖率推进（目标 95%）
 
-2026-10-29 实测（`npm run test:cov`）：**全站 90.82% statements / 65.29% branches / 73.82% functions / 73.84% lines**。
+2026-10-29 实测（`npm run test:cov`）：**全站 91.53% statements / 65.29% branches / 73.82% functions / 73.84% lines**。
 （E01–E08 全部落地；`src/server/**` 与 `src/client/shared/**` 均在门槛之上，主战场只剩 `src/client/views/**`。）
 
 | 范围 | 实测 | 门槛 | 说明 |
 | --- | --- | --- | --- |
-| 全站 | 90.82 / 79.65 / 90.48 / 92.60 | 73 / 64 / 73 / 73 | 目标 95，按目录分批抬 |
+| 全站 | 91.53 / 80.27 / 90.79 / 93.40 | 73 / 64 / 73 / 73 | 目标 95，按目录分批抬 |
 | `src/server/**` | 门槛通过（app.js 95.7%、log.js 95%、lifecycle 88.9%、契约 100%） | 92 / 80 / 93 / 94 | 剩余缺口是解释服务与 collector 的异常分支 |
 | `src/client/shared/**` | 99.46 / 97.05 / 100 / 100 | 97 / 97 / 99 / 99 | 已达 95（含新增的 api / query-cache / explanation-store） |
 | `src/client/views/**` | 46.6（`views/macro` 子目录 80.2 / 66.9 / 82.0 / 81.8；`views/map` 除主文件外全部 100） | 50 / 46 / 50 / 49 | 距 95 最远。已拿下：`briefing.js`（0 → 88%）、`flow-canvas.js`（0 → 74.1%，用记录型假 X6 测接线逻辑）；已拿下：`map.js`（11.4% → 47.3%，纯函数 + 整屏渲染两条路线）、`views/map` 除主文件外全部 100%；已拿下：`macro/index.js`（0 → 98%）、`macro.js`（46 → 75%）、`map.js`（11 → 66%）；已拿下：`detail.js`（58 → 76%）；已拿下：`state.js`（75 → 95%）、`events.js`（87 → 91%）；已拿下：`map.js`（66 → 83% 行）、`client/router.js`（**0 → 100%**）、`client/main.js`（0 → 96.6%）；client/views 79.88%。剩余：分支覆盖（78.5% → 95）是唯一门槛，逐文件补错误/边界分支 |
