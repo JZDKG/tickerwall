@@ -299,7 +299,6 @@ export async function loadPersistedHistory() {
  *  会在卡片上注明，并在 12 小时后自动不再显示（届时历史已由真实报价填满）。 */
 
 export const LLM_STORE_FILE = path.join(DATA_DIR, 'llm-cache.json');
-export const EVENTS_DIR = path.join(DATA_DIR, 'events');
 export const SNAPSHOT_FILE = path.join(DATA_DIR, 'snapshots.jsonl');
 // 快照节流：15 秒刷一次全量落盘会让文件半年就上 GB
 

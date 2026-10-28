@@ -99,7 +99,8 @@ function toLevel(info, important) {
  *   2. 事件归档     —— 按天分文件，可按日回放当天事件流
  *   3. 指标快照     —— 定时记录价格与涨跌，用于事后回溯与变化检测
  * ------------------------------------------------------------------ */
-const LLM_STORE_FILE = path.join(DATA_DIR, 'llm-cache.json');
+// LLM 缓存已迁到 SQLite KV（llm-cache），不再读写 ~/.dsh 的 json 文件 ——
+// 原来这里有个 LLM_STORE_FILE 常量，从 4c 之后就没用了
 const EVENTS_DIR = path.join(DATA_DIR, 'events');
 
 /** label → { key, label }。归档只存了 label，回放时要还原成和实时接口同一形状 */
