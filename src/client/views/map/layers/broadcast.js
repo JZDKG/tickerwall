@@ -25,7 +25,7 @@ function hmOf(time) {
  * 播报台内容。`marks` 是该事件 symbols 对应的报价，最多取两个 ——
  * 三个以上就挤成一排数字，反而读不出主次。
  */
-export function broadcastHtml(ev, quotesById) {
+export function broadcastHtml(ev, quotesById, impactHtml = '') {
   if (!ev) {
     return '<div class="bc-empty">实时播报待命中</div>';
   }
@@ -62,6 +62,8 @@ export function broadcastHtml(ev, quotesById) {
     + '</div>'
     + `<div class="bc-title" title="${esc(ev.title)}">${esc(ev.title)}</div>`
     + `<div class="bc-marks">${marks}</div>`
+    // 发生地 / 影响范围 / 不表示什么：三段分开写，避免把地图读成资金流示意图
+    + (impactHtml ? `<div class="bc-impact-wrap">${impactHtml}</div>` : '')
     + sparkHtml
     + `<div class="bc-bar" aria-hidden="true"><i></i></div>`;
 }

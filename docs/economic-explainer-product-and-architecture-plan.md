@@ -591,10 +591,11 @@ git diff --check
 | C3 历史回放（读取路径） | `db/explanations.js`（`readObservationAsOf` / `readEventAsOf` / 固定版本读取） | `tests/db-explanations.test.js` |
 | §10.2 理解测试 | 六个问题与「不许出现的措辞」写成断言（不依赖浏览器，可进 CI） | `tests/understanding.test.js` |
 | 事件冲击分类 | `domain/events/shock.js`（供给/需求词表、资产相关性过滤、保守返回 null）、归档转证据 | `tests/shock-classification.test.js`、`tests/explanations.test.js`「事件证据与快照」 |
+| C4 地图与影响范围 | `views/explanations/impact.js`（发生地=地理赛区、影响范围取同一份解释的渠道状态、固定免责）、`map/layers/broadcast.js` + `map.js` 播报台接入 | `tests/map-impact.test.js`、浏览器走查 |
 
 ### 14.2 尚未完成
 
-- **C4 地图与生活影响联动**：地图仍只消费事件发生地，尚未把解释路径与地区条件接上（`views/map.js` 目前读事件赛区，不读解释快照）。
+- **C4 的「地区与政策条件」只完成前半**：播报台现在同时给出发生地（地理赛区）、影响范围（受影响资产 + 渠道状态）与免责说明，但还没有把「政策条件」写进地图（例如同一 OPEC 减产在不同汇率制度下的传导差异），也还没有把解释路径画到地图上（目前只画定价中心弧线）。
 - **C5 真实流量**：基金流量、贸易量、能源运输等数据没有可靠来源，保持不做。
 - **事件冲击分类器只覆盖规则可判的情形**：`domain/events/shock.js` 用「数量约束词（减产/停产/航道/罢工）」与「需求词（开工率/补库/出行）」两套词表保守判定，两类同时出现或只有价格描述时返回 null（渠道显示「尚未确认」）。仍有局限：反讽、引述他人观点、跨品种同名事件（铜矿罢工）需要人复核，所以分类结果只进证据、不进标题结论。
 - **浏览器端 CI**：理解测试已脚本化（`tests/understanding.test.js`），但真实渲染的端到端走查仍是人工执行 Chromium headless 脚本（验证卡片出现、可展开、切窗口后内容更新、无控制台异常）。

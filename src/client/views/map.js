@@ -20,6 +20,9 @@ import { regionBounds, viewForBounds, toggleRegion } from './map/logic/focus.js'
 import { createCamera, destroyCamera, applyTransform, syncCamera } from './map/camera.js';
 import { cityAnchorsHtml, lodClassFor } from './map/layers/markers.js';
 import { broadcastHtml } from './map/layers/broadcast.js';
+import { impactLine, impactBlockHtml, originLine } from './explanations/impact.js';
+import { loadGraphExplanation } from './explanations/graph.js';
+import { isExplainable } from './explanations/state.js';
 import { relayBandHtml, macroCapsuleHtml, alertChipHtml, alertCardHtml, alertsNow, ALERT_ANCHOR } from './map/layers/hud.js';
 import { timelineBarHtml, hhmmOf } from './map/layers/timeline-bar.js';
 import { bucketEvents24h, eventsUpTo } from './map/logic/timeline.js';
@@ -310,12 +313,51 @@ function refreshBroadcastQueue(items) {
 }
 
 /** 进度条要跟着「新的一条」重启；同一条重绘时保持当前进度，不要闪 */
+/**
+ * 影响范围用的解释快照缓存（方案 §3.5 / C4）。
+ *
+ * 与解释卡、图谱跳的是同一个接口：同一份快照，同一个 explanationId。
+ * null 也缓存 —— 否则每轮播报都会重试一次取不到的资产。
+ */
+const impactCache = new Map();
+const impactPending = new Set();
+
+function impactFor(ev) {
+  const nameOf = new Map((store.quotes ?? []).filter((q) => q?.ok).map((q) => [q.id, q.name]));
+  const byAsset = new Map();
+  for (const id of ev?.symbols ?? []) if (impactCache.has(id)) byAsset.set(id, impactCache.get(id));
+  return { impact: impactLine(ev, byAsset, nameOf), nameOf };
+}
+
+/** 播报的这条里出现可解释资产时，后台取一次解释，然后只重绘播报台 */
+async function hydrateImpact(ev) {
+  const ids = (ev?.symbols ?? []).filter((id) => isExplainable(id) && !impactCache.has(id) && !impactPending.has(id));
+  if (!ids.length) return;
+  for (const id of ids) impactPending.add(id);
+  await Promise.all(
+    ids.map(async (id) => {
+      try {
+        impactCache.set(id, await loadGraphExplanation(id));
+      } catch {
+        impactCache.set(id, null);
+      } finally {
+        impactPending.delete(id);
+      }
+    }),
+  );
+  // 期间可能已经播到下一条：只在同一条时重绘
+  if (spotlightEvent()?.id === ev?.id) renderBroadcast();
+}
+
 function renderBroadcast() {
   const box = document.getElementById('map-broadcast');
   if (!box) return;
   const ev = spotlightEvent();
   const quotesById = new Map((store.quotes ?? []).filter((q) => q && q.ok).map((q) => [q.id, q]));
-  box.innerHTML = broadcastHtml(ev, quotesById);
+  const { impact } = impactFor(ev);
+  const impactHtml = ev ? impactBlockHtml({ origin: originLine(ev.region), impact }) : '';
+  box.innerHTML = broadcastHtml(ev, quotesById, impactHtml);
+  if (ev) void hydrateImpact(ev);
   box.dataset.mode = bcState.mode;
   box.dataset.empty = ev ? '0' : '1';
 

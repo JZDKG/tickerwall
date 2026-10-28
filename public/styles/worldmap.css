@@ -1730,3 +1730,40 @@
 .impact-arc {
   stroke: rgba(255, 138, 96, 0.6);
 }
+
+/* ------------------------------------------------------------------ *
+ * 播报台的影响范围（§3.5）：发生地 / 影响范围 / 不表示什么，三段分开
+ * ------------------------------------------------------------------ */
+
+.bc-impact-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 2px;
+  padding-left: 8px;
+  border-left: 2px solid var(--line);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.bc-origin {
+  color: var(--muted-2);
+}
+
+.bc-impact.ok {
+  color: var(--down);
+}
+
+.bc-impact.warn {
+  color: #e0a83c;
+}
+
+.bc-impact.dim {
+  color: var(--muted-2);
+}
+
+.bc-note {
+  color: var(--muted-2);
+  opacity: 0.85;
+}
