@@ -198,3 +198,36 @@ describe('/api/health 暴露调度状态', () => {
     expect(Array.isArray(body.jobs)).toBe(true);
   });
 });
+
+/* ================================================================== *
+ * 历史快照列表（C3）
+ *
+ * 回放要能列出「有过哪几版」。这里钉住三件事：路由不被 :id 吃掉、
+ * 只列该资产该窗口、参数不合法返回 400。
+ * ================================================================== */
+describe('GET /api/explanations/history', () => {
+  it('返回该资产 + 窗口的版本列表（按时间倒序）', async () => {
+    const res = await fetch(`${base}/api/explanations/history?asset=gold-intl&window=session`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.assetId).toBe('gold-intl');
+    expect(body.windowKey).toBe('session');
+    // 上面那条用例刚生成过快照，这里至少有一版
+    expect(body.items.length).toBeGreaterThan(0);
+    for (const it of body.items) expect(it.id.startsWith('exp_gold-intl_session_')).toBe(true);
+  });
+
+  it('不存在的资产 / 窗口 → 400，而不是空列表', async () => {
+    const bad = await fetch(`${base}/api/explanations/history?asset=btc&window=session`);
+    expect(bad.status).toBe(400);
+    const badWin = await fetch(`${base}/api/explanations/history?asset=gold-intl&window=2y`);
+    expect(badWin.status).toBe(400);
+  });
+
+  it('limit 受服务端夹取（1..50）', async () => {
+    const res = await fetch(`${base}/api/explanations/history?asset=gold-intl&window=session&limit=999`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.items.length).toBeLessThanOrEqual(50);
+  });
+});

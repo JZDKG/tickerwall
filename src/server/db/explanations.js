@@ -206,6 +206,77 @@ export function readEventRevision(eventId, revision) {
   };
 }
 
+/**
+ * 每条事件「当前最新一版」的 payload（批量）。
+ *
+ * 用来判断内容是否真的变了。必须在库里比而不是在内存里比：
+ * 进程重启后内存缓存是空的，否则每次重启都会给所有事件追加一版重复修订。
+ */
+export function latestEventRevisionPayloads(eventIds = []) {
+  const ids = [...new Set((eventIds ?? []).filter(Boolean).map(String))];
+  if (!ids.length) return new Map();
+  const holes = ids.map(() => '?').join(',');
+  const rows = db()
+    .prepare(
+      `SELECT er.event_id AS event_id, er.revision AS revision, er.payload AS payload
+         FROM event_revisions er
+         JOIN (SELECT event_id, MAX(revision) AS m FROM event_revisions WHERE event_id IN (${holes}) GROUP BY event_id) t
+           ON t.event_id = er.event_id AND t.m = er.revision`,
+    )
+    .all(...ids);
+  return new Map(rows.map((r) => [r.event_id, { revision: Number(r.revision), payload: parseJson(r.payload) ?? {} }]));
+}
+
+/**
+ * 清理「内容完全相同的连续修订」。
+ *
+ * 用途：修正曾经的写入缺陷（进程重启后给所有事件追加一版重复内容），以及
+ * 运维时收拾脏数据。只删**与前一条 contentHash 相同**的记录，保留最早那条，
+ * 任何内容真的变过的版本都不会被删。
+ *
+ * @returns {{removed:number, events:number}}
+ */
+export function pruneDuplicateEventRevisions() {
+  const rows = db()
+    .prepare('SELECT event_id, revision, payload FROM event_revisions ORDER BY event_id ASC, revision ASC')
+    .all();
+  let removed = 0;
+  const events = new Set();
+  const lastHash = new Map();
+  for (const row of rows) {
+    const payload = parseJson(row.payload) ?? {};
+    const hash = payload?.contentHash ?? null;
+    const prev = lastHash.get(row.event_id);
+    if (hash && prev && hash === prev) {
+      db().prepare('DELETE FROM event_revisions WHERE event_id = ? AND revision = ?').run(row.event_id, row.revision);
+      removed += 1;
+      events.add(row.event_id);
+      continue;
+    }
+    if (hash) lastHash.set(row.event_id, hash);
+  }
+  return { removed, events: events.size };
+}
+
+/** 事件下一个修订号（没有历史就是 1） */
+export function nextEventRevision(eventId) {
+  const row = db()
+    .prepare('SELECT MAX(revision) AS n FROM event_revisions WHERE event_id = ?')
+    .get(String(eventId));
+  return Number(row?.n ?? 0) + 1;
+}
+
+/** 各事件当前最大修订号（列表页一次取完，避免逐条查） */
+export function eventRevisionCounts(eventIds = []) {
+  const ids = [...new Set((eventIds ?? []).filter(Boolean).map(String))];
+  if (!ids.length) return new Map();
+  const holes = ids.map(() => '?').join(',');
+  const rows = db()
+    .prepare(`SELECT event_id, MAX(revision) AS n FROM event_revisions WHERE event_id IN (${holes}) GROUP BY event_id`)
+    .all(...ids);
+  return new Map(rows.map((r) => [r.event_id, Number(r.n)]));
+}
+
 export function listEventRevisions(eventId) {
   return db()
     .prepare('SELECT event_id, revision, known_at FROM event_revisions WHERE event_id = ? ORDER BY revision ASC')
@@ -394,6 +465,39 @@ export function explanationIdByFingerprint(fingerprint) {
     .prepare('SELECT id FROM explanations WHERE input_fingerprint = ? ORDER BY generated_at DESC LIMIT 1')
     .get(String(fingerprint));
   return row?.id ?? null;
+}
+
+/**
+ * 某资产 + 窗口的**历史快照列表**（C3 历史回放用）。
+ *
+ * 只读不可变快照：每行是当时生成的样子，不会因为规则或数据更新而被重算。
+ * 按 as_of 再按生成时间倒序；limit 默认 20，最多 50 —— 回放是查证工具，
+ * 不是时间序列，没必要把整张表铺给前端。
+ */
+export function listExplanationHistory({ assetId, windowKey, limit = 20 } = {}) {
+  const n = Math.max(1, Math.min(50, Number(limit) || 20));
+  const rows = db()
+    .prepare(
+      `SELECT id, as_of, generated_at, content_status,
+              mechanism_version, calculation_version, language_version, input_fingerprint
+         FROM explanations
+        WHERE asset_id = ? AND window_key = ?
+        ORDER BY COALESCE(as_of, generated_at) DESC, generated_at DESC
+        LIMIT ?`,
+    )
+    .all(String(assetId), String(windowKey), n);
+  return rows.map((row) => ({
+    id: row.id,
+    asOf: row.as_of,
+    generatedAt: row.generated_at,
+    contentStatus: row.content_status,
+    versions: {
+      mechanisms: row.mechanism_version,
+      calculation: row.calculation_version,
+      language: row.language_version,
+    },
+    inputFingerprint: row.input_fingerprint,
+  }));
 }
 
 export function listExplanationEvidence(explanationId) {

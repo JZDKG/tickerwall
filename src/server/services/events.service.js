@@ -9,6 +9,7 @@
  * ================================================================== */
 
 
+import { createHash } from 'node:crypto';
 import { fetchRaw, toNum } from '../providers/index.js';
 import { fetchFeedCatalog, DIRECT_FEEDS, GOOGLE_FEEDS } from '../providers/news-feeds.js';
 import { COMPILED_TOPICS, IMPACT_WORDS, anyWordHit, sanitizeText, sanitizeUrl, guessRegion, isOfficialRoutine, dedupeKey } from '../domain/news-lexicon.js';
@@ -37,6 +38,7 @@ import {
 export { readDshLlmConfig };
 
 import { archiveEvents, readArchiveRowsForSpan } from '../db/event-archive.js';
+import { writeEventRevision, nextEventRevision, eventRevisionCounts, latestEventRevisionPayloads } from '../db/index.js';
 import { filterSymbolsByEvidence, normalizeLlmRow, LLM_ROW_STATE } from '../domain/events/normalize.js';
 import { clusterEvents, similarity } from '../domain/events/cluster.js';
 
@@ -462,6 +464,108 @@ function applyLlmResults(items) {
  * 曝光给客户端的聚合视图：同一事件一张卡。
  * 只做分组，不改原始条目 —— 展开后仍能看到每个来源与发布时间。
  */
+/**
+ * 事件修订：内容真的变了才写新版本（方案 §6.3 event_revisions）。
+ *
+ * 原来这张表只在「被解释引用」时写入，事件本身的标题/等级/标签变化没有留痕，
+ * 于是「这条新闻为什么从 mid 变成 high」事后无法追。这里按内容哈希判定：
+ *   · 同一内容（转载、重复抓取）不产生新版本；
+ *   · 标题、正文摘要、等级、标的、主题任一变化 → 新版本；
+ *   · 每轮最多写 maxWrites 条，避免首次运行时把整批历史一次性铺满。
+ *
+ * payload 保存解释与回放真正需要的字段，不复制整页 HTML。
+ */
+const revisionHashes = new Map();
+
+/**
+ * 清空「上次写入的内容哈希」。
+ *
+ * 这是进程内缓存：服务运行时用它避免对同一内容反复写修订。测试换库后必须
+ * 清掉，否则新库第一次写入会因为哈希命中而被跳过。也用于「强制重新留痕」。
+ */
+export function resetEventRevisionCache() {
+  revisionHashes.clear();
+}
+
+function eventContentHash(ev) {
+  return createHash('sha256')
+    .update(
+      JSON.stringify([
+        ev.title ?? '',
+        (ev.body ?? '').slice(0, 300),
+        ev.level ?? '',
+        ev.region ?? '',
+        (ev.symbols ?? []).join(','),
+        (ev.topics ?? []).map((t) => t.key ?? t.label).join(','),
+        ev.llmState ?? '',
+      ]),
+    )
+    .digest('hex')
+    .slice(0, 16);
+}
+
+export function recordEventRevisions(items = [], { maxWrites = 40, knownAt } = {}) {
+  const written = [];
+  const candidates = items.filter((ev) => ev?.id && revisionHashes.get(ev.id) !== eventContentHash(ev));
+  if (!candidates.length) return written;
+  /**
+   * 「上次写了什么」以库里最新一版为准，内存缓存只是快路径。
+   *
+   * 只靠内存会导致进程重启后给所有事件追加一条重复修订（实测出现过同一
+   * contentHash 连续两版）。这里一次性把候选事件的最新版读出来比对。
+   */
+  let latest = new Map();
+  try {
+    latest = latestEventRevisionPayloads(candidates.map((ev) => ev.id));
+  } catch {
+    latest = new Map();
+  }
+  for (const ev of candidates) {
+    if (written.length >= maxWrites) break;
+    const hash = eventContentHash(ev);
+    if (revisionHashes.get(ev.id) === hash) continue;
+    if (latest.get(ev.id)?.payload?.contentHash === hash) {
+      revisionHashes.set(ev.id, hash); // 库里已经是最新内容，只更新快路径
+      continue;
+    }
+    try {
+      const prev = latest.get(ev.id)?.payload ?? null;
+      /**
+       * 标题整体更换 = 上游把同一个 id 复用到另一条新闻上（Google 聚合源偶发）。
+       *
+       * 这仍然是「内容变了」，必须留痕；但要标出来，否则读者会以为编辑
+       * 改了个标题，实际上条目身份可能已经换了。
+       */
+      const retitled = Boolean(
+        prev?.title && ev.title && similarity(prev.title, ev.title) < 0.5,
+      );
+      const revision = nextEventRevision(ev.id);
+      writeEventRevision({
+        eventId: ev.id,
+        revision,
+        knownAt: knownAt ?? new Date().toISOString(),
+        payload: {
+          title: ev.title ?? '',
+          body: (ev.body ?? '').slice(0, 300),
+          level: ev.level ?? null,
+          region: ev.region ?? null,
+          topics: (ev.topics ?? []).map((t) => t.label ?? t.key),
+          symbols: ev.symbols ?? [],
+          publisher: ev.publisher ?? ev.source ?? null,
+          time: ev.time ?? null,
+          contentHash: hash,
+          ...(retitled ? { retitled: true, previousTitle: prev?.title ?? null } : {}),
+        },
+      });
+      revisionHashes.set(ev.id, hash);
+      written.push(`${ev.id}#${revision}`);
+    } catch {
+      // 写修订失败不影响接口返回；下一轮会再试
+    }
+  }
+  return written;
+}
+
 export function clusterForClient(items, opts = {}) {
   return clusterEvents(items, opts).map((c) => ({
     eventId: c.eventId,
@@ -738,11 +842,14 @@ export async function getEvents({ force = false, limit = 160 } = {}) {
   const llmApplied = applyLlmResults(items);
   kickLlmClassify(items);
   archiveEvents(items); // 不 await，失败不影响接口返回
+  // 内容变化才写新版本：回放与「为什么改判」都要靠它
+  recordEventRevisions(items);
 
   // 覆盖度：这是「是否真的抓到了全球各国主流媒体」唯一可验证的数字，
   // 而不是靠源列表看起来热闹。失败源单独计数，缺了能看见。
   const okSources = sourceStatus.filter((s) => s.ok);
   const publishers = new Set(items.map((i) => i.publisher).filter(Boolean));
+  const revisionCounts = eventRevisionCounts(items.slice(0, limit).map((i) => i.id));
   const data = {
     ok: items.length > 0,
     generatedAt: new Date().toISOString(),
@@ -782,7 +889,8 @@ export async function getEvents({ force = false, limit = 160 } = {}) {
      * 「N 条报道 · M 家来源」。同一原始报道的转载不重复计证据。
      */
     clusters: clusterForClient(items),
-    items: items.slice(0, limit),
+    // 列表要能显示「第 N 版」：一次查询取全部，避免逐条打库
+    items: items.slice(0, limit).map((it) => ({ ...it, revision: revisionCounts.get(it.id) ?? null })),
   };
   eventsCache.set('ev', { at: Date.now(), data });
   return data;

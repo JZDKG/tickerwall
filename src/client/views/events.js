@@ -86,9 +86,71 @@ export function eventItemHTML(ev) {
       </div>
       <h4 class="ev-title">${ev.title}</h4>
       ${ev.body && ev.body !== ev.title ? html`<p class="ev-body">${ev.body}</p>` : ''}
-      <div class="ev-meta">${oneHand}${langChip}<span class="ev-pub"${channelNote ? html` title="经 ${channelNote} 采集"` : ''}>${byline}</span>${symsExist ? html`<span class="ev-sep">·</span>${symChips}` : ''}${link}</div>
+      <div class="ev-meta">${oneHand}${langChip}<span class="ev-pub"${channelNote ? html` title="经 ${channelNote} 采集"` : ''}>${byline}</span>${symsExist ? html`<span class="ev-sep">·</span>${symChips}` : ''}${revisionChipHTML(ev)}${link}</div>
     </div>
   </article>`;
+}
+
+/**
+ * 事件版本徽章（C3）。
+ *
+ * 只有真的改过才显示：`revision` 来自 /api/events（每条的当前最大修订号）。
+ * 徽章本身不是「最新」暗示，而是「这条被改判过 N 次，可以查」。
+ */
+export function revisionChipHTML(ev) {
+  const n = Number(ev?.revision);
+  if (!Number.isFinite(n) || n <= 1) return '';
+  return html`<button type="button" class="ev-rev" data-event-revisions="${ev.id}" title="这条事件有过 ${n} 个版本，点开看每一版的标题与等级">第 ${n} 版</button>`;
+}
+
+const SHOCK_LABEL = { supply: '供给受阻', demand: '需求增强' };
+
+/**
+ * 版本面板的一行：第 N 版 + 时间 + 等级 + 标题。
+ *
+ * 有些版本是**只带分类结果**的（解释引用事件时先落库的那一版，没有正文）。
+ * 那种版本要说清楚它记了什么，而不是显示一个「标题缺失」——
+ * 否则读者会以为标题被改掉了。
+ */
+export function revisionRowHTML(row) {
+  const p = row?.payload ?? {};
+  const when = String(row?.knownAt ?? '').replace('T', ' ').slice(5, 16);
+  const level = p.level ? html`<span class="ev-rev-level">${p.level}</span>` : '';
+  const text = p.title
+    ? p.title
+    : p.shockType
+      ? `分类：${SHOCK_LABEL[p.shockType] ?? p.shockType}（此版只记录了分类结果）`
+      : p.partial
+        ? '（此版只记录了分类结果）'
+        : '（未记录标题）';
+  // 标题整体更换：多半是上游把同一个 id 复用到另一条新闻上，必须点明
+  const retitle = p.retitled
+    ? html`<span class="ev-rev-flag" title="上一版标题：${p.previousTitle ?? '—'}">标题整体更换</span>`
+    : '';
+  return html`<li class="ev-rev-row"><span class="ev-rev-no">#${row.revision}</span><span class="ev-rev-time">${when}</span>${level}<span class="ev-rev-title">${text}</span>${retitle}</li>`;
+}
+
+/** 版本面板：一次请求拿全，默认只列最近 5 版 */
+export function revisionPanelHTML(eventId, rows) {
+  const list = (rows ?? []).slice(-5).reverse();
+  if (!list.length) return '';
+  return html`<div class="ev-rev-panel" data-panel="${eventId}">
+    <div class="ev-rev-head">这条事件的 ${list.length} 个版本 <span class="ev-rev-note">修订是追加的：旧版本不会被覆盖</span></div>
+    <ul class="ev-rev-list">${list.map(revisionRowHTML)}</ul>
+  </div>`;
+}
+
+/** 取某事件的版本列表 */
+export async function loadEventRevisions(eventId, { fetchImpl } = {}) {
+  const f = fetchImpl ?? (typeof fetch === 'function' ? fetch : null);
+  if (!f) return [];
+  try {
+    const res = await f(`./api/events/${encodeURIComponent(eventId)}/revisions`, { cache: 'no-store' });
+    const body = await res.json().catch(() => ({}));
+    return body?.revisions ?? [];
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -148,6 +210,35 @@ export function eventRowHTML(row) {
  *
  * 单独导出便于测试 —— 折叠是纯展示，但"点不开"和"吞掉原文"都是真故障。
  */
+/**
+ * 版本面板的展开/收起（C3）。
+ *
+ * 面板插在条目后面，不替换条目本身：读原文时不该丢掉上下文。
+ * 取不到版本就显示一句原因，而不是留一个空白块。
+ */
+export function bindRevisionChips(root = document) {
+  for (const btn of root.querySelectorAll('[data-event-revisions]')) {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.eventRevisions;
+      const article = btn.closest('article.event');
+      const existing = article?.nextElementSibling;
+      if (existing?.classList?.contains('ev-rev-panel')) {
+        existing.remove();
+        btn.setAttribute('aria-expanded', 'false');
+        return;
+      }
+      btn.setAttribute('aria-expanded', 'true');
+      const rows = await loadEventRevisions(id);
+      const holder = document.createElement('div');
+      holder.innerHTML = rows.length
+        ? revisionPanelHTML(id, rows).toString()
+        : '<div class="ev-rev-panel ev-rev-empty">这个事件的版本记录取不到（接口不可用或尚未落库）</div>';
+      article?.after(holder.firstElementChild ?? holder);
+      holder.querySelector('.ev-rev-close')?.addEventListener('click', () => holder.remove());
+    });
+  }
+}
+
 export function bindClusterToggles(root = document) {
   for (const btn of root.querySelectorAll('.ev-cluster-toggle')) {
     btn.addEventListener('click', () => {
@@ -279,6 +370,7 @@ export function renderEvents(opts = {}) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
   bindClusterToggles();
+  bindRevisionChips();
   document.querySelectorAll('#level-filter button').forEach((btn) => {
     btn.addEventListener('click', () => {
       store.events.level = btn.dataset.l;

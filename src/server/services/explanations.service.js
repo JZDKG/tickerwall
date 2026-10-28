@@ -28,6 +28,7 @@ import {
   writeObservationRevisions,
   readExplanation,
   latestExplanation,
+  listExplanationHistory,
   explanationIdByFingerprint,
   explanationStorageStatus,
 } from '../db/index.js';
@@ -347,6 +348,9 @@ export function persistReferencedEvents(explanation, events, { knownAt } = {}) {
         revision: e.revision ?? 1,
         knownAt: knownAt ?? new Date().toISOString(),
         payload: {
+          // 这里只有分类结果，没有正文：标成 partial，界面据此说明
+          // 「此版只记录了分类结果」，而不是假装有一条标题缺失的改判
+          partial: true,
           shockType: e.shockType ?? null,
           evidence: e.evidence ?? [],
           at: e.at ?? null,
@@ -649,6 +653,27 @@ export async function getExplanationResponse({
 }
 
 /** 读固定版本：返回不可变快照，不改内容、不自动换新版本 */
+/** 某资产 + 窗口的历史快照列表（C3）。只读快照，不重算 */
+export function getExplanationHistory({ asset, windowKey, limit = 20 } = {}) {
+  if (!explanationAssetIds().includes(asset)) {
+    return { status: 400, body: { ok: false, error: `不支持的资产：${asset ?? '(空)'}` } };
+  }
+  if (!WINDOW_KEYS.includes(windowKey)) {
+    return { status: 400, body: { ok: false, error: `不支持的窗口：${windowKey ?? '(空)'}` } };
+  }
+  const items = listExplanationHistory({ assetId: asset, windowKey, limit });
+  return {
+    status: 200,
+    body: {
+      schemaVersion: EXPLANATION_SCHEMA_VERSION,
+      assetId: asset,
+      windowKey,
+      count: items.length,
+      items,
+    },
+  };
+}
+
 export function getExplanationById(id) {
   const stored = readExplanation(id);
   if (!stored?.explanation) return { status: 404, body: { ok: false, error: `未知解释版本：${id}` } };

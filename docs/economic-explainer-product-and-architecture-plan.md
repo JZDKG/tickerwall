@@ -588,7 +588,7 @@ git diff --check
 | C1 原油 / 美元 / 美债 | `mechanisms.js`（gold-v3：原油 6 条、美债 3 条、美元 4 条；含事件型供给 / 需求机制）、`evaluateMechanism` 支持 `eventOnly`、`instruments.js` 打开四个资产 | `tests/explanations.test.js` 的原油 / 美债 / 美元三组（含证据不足与反向案例） |
 | B5 图谱消费同一份解释 | `views/explanations/graph.js`（边→渠道映射、状态并列、60s 缓存）、`panels.js`（焦点卡解释块、机理卡解释状态行）、`macro.js`（按焦点取数） | `tests/graph-explanation.test.js`、浏览器走查 |
 | C2 条件化沙盘 | `knowledge-base.js`（`SHOCK_CONDITIONS`、`SHOCK_CONDITION_SETS`）、`propagateShock` 支持 `activeEdges`、沙盘卡条件选择器 | `tests/divergence.test.js`「条件化沙盘」 |
-| C3 历史回放（读取路径） | `db/explanations.js`（`readObservationAsOf` / `readEventAsOf` / 固定版本读取） | `tests/db-explanations.test.js` |
+| C3 历史回放 | 读取路径：`db/explanations.js`（`readObservationAsOf` / `readEventAsOf` / `listExplanationHistory`）；接口 `GET /api/explanations/history?asset=&window=`；详情页「此前的解释（N 版）」+ 回放横幅；事件流「第 N 版」徽章与版本面板（`/api/events/:id/revisions`）；事件修订按内容哈希写入（`recordEventRevisions`） | `tests/db-explanations.test.js`、`tests/explanations-history.test.js`、`tests/event-revisions.test.js`、`tests/views-list-events.test.js`、`tests/explanation-http.test.js` |
 | §10.2 理解测试 | 六个问题与「不许出现的措辞」写成断言（不依赖浏览器，可进 CI） | `tests/understanding.test.js` |
 | 事件冲击分类 | `domain/events/shock.js`（供给/需求词表、资产相关性过滤、保守返回 null）、归档转证据 | `tests/shock-classification.test.js`、`tests/explanations.test.js`「事件证据与快照」 |
 | C4 地图与影响范围 | `views/explanations/impact.js`（发生地=地理赛区、影响范围取同一份解释的渠道状态、固定免责）、`map/layers/broadcast.js` + `map.js` 播报台接入 | `tests/map-impact.test.js`、浏览器走查 |
@@ -599,6 +599,8 @@ git diff --check
 - **C5 真实流量**：基金流量、贸易量、能源运输等数据没有可靠来源，保持不做。
 - **事件冲击分类器只覆盖规则可判的情形**：`domain/events/shock.js` 用「数量约束词（减产/停产/航道/罢工）」与「需求词（开工率/补库/出行）」两套词表保守判定，两类同时出现或只有价格描述时返回 null（渠道显示「尚未确认」）。仍有局限：反讽、引述他人观点、跨品种同名事件（铜矿罢工）需要人复核，所以分类结果只进证据、不进标题结论。
 - **浏览器端 CI**：理解测试已脚本化（`tests/understanding.test.js`），但真实渲染的端到端走查仍是人工执行 Chromium headless 脚本（验证卡片出现、可展开、切窗口后内容更新、无控制台异常）。
+- **上游 id 复用的根因**：Google 聚合源偶发把同一个 guid 复用到另一条新闻上，事件修订会把这种变化标成「标题整体更换」并保留上一版标题，但根因在聚合侧，只能标注、无法修正。
+- **历史脏数据清理靠一次性脚本**：`scripts/dedupe-event-revisions.mjs`（默认 dry-run）删除「与前一条 contentHash 完全相同」的重复修订 —— 早期写入只靠进程内缓存，重启会给所有事件追加一版重复内容。写入侧已改为读库里最新一版比对。
 
 ### 14.3 有意改变的口径（契约测试已记录原因）
 
@@ -612,3 +614,5 @@ git diff --check
 - 计算版本升到 `calc-v2`：事件型渠道最多引用 3 条已分类报道（其余用 `eventMatchCount` 计数），价格型渠道不再把窗口内全部事件挂到自己身上。
 - 快照指纹纳入事件身份（`eventId#revision:shockType`）：日频数据没变但窗口里出现新报道时，会生成新快照，而不是复用 `events=[]` 的旧快照。
 - 被引用的事件修订在写快照前先落库（`persistReferencedEvents`），满足「不接受不存在的引用」。
+- 事件修订的「内容是否变化」改以数据库中最新一版的 `contentHash` 为准（内存缓存只作快路径）：只靠内存时，进程重启会给所有事件追加一版重复修订。
+- 回放时摘掉新鲜度判定：用今天的时钟说一份历史解释「已过期」没有意义，横幅已说明它不是当前状态。

@@ -11,6 +11,7 @@
  * ================================================================== */
 
 import { explanationCardHTML } from './card.js';
+import { loadExplanationHistory, loadExplanationVersion, historyListHTML, replayBannerHTML } from './history.js';
 
 /** 解释能力开关（方案 §10.3：先置于可关闭的功能开关后） */
 export const EXPLAIN_FLAG_KEY = 'explain-card-enabled';
@@ -62,6 +63,10 @@ export function createExplainState(assetId) {
     seq: 0,
     staleHint: false,
     unsupported: !isExplainable(assetId),
+    // 历史回放（C3）：非 null 时卡片显示的是「当时那份」，不是当前状态
+    history: [],
+    historyStatus: 'idle',
+    replay: null,
   };
 }
 
@@ -173,18 +178,68 @@ export function toggleFactor(state, mechanismId) {
 
 /** 渲染入口：把状态交给纯字符串渲染器 */
 export function renderExplainCard(state, { assetName } = {}) {
-  return explanationCardHTML({
-    phase: state.phase,
+  const replay = state.replay ?? null;
+  /**
+   * 回放时用**当时那份快照**渲染，但把新鲜度判定摘掉：
+   * 用今天的时钟去说一份历史解释「已过期」没有意义，横幅已经说明它不是当前状态。
+   */
+  const card = explanationCardHTML({
+    phase: replay ? 'ready' : state.phase,
     assetId: state.assetId,
     assetName: assetName ?? state.assetName,
     windowKey: state.windowKey,
-    explanation: state.explanation,
-    meta: state.meta,
+    explanation: replay ? replay.explanation : state.explanation,
+    meta: replay ? { ...(state.meta ?? {}), freshness: null, freshnessReasons: [], backgroundStale: [] } : state.meta,
     error: state.error,
     retryAfterMs: state.retryAfterMs,
     openFactors: state.openFactors,
     openChecks: state.openChecks,
   });
+  const banner = replay ? replayBannerHTML(replay) : '';
+  // 只有拿到过至少两版才显示「此前的解释」，否则是一行空壳
+  const history = historyListHTML({ items: state.history, currentId: state.explanation?.id ?? null });
+  return `${banner}${card}${history}`;
+}
+
+/**
+ * 取历史版本列表（回放入口用）。
+ *
+ * 失败不影响当前卡片：列表拿不到就什么都不显示，不显示一个「加载中」空壳。
+ */
+export async function refreshHistory(state, { fetchImpl } = {}) {
+  if (!isExplainable(state.assetId)) return state;
+  const { status, items } = await loadExplanationHistory({
+    assetId: state.assetId,
+    windowKey: state.windowKey,
+    fetchImpl,
+  });
+  return { ...state, history: status === 200 ? items : [], historyStatus: status === 200 ? 'ok' : 'failed' };
+}
+
+/**
+ * 切换到某一版历史快照。
+ *
+ * 回放**不走缓存**：读的就是这一条 id，避免被「最新快照」顶掉。
+ */
+export async function viewVersion(state, id, { fetchImpl } = {}) {
+  if (!id) return state;
+  const { status, body } = await loadExplanationVersion(id, { fetchImpl });
+  if (status !== 200 || !body?.explanation) return { ...state, error: body?.error ?? '这个版本取不到' };
+  return {
+    ...state,
+    replay: {
+      id,
+      explanation: body.explanation,
+      asOf: body.explanation.asOf,
+      generatedAt: body.explanation.generatedAt,
+      versions: body.explanation.versions,
+    },
+  };
+}
+
+/** 回到当前解释 */
+export function backToCurrent(state) {
+  return { ...state, replay: null };
 }
 
 /**
@@ -192,15 +247,30 @@ export function renderExplainCard(state, { assetName } = {}) {
  *
  * @param {HTMLElement} root 稳定的容器（不会被整段替换）
  * @param {() => object} getState
- * @param {{ onChange:(next:object, action:string)=>void }} handlers
+ * @param {{ onChange:(next:object, action:string, payload?:object)=>void }} handlers
+ *        action: window | toggle | refresh | version | current
  */
 export function bindExplainInteractions(root, getState, handlers = {}) {
   if (!root || root.dataset.explainBound === '1') return;
   root.dataset.explainBound = '1';
   root.addEventListener('click', (ev) => {
-    const target = ev.target instanceof Element ? ev.target.closest('[data-explain-window], [data-explain-toggle], [data-explain-retry], [data-explain-refresh]') : null;
+    const target =
+      ev.target instanceof Element
+        ? ev.target.closest(
+            '[data-explain-window], [data-explain-toggle], [data-explain-retry], [data-explain-refresh], [data-explain-version], [data-explain-current]',
+          )
+        : null;
     if (!target) return;
     const state = getState();
+    // 历史回放（C3）：切到某一版 / 回到当前。两者都不触发新的生成
+    if (target.dataset.explainVersion) {
+      handlers.onChange?.(state, 'version', { versionId: target.dataset.explainVersion });
+      return;
+    }
+    if (target.dataset.explainCurrent) {
+      handlers.onChange?.(backToCurrent(state), 'current');
+      return;
+    }
     if (target.dataset.explainWindow) {
       handlers.onChange?.(switchWindow(state, target.dataset.explainWindow), 'window');
       return;

@@ -15,6 +15,8 @@ import {
   refreshExplain,
   renderExplainCard,
   bindExplainInteractions,
+  refreshHistory,
+  viewVersion,
 } from './explanations/state.js';
 import { clockText, dirOf, esc, fmtPct, fmtPrice, fmtSigned, html, prettySource, raw } from '../shared/format.js';
 import { store } from '../shared/store.js';
@@ -1129,6 +1131,32 @@ export function renderDetailError(id, message) {
 
 let explainState = null;
 
+/**
+ * 取历史版本列表（C3）。
+ *
+ * 与解释本身分开：列表失败不影响阅读当前解释，所以在拿到之后单独补绘一次。
+ */
+export async function hydrateHistory() {
+  if (!explainState || !isExplainable(explainState.assetId)) return null;
+  const assetAtStart = explainState.assetId;
+  const next = await refreshHistory(explainState);
+  if (!explainState || explainState.assetId !== assetAtStart) return null;
+  explainState = { ...next, openFactors: explainState.openFactors, replay: explainState.replay, assetName: explainState.assetName };
+  repaintExplainCard();
+  return explainState;
+}
+
+/** 切到某一版历史快照；取不到就保持当前视图并给出错误 */
+export async function replayVersion(versionId) {
+  if (!explainState || !versionId) return null;
+  const assetAtStart = explainState.assetId;
+  const next = await viewVersion(explainState, versionId);
+  if (!explainState || explainState.assetId !== assetAtStart) return null;
+  explainState = { ...next, openFactors: explainState.openFactors, assetName: explainState.assetName };
+  repaintExplainCard();
+  return explainState;
+}
+
 /** 取（或初始化）某个资产的解释状态 */
 export function ensureExplainState(assetId) {
   if (!explainState || explainState.assetId !== assetId) {
@@ -1159,10 +1187,16 @@ function bindExplain() {
   const host = typeof document !== 'undefined' ? document.getElementById('d-explain') : null;
   if (!host || !explainState) return;
   bindExplainInteractions(host, () => explainState, {
-    onChange: (next, action) => {
+    onChange: (next, action, payload) => {
+      // 历史回放（C3）：切版本是只读动作，不触发新的生成
+      if (action === 'version') {
+        void replayVersion(payload?.versionId);
+        return;
+      }
       explainState = next;
       repaintExplainCard();
       if (action === 'window' || action === 'refresh') void hydrateExplanation({ force: action === 'refresh' });
+      if (action === 'window') void hydrateHistory();
     },
   });
 }
@@ -1202,6 +1236,7 @@ export async function loadDetail(id, { force = false } = {}) {
       renderDetail(detailState.data);
       // 图表先渲染，解释异步补上：取数慢不该让整页等
       void hydrateExplanation();
+      void hydrateHistory();
     }
   } catch (err) {
     renderDetailError(id, err?.message ?? String(err));

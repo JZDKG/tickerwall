@@ -26,6 +26,10 @@ vi.mock('../src/server/db/index.js', () => ({
   appendJsonl: vi.fn(),
   readJsonl: vi.fn(),
   readJsonlField: vi.fn(),
+  // 事件修订（C3）：这里只关心接口不被打破，具体写入行为在 db 层单测
+  writeEventRevision: vi.fn(),
+  nextEventRevision: vi.fn(() => 1),
+  eventRevisionCounts: vi.fn(() => new Map()),
 }));
 
 const { fetchRaw } = await import('../src/server/providers/index.js');

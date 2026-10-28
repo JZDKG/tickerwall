@@ -672,3 +672,76 @@ describe('同事件折叠', () => {
     expect(rows[0].others).toHaveLength(0);
   });
 });
+
+/* ================================================================== *
+ * 事件版本（C3）
+ *
+ * 只有改判过的条目才显示「第 N 版」；点开能看到每一版的标题与等级，
+ * 且不覆盖原条目。
+ * ================================================================== */
+describe('事件版本徽章与面板', () => {
+  const base = (over = {}) => ({
+    id: 'jin10:9',
+    time: '2026-10-28 10:00:00',
+    title: 'OPEC+ 宣布减产',
+    body: '',
+    level: 'mid',
+    topics: [],
+    symbols: [],
+    publisher: '金十数据',
+    source: '金十数据',
+    url: 'https://example.test/9',
+    ...over,
+  });
+
+  it('没有改判（revision ≤ 1 或缺失）不显示徽章', () => {
+    expect(events.revisionChipHTML(base())).toBe('');
+    expect(events.revisionChipHTML(base({ revision: 1 }))).toBe('');
+  });
+
+  it('改判过就显示「第 N 版」，带条目 id 供取数', () => {
+    const chip = events.revisionChipHTML(base({ revision: 3 })).toString();
+    expect(chip).toContain('第 3 版');
+    expect(chip).toContain('data-event-revisions="jin10:9"');
+  });
+
+  it('面板列出每一版的版本号、时间、等级与标题（最新在前）', () => {
+    const rows = [
+      { revision: 1, knownAt: '2026-10-28T02:00:00Z', payload: { title: '初版标题', level: 'mid' } },
+      { revision: 2, knownAt: '2026-10-28T03:00:00Z', payload: { title: '改判后标题', level: 'high' } },
+    ];
+    const html = events.revisionPanelHTML('jin10:9', rows).toString();
+    expect(html).toContain('#2');
+    expect(html).toContain('#1');
+    expect(html.indexOf('改判后标题')).toBeLessThan(html.indexOf('初版标题'));
+    expect(html).toContain('high');
+    expect(html).toContain('修订是追加的');
+  });
+
+  it('只带分类结果的版本说清它记了什么，不显示成「标题缺失」', () => {
+    const rows = [
+      { revision: 1, knownAt: '2026-10-28T02:00:00Z', payload: { partial: true, shockType: 'supply' } },
+      { revision: 2, knownAt: '2026-10-28T03:00:00Z', payload: { title: '完整标题', level: 'mid' } },
+    ];
+    const html = events.revisionPanelHTML('jin10:9', rows).toString();
+    expect(html).toContain('分类：供给受阻');
+    expect(html).toContain('此版只记录了分类结果');
+    expect(html).not.toContain('未记录标题');
+  });
+
+  it('没有版本记录时不渲染空面板', () => {
+    expect(events.revisionPanelHTML('jin10:9', [])).toBe('');
+    expect(events.revisionPanelHTML('jin10:9', null)).toBe('');
+  });
+
+  it('取数走 /api/events/:id/revisions，失败返回空数组而不是抛出', async () => {
+    const ok = vi.fn(async () => ({ status: 200, json: async () => ({ revisions: [{ revision: 1 }] }) }));
+    expect(await events.loadEventRevisions('jin10:9', { fetchImpl: ok })).toHaveLength(1);
+    expect(ok.mock.calls[0][0]).toContain('/api/events/jin10%3A9/revisions');
+
+    const bad = vi.fn(async () => {
+      throw new Error('boom');
+    });
+    expect(await events.loadEventRevisions('jin10:9', { fetchImpl: bad })).toEqual([]);
+  });
+});

@@ -626,3 +626,82 @@
 .ev-cluster-more .event {
   opacity: 0.9;
 }
+
+/* ------------------------------------------------------------------ *
+ * 事件版本（C3）：改判留痕，点开能查每一版
+ * ------------------------------------------------------------------ */
+
+.ev-rev {
+  padding: 0 6px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted-2);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.ev-rev:hover {
+  color: var(--text);
+  border-color: var(--muted-2);
+}
+
+.ev-rev-panel {
+  margin: 4px 0 10px 62px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 11px;
+}
+
+.ev-rev-head {
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.ev-rev-note {
+  color: var(--muted-2);
+  margin-left: 6px;
+}
+
+.ev-rev-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ev-rev-row {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+  color: var(--muted-2);
+}
+
+.ev-rev-no {
+  color: var(--text);
+  min-width: 22px;
+}
+
+.ev-rev-title {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ev-rev-level {
+  color: #e0a83c;
+}
+
+.ev-rev-empty {
+  color: var(--muted-2);
+}
+
+.ev-rev-flag {
+  padding: 0 5px;
+  border-radius: 3px;
+  border: 1px solid rgba(224, 168, 60, 0.45);
+  color: #e0a83c;
+  font-size: 10px;
+}

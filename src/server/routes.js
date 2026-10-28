@@ -14,6 +14,7 @@ import { sendJson } from './http.js';
 import {
   getExplanationResponse,
   getExplanationById,
+  getExplanationHistory,
   explanationAssetIds,
   questionCandidates,
 } from './services/explanations.service.js';
@@ -38,6 +39,15 @@ export async function handleExplanationRoutes(url, res, { takeForce }) {
     const asset = url.searchParams.get('asset') || 'gold-intl';
     const windowKey = url.searchParams.get('window') || 'session';
     const { status, body } = await getExplanationResponse({ asset, windowKey, force: takeForce(url) });
+    sendJson(res, status, body);
+    return true;
+  }
+  // 历史快照列表必须在 :id 之前匹配，否则 history 会被当成一个版本号
+  if (url.pathname === '/api/explanations/history') {
+    const asset = url.searchParams.get('asset') || 'gold-intl';
+    const windowKey = url.searchParams.get('window') || 'session';
+    const limit = Number(url.searchParams.get('limit') || 20);
+    const { status, body } = getExplanationHistory({ asset, windowKey, limit });
     sendJson(res, status, body);
     return true;
   }
