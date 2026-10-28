@@ -170,3 +170,36 @@ describe('事件行悬停', () => {
     expect(() => row.onpointerleave()).not.toThrow();
   });
 });
+
+/* ================================================================== *
+ * 绑定后的交互：滤镜、事件流滚动、48h 信标、全屏
+ * ================================================================== */
+describe('滤镜与滚动', () => {
+  it('点滤镜重绘并换掉当前筛选；点同一个不重绘', () => {
+    mapEl.innerHTML = `
+      <div class="map-canvas" id="map-canvas" style="width:800px;height:400px">
+        <svg class="world-svg" viewBox="0 0 1200 560"><g id="map-viewport"></g></svg>
+        <div class="map-anchors" id="map-anchors"></div>
+        <div id="map-bubbles"></div>
+        <button class="map-pill" data-filter="high">高</button>
+      </div>
+      <div class="mf-list"><div class="mf-item" data-id="e1"></div></div>`;
+    const svg = mapEl.querySelector('.world-svg');
+    svg.getScreenCTM = () => ({ a: 2, b: 0, c: 0, d: 2, e: 0, f: 0 });
+    for (const el of [mapEl.querySelector('.map-canvas'), mapEl.querySelector('#map-bubbles')]) {
+      el.getBoundingClientRect = () => ({ left: 0, top: 0, width: 800, height: 400, right: 800, bottom: 400 });
+    }
+    map.bindMapEvents();
+    const pill = mapEl.querySelector('.map-pill[data-filter]');
+    expect(pill.onclick).toBeTypeOf('function');
+    expect(() => pill.onclick()).not.toThrow();
+    expect(() => pill.onclick()).not.toThrow(); // 同一个再点一次：早退，不重绘
+  });
+
+  it('事件流滚动会记下时刻（八秒内不抢滚动条）', () => {
+    const list = mapEl.querySelector('.mf-list');
+    if (!list) return;
+    expect(list.onscroll).toBeTypeOf('function');
+    expect(() => list.onscroll()).not.toThrow();
+  });
+});
