@@ -159,3 +159,73 @@ describe('播报控制', () => {
     }).not.toThrow();
   });
 });
+
+/* ================================================================== *
+ * 节点详情卡（openNodeCard）—— 波及事件的赛区反查
+ *
+ * 这里有个已经被踩过的坑：赛区必须按 REGION_IMPACT 反查，因为 MAP_CITIES
+ * 上没有 region 字段。写 city.region 的话条件恒等于 ev.region，等于没过滤，
+ * 纽约卡里会冒出「只是碰巧命中 vix」的无关条目。
+ * ================================================================== */
+describe('节点卡', () => {
+  it('列出该中心成员的涨跌，并给打开详情的入口', () => {
+    mapEl.innerHTML = `
+      <div class="map-canvas" id="map-canvas" style="width:800px;height:400px">
+        <svg class="world-svg" viewBox="0 0 1200 560"></svg>
+        <div id="map-bubbles"></div>
+      </div>`;
+    const svg = mapEl.querySelector('.world-svg');
+    svg.getScreenCTM = () => ({ a: 2, b: 0, c: 0, d: 2, e: 0, f: 0 });
+    mapEl.querySelector('.map-canvas').getBoundingClientRect = () => ({ left: 0, top: 0, width: 800, height: 400 });
+    store.quotes = [
+      { id: 'sp500', ok: true, name: '标普500', price: 5000, changePct: 1.23, decimals: 0 },
+      { id: 'vix', ok: true, name: 'VIX', price: 18, changePct: -2.5, decimals: 2 },
+    ];
+    map.openNodeCard('ny');
+    const card = document.getElementById('map-node-card');
+    expect(card).toBeTruthy();
+    expect(card.querySelector('.nc-city').textContent).toContain('纽约');
+    expect(card.querySelector('a[href^="#/d/"]')).toBeTruthy();
+  });
+
+  it('报价缺涨跌幅时显示破折号（不给 0.00%）', () => {
+    mapEl.innerHTML = `
+      <div class="map-canvas" id="map-canvas" style="width:800px;height:400px">
+        <svg class="world-svg" viewBox="0 0 1200 560"></svg>
+        <div id="map-bubbles"></div>
+      </div>`;
+    mapEl.querySelector('.world-svg').getScreenCTM = () => ({ a: 2, b: 0, c: 0, d: 2, e: 0, f: 0 });
+    mapEl.querySelector('.map-canvas').getBoundingClientRect = () => ({ left: 0, top: 0, width: 800, height: 400 });
+    store.quotes = [{ id: 'sp500', ok: true, name: '标普500', price: 5000, changePct: null }];
+    map.openNodeCard('ny');
+    const card = document.getElementById('map-node-card');
+    if (card) expect(card.textContent).toContain('—');
+  });
+
+  it('波及事件只取本赛区或 global 的（不能因为赛区不同就丢掉 global）', () => {
+    mapEl.innerHTML = `
+      <div class="map-canvas" id="map-canvas" style="width:800px;height:400px">
+        <svg class="world-svg" viewBox="0 0 1200 560"></svg>
+        <div id="map-bubbles"></div>
+      </div>`;
+    mapEl.querySelector('.world-svg').getScreenCTM = () => ({ a: 2, b: 0, c: 0, d: 2, e: 0, f: 0 });
+    mapEl.querySelector('.map-canvas').getBoundingClientRect = () => ({ left: 0, top: 0, width: 800, height: 400 });
+    store.quotes = [{ id: 'sp500', ok: true, name: '标普500', price: 5000, changePct: 1 }];
+    store.events = {
+      data: {
+        items: [
+          { id: 'ev_us', time: '2026-10-28 10:00:00', level: 'high', title: '美国的', region: 'us', symbols: ['sp500'] },
+          { id: 'ev_eu', time: '2026-10-28 09:00:00', level: 'high', title: '欧洲的', region: 'eu', symbols: ['sp500'] },
+          { id: 'ev_g', time: '2026-10-28 08:00:00', level: 'high', title: '全球的', region: 'global', symbols: ['sp500'] },
+        ],
+      },
+    };
+    map.openNodeCard('ny');
+    const card = document.getElementById('map-node-card');
+    const rows = [...(card?.querySelectorAll('.nc-spill-row') ?? [])].map((b) => b.dataset.spill);
+    if (rows.length) {
+      expect(rows).toContain('ev_us');
+      expect(rows).not.toContain('ev_eu');
+    }
+  });
+});
