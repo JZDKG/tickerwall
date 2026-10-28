@@ -117,8 +117,30 @@ jsdom 单测结构上就抓不到 —— 必须开真浏览器。**
 我做过一次基于「序号被 double-invoke 撞掉」的修改，但新加的用例立刻证明
 那个假设不成立（第二次调用返回 null 的原因不是序号），已**回滚**，不留猜测性改动。
 
-下一步该做的：在 `hydrateExplanation` 里临时打点（seq、phase、写入前后的
-`#d-explain` 长度），定位是「没写回」还是「写回后被覆盖」。
+#### 打点结果（临时 `__KANBAN_DEBUG` 日志，已移除）
+
+```
+[hydrate] start  curSeq 0            ← 状态是新建的（seq=0）
+[hydrate] after-fetch  nextSeq 1, phase ready, hasExp true
+[hydrate] applied  phase ready
+[repaint] ready  17027               ← 卡片确实被画成 ready
+[repaint] loading 3212               ← 又被画回 loading（3212 = 初始骨架长度）
+[hydrate] start  curSeq 0            ← 状态**又被新建了一次**（seq 回到 0）
+[unmount] / [mount] gold-intl
+```
+
+结论（已收敛到两个函数）：
+1. **取数与写回都成功** —— `applied phase ready` 与 `repaint ready 17027` 都出现了；
+2. 紧接着出现 `repaint loading 3212`，说明 `explainState` 在这之间被**重新创建**
+   （phase 回 loading、seq 回 0）；
+3. 整个仓库里只有两处能造出新状态：`ensureExplainState()`（`!explainState` 时）
+   与 `mountDetail()` / `unmountDetail()` 里的 `explainState = null`。
+   所以是**路由在这一页上发生了 mount/unmount 抖动**，每次抖动把状态清掉、
+   再被 `renderDetail` 末尾的 `repaintExplainCard()` 画回骨架。
+
+下一步：在 `mountDetail` / `unmountDetail` 里打点确认抖动来源（很可能是
+`route()` 被重复调用，或 hashchange 与定时器叠加）。这属于**未修**项，
+已在 §13 的待办里挂号。
 
 ### 顺带确认的正常项
 
