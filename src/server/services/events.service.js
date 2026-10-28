@@ -8,14 +8,12 @@
  * 对外只暴露三样：getEvents（路由用）、loadLlmStore（启动用）、archiveEvents（调试用）。
  * ================================================================== */
 
-import path from 'node:path';
 import { readFileSync } from 'node:fs';
-import fsp from 'node:fs/promises';
 
 import { fetchRaw, toNum } from '../providers/index.js';
 import { fetchFeedCatalog, DIRECT_FEEDS, GOOGLE_FEEDS } from '../providers/news-feeds.js';
 import { COMPILED_TOPICS, IMPACT_WORDS, anyWordHit, sanitizeText, sanitizeUrl, guessRegion, isOfficialRoutine, dedupeKey } from '../domain/news-lexicon.js';
-import { kvGetJson, kvSetJson, appendJsonl, readJsonl, readJsonlField } from '../db/index.js';
+import { kvGetJson, kvSetJson } from '../db/index.js';
 import {
   stripHtml,
   bjTimeString,
@@ -29,7 +27,12 @@ import {
 // （测试直接断言 stripHtml / bjTimeString，服务层内部也用 NOISE_RE 过滤噪声稿）
 export { stripHtml, bjTimeString, NOISE_RE, fetchJin10, fetchSinaLive, fetchWscn };
 
-import { DATA_DIR } from '../paths.js';
+import { archiveEvents, readArchiveRowsForSpan } from '../db/event-archive.js';
+
+// 归档已下沉到 db/event-archive.js；转发保住对外契约
+// （server.mjs 启动后调 archiveEvents，测试直接断言它）
+export { archiveEvents };
+
 
 const EVENTS_CACHE_TTL_MS = 25_000;
 
@@ -101,20 +104,13 @@ function toLevel(info, important) {
  * ------------------------------------------------------------------ */
 // LLM 缓存已迁到 SQLite KV（llm-cache），不再读写 ~/.dsh 的 json 文件 ——
 // 原来这里有个 LLM_STORE_FILE 常量，从 4c 之后就没用了
-const EVENTS_DIR = path.join(DATA_DIR, 'events');
 
 /** label → { key, label }。归档只存了 label，回放时要还原成和实时接口同一形状 */
 const TOPIC_BY_LABEL = new Map(COMPILED_TOPICS.map((t) => [t.label, t]));
 
 let llmStoreTimer = null;
 let llmStoreDirty = false;
-let archivedIds = new Set();
-let archivedDay = null;
 
-async function ensureDataDirs() {
-  await fsp.mkdir(DATA_DIR, { recursive: true });
-  await fsp.mkdir(EVENTS_DIR, { recursive: true });
-}
 
 /** 启动时把 LLM 缓存读回内存（SQLite kv 表） */
 export async function loadLlmStore() {
@@ -153,51 +149,9 @@ function scheduleLlmStore() {
   }, 3000);
 }
 
-function todayKey() {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Shanghai',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date());
-}
 
-async function loadArchivedIds(day) {
-  if (archivedDay === day) return;
-  archivedDay = day;
-  archivedIds = new Set();
-  archivedIds = await readJsonlField(path.join(EVENTS_DIR, `${day}.jsonl`), 'id');
-}
 
-/** 把本轮事件追加归档（按天分文件，同一天内按 id 去重） */
-export async function archiveEvents(items) {
-  try {
-    const day = todayKey();
-    await loadArchivedIds(day);
-    const fresh = items.filter((it) => !archivedIds.has(it.id));
-    if (!fresh.length) return;
-    await ensureDataDirs();
-    await appendJsonl(
-      path.join(EVENTS_DIR, `${day}.jsonl`),
-      fresh.map((it) => ({
-        id: it.id,
-        time: it.time,
-        source: it.source,
-        title: it.title,
-        body: it.body?.slice(0, 300) ?? '',
-        url: sanitizeUrl(it.url),
-        level: it.level,
-        topics: it.topics?.map((t) => t.label) ?? [],
-        symbols: it.symbols ?? [],
-        region: it.region ?? null,
-        llm: Boolean(it.llm),
-      })),
-    );
-    fresh.forEach((it) => archivedIds.add(it.id));
-  } catch (err) {
-    console.error('事件归档失败:', err?.message ?? err);
-  }
-}
+
 
 /** 指标快照：记录当前 8 个标的的报价，供回溯 */
 
@@ -694,14 +648,9 @@ export async function getEventHistory({ hours = 24, limit = 600, nowMs = Date.no
   const spanMs = Math.max(1, Math.min(72, Number(hours) || 24)) * 3600 * 1000;
   const sinceMs = nowMs - spanMs;
 
-  // 北京时间的两天（跨天边界按北京算，和归档命名一致）
-  const dayOf = (ms) => new Date(ms + 8 * 3600 * 1000).toISOString().slice(0, 10);
-  const files = [...new Set([dayOf(sinceMs), dayOf(nowMs)])]
-    .map((d) => path.join(EVENTS_DIR, `${d}.jsonl`));
+  const archiveRows = await readArchiveRowsForSpan({ sinceMs, nowMs });
 
-  const archiveRows = [];
-  for (const file of files) archiveRows.push(...(await readJsonl(file)));
-
+  // 实时快照留在服务层取 —— 搬进 db 就成了 db → service 的反向依赖
   const live = await getEvents({ limit: 200 });
   const merged = mergeHistoryRows({
     archiveRows,
