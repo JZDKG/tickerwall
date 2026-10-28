@@ -27,7 +27,7 @@ export function weekdayCN(dateStr) {
 export function calendarBlockHTML(cal) {
   const upcoming = (cal?.upcoming ?? []).slice(0, 8);
   if (!upcoming.length) {
-    return html`<div class="chart-empty">暂无日历数据</div>`.toString();
+    return html`<div class="chart-empty">暂无日历数据</div>`;
   }
   const today = cal.today;
   const items = upcoming.map((e) => {
@@ -41,7 +41,7 @@ export function calendarBlockHTML(cal) {
         <span class="cal-time">${e.time}<em>${when}</em></span>
       </div>`;
   });
-  return html`<div class="cal-list">${items}</div>`.toString();
+  return html`<div class="cal-list">${items}</div>`;
 }
 
 export function eventItemHTML(ev) {
@@ -88,14 +88,14 @@ export function eventItemHTML(ev) {
       ${ev.body && ev.body !== ev.title ? html`<p class="ev-body">${ev.body}</p>` : ''}
       <div class="ev-meta">${oneHand}${langChip}<span class="ev-pub"${channelNote ? html` title="经 ${channelNote} 采集"` : ''}>${byline}</span>${symsExist ? html`<span class="ev-sep">·</span>${symChips}` : ''}${link}</div>
     </div>
-  </article>`.toString();
+  </article>`;
 }
 
 export function renderEvents(opts = {}) {
   const keepScroll = opts.keepScroll ? window.scrollY : null;
   const st = store.events;
   if (!st?.data) {
-    eventsEl.innerHTML = '<div class="d-loading">正在聚合全球实时快讯…</div>';
+    eventsEl.innerHTML = html`<div class="d-loading">正在聚合全球实时快讯…</div>`.toString();
     return;
   }
   const data = st.data;
@@ -122,17 +122,17 @@ export function renderEvents(opts = {}) {
       + (failed.length ? ` · 失败 ${failed.map((s) => s.source).join('、')}` : '')
     : (data.sources ?? []).map((s) => (s.ok ? `${s.source} ${s.count}` : `${s.source} 失败`)).join(' · ');
 
-  eventsEl.innerHTML = `
+  eventsEl.innerHTML = html`
     <div class="d-top">
       <button type="button" class="back-btn" id="back-events">← 返回列表</button>
       <div class="d-id">
         <h2>全球事件中心</h2>
-        <p>${esc(srcLine)} · 只保留对市场有影响的条目</p>
+        <p>${srcLine} · 只保留对市场有影响的条目</p>
       </div>
       <div class="macro-status">
         ${
           data.llm?.enabled
-            ? `<span class="llm-pill" title="关键词打底 + LLM 语义复核；${data.llm.pending ? '正在分类新的条目' : '已完成当前批次'}">AI 复核 ${data.llm.applied}/${data.total}${data.llm.pending ? ' …' : ''}</span>`
+            ? html`<span class="llm-pill" title="关键词打底 + LLM 语义复核；${data.llm.pending ? '正在分类新的条目' : '已完成当前批次'}">AI 复核 ${data.llm.applied}/${data.total}${data.llm.pending ? ' …' : ''}</span>`
             : ''
         }
         <span class="risk-note">${data.generatedAt ? clockText(new Date(data.generatedAt)) : ''} 更新</span>
@@ -141,7 +141,7 @@ export function renderEvents(opts = {}) {
     </div>
     ${
       st.newCount
-        ? `<button type="button" class="new-banner" id="jump-new">↑ ${st.newCount} 条新事件</button>`
+        ? html`<button type="button" class="new-banner" id="jump-new">↑ ${st.newCount} 条新事件</button>`
         : ''
     }
 
@@ -168,12 +168,13 @@ export function renderEvents(opts = {}) {
       </div>
       <div class="pick-row" id="topic-filter">
         <button type="button" class="pick ${!st.topic ? 'on' : ''}" data-t="">全部主题</button>
-        ${topics
-          .map((t) => `<button type="button" class="pick ${st.topic === t.key ? 'on' : ''}" data-t="${esc(t.key)}">${esc(t.label)}</button>`)
-          .join('')}
+        ${topics.map(
+          (t) =>
+            html`<button type="button" class="pick ${st.topic === t.key ? 'on' : ''}" data-t="${t.key}">${t.label}</button>`,
+        )}
       </div>
       <div class="event-list">
-        ${items.length ? items.map(eventItemHTML).join('') : '<div class="chart-empty">当前筛选下没有条目</div>'}
+        ${items.length ? items.map(eventItemHTML) : html`<div class="chart-empty">当前筛选下没有条目</div>`}
       </div>
     </section>
 
@@ -186,7 +187,7 @@ export function renderEvents(opts = {}) {
       <span>标签与影响等级由关键词、源重要度与 LLM 语义复核共同判定，仅供筛选参考</span>
       <span>覆盖 ${cov.languages?.length ?? 0} 种语言 · ${cov.publishers?.length ?? 0} 家媒体 · 一手 ${cov.origins?.direct ?? 0} 条 / 索引 ${cov.origins?.aggregate ?? 0} 条</span>
     </footer>
-  `;
+  `.toString();
 
   document.getElementById('back-events')?.addEventListener('click', () => {
     location.hash = '';
@@ -275,7 +276,7 @@ export async function loadEvents(force = false) {
       store.events.llmRetryCount = 0;
     }
   } catch (err) {
-    eventsEl.innerHTML = `<div class="d-top"><button type="button" class="back-btn" id="back-events">← 返回列表</button><div class="d-id"><h2>全球事件中心</h2><p>加载失败</p></div></div><div class="d-error">${esc(err?.message ?? String(err))}</div>`;
+    eventsEl.innerHTML = html`<div class="d-top"><button type="button" class="back-btn" id="back-events">← 返回列表</button><div class="d-id"><h2>全球事件中心</h2><p>加载失败</p></div></div><div class="d-error">${err?.message ?? String(err)}</div>`.toString();
     document.getElementById('back-events')?.addEventListener('click', () => {
       location.hash = '';
     });

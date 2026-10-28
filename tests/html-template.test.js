@@ -5,7 +5,7 @@
  * 这里既测实现，也测**约束**（raw 的使用范围、裸 ${} 的棘轮）。
  * ================================================================== */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -218,7 +218,7 @@ describe('raw() 的使用范围', () => {
  * ------------------------------------------------------------------ */
 describe('events.js 迁移后的输出快照', async () => {
   // import 是提升的，静态 import 会跑在 DOM 桩之前 —— 必须动态取
-  const { eventItemHTML } = await import('../src/client/views/events.js');
+  const { eventItemHTML, calendarBlockHTML } = await import('../src/client/views/events.js');
   const EV = {
     id: 'sina:1',
     time: '2026-10-27 20:30:00',
@@ -239,7 +239,8 @@ describe('events.js 迁移后的输出快照', async () => {
   };
 
   it('标题里的标签与引号只转义一次', () => {
-    const out = eventItemHTML(EV);
+    // 子组件返回 SafeHtml（不是普通 string），转成文本再断言
+    const out = String(eventItemHTML(EV));
     expect(out).toContain('&lt;b&gt;暂停加息&lt;/b&gt;');
     expect(out).toContain('&amp;');
     expect(out).toContain('&quot;quoted&quot;');
@@ -249,10 +250,19 @@ describe('events.js 迁移后的输出快照', async () => {
   });
 
   it('href 的 & 只转一次，且仍走协议白名单', () => {
-    expect(eventItemHTML(EV)).toContain('href="https://a.com/x?a=1&amp;b=2"');
+    expect(String(eventItemHTML(EV))).toContain('href="https://a.com/x?a=1&amp;b=2"');
     // javascript: 的那条不渲染链接
-    expect(eventItemHTML({ ...EV, url: 'javascript:alert(1)' })).not.toContain('ev-link');
-    expect(eventItemHTML({ ...EV, url: null })).not.toContain('ev-link');
+    expect(String(eventItemHTML({ ...EV, url: 'javascript:alert(1)' }))).not.toContain('ev-link');
+    expect(String(eventItemHTML({ ...EV, url: null }))).not.toContain('ev-link');
+  });
+
+  it('子组件必须返回 SafeHtml 而不是普通字符串', () => {
+    // 这条是这次功能回归的根因：返回普通 string 时，外层 html`` 会把它
+    // 当不可信输入整体转义 —— <article> 变成 &lt;article&gt;，浏览器里
+    // 一条事件都渲染不出来，而所有单测照样全绿。
+    expect(eventItemHTML(EV)).toBeInstanceOf(SafeHtml);
+    expect(calendarBlockHTML({ upcoming: [] })).toBeInstanceOf(SafeHtml);
+    expect(calendarBlockHTML({ today: '2026-10-28', upcoming: [{ date: '2026-10-28', kind: 'fomc', title: 'x', time: '02:00' }] })).toBeInstanceOf(SafeHtml);
   });
 });
 
@@ -276,11 +286,10 @@ describe('棘轮：innerHTML 里的裸插值', () => {
   /**
    * 已**整个文件**迁完的，必须为 0。
    *
-   * events.js 目前只迁了 eventItemHTML，整页模板与日历块还是拼字符串 ——
-   * 那两处各有十几个插值，值得单独一版做。所以暂不列入；等它归零再进来。
-   * 逐文件列入比「列一个文件但允许它有裸插值」有意义得多。
+   * 逐文件列入比「列一个文件但允许它有裸插值」有意义得多 —— 后者只是把
+   * 数字挪个地方，没有守住任何东西。
    */
-  const MIGRATED = new Set();
+  const MIGRATED = new Set(['views/events.js']);
 
   /**
    * 全站基线。这个数字只允许变小，不许变大。
@@ -291,7 +300,7 @@ describe('棘轮：innerHTML 里的裸插值', () => {
    * 必须为 0」来守，两者合起来才有意义。195 是 `innerHTML` 这一类当前
    * 的实测值（detail 82 / macro 45 / events 33 / map 28 / 其余 7）。
    */
-  const BASELINE = 195;
+  const BASELINE = 162;
 
   function bareInterpolations(code) {
     // 数 `innerHTML = \`…\`` 之后的模板里出现的 ${，粗略但足够做棘轮
@@ -318,5 +327,84 @@ describe('棘轮：innerHTML 里的裸插值', () => {
     let total = 0;
     for (const file of walk(CLIENT)) total += bareInterpolations(readFileSync(file, 'utf8'));
     expect(total, '裸插值变多了 —— 新代码请用 html``').toBeLessThanOrEqual(BASELINE);
+  });
+});
+
+/* ================================================================== *
+ * 整页组合渲染：子组件不能被外层当纯文本二次转义
+ *
+ * 这条是把一次真实功能回归固化下来的防线。
+ *
+ * 事故：eventItemHTML / calendarBlockHTML 结尾多写了 `.toString()`，返回
+ * 普通 string。外层 `eventsEl.innerHTML = html`…`` 按设计把普通 string 当
+ * 不可信输入整体转义，于是 `<article>` 变成 `&lt;article&gt;` —— 浏览器里
+ * 一条事件都渲染不出来。
+ *
+ * 而当时 22 个测试文件、616 条用例**全绿**：单测只测了孤立子函数，
+ * 没人测「整页组合后 DOM 里到底有几个 .event」。是靠提交前手动开浏览器
+ * 数出来的。这条测试补的就是那个缺口。
+ * ================================================================== */
+describe('整页组合渲染', () => {
+  // dom.js 里的 eventsEl 就是 document.getElementById 的返回值（我们的 stub），
+  // 直接读它的 innerHTML 即可 —— 不需要另外造容器
+  let renderEvents;
+  let eventsEl;
+
+  beforeAll(async () => {
+    const mod = await import('../src/client/views/events.js');
+    renderEvents = mod.renderEvents;
+    const { store } = await import('../src/client/shared/store.js');
+    store.events = {
+      data: {
+        items: [
+          {
+            id: 'a:1', time: '2026-10-27 20:30:00', source: '新浪财经', publisher: '日経',
+            title: '标题 <b>带标签</b> & 符号', url: 'https://a.com/x?a=1&b=2',
+            level: 'high', important: true, region: 'us', llm: true,
+            topics: [{ key: 'fed', label: '货币政策', strong: true }], symbols: ['us10y'],
+            body: '正文 <tag>', origin: 'direct', lang: 'zh',
+          },
+          {
+            id: 'b:2', time: '2026-10-27 20:20:00', source: '东方财富', publisher: null,
+            title: '第二条', url: null, level: 'mid', important: false, region: 'cn',
+            llm: false, topics: [{ key: 'china', label: '中国政策', strong: false }],
+            symbols: [], body: '', origin: null, lang: 'zh',
+          },
+        ],
+        topics: [{ key: 'fed', label: '货币政策' }],
+        total: 2, counts: { high: 1 },
+        sources: [], coverage: {}, generatedAt: '2026-10-27T12:00:00Z',
+        llm: { enabled: true, applied: 2, pending: 0 },
+      },
+      calendar: { today: '2026-10-28', upcoming: [{ date: '2026-10-28', kind: 'fomc', title: 'FOMC', time: '02:00' }] },
+      level: '', topic: '', origin: '', study: null, studyMode: 'auto',
+      newIds: null, newCount: 0,
+    };
+    const dom = await import('../src/client/shared/dom.js');
+    eventsEl = dom.eventsEl;
+  });
+
+  it('渲染出的事件条数与数据一致（不是 0）', () => {
+    renderEvents();
+    const html = eventsEl.innerHTML;
+    const count = (html.match(/<article class="event /g) ?? []).length;
+    expect(count, '事件条数应与数据一致；为 0 说明子组件被整体转义了').toBe(2);
+  });
+
+  it('没有把标签转义成文本', () => {
+    renderEvents();
+    const html = eventsEl.innerHTML;
+    expect(html).not.toContain('&lt;article');
+    expect(html).not.toContain('&lt;div class="cal-list"');
+    expect(html).not.toContain('&lt;span class="ev-topic"');
+    // 正常的实体转义仍然要在（标题里的 <b> 是外部数据，该转）
+    expect(html).toContain('&lt;b&gt;带标签&lt;/b&gt;');
+    expect(html).not.toContain('&amp;lt;b&amp;gt;');
+  });
+
+  it('日历块同样作为 SafeHtml 嵌入，而不是文本', () => {
+    renderEvents();
+    expect(eventsEl.innerHTML).toContain('<div class="cal-list">');
+    expect(eventsEl.innerHTML).not.toContain('&lt;div class=&quot;cal-list&quot;');
   });
 });
