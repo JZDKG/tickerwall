@@ -97,6 +97,9 @@ export default defineConfig({
   resolve: {
     alias: {
       'geo-kit': path.resolve(root, 'src/client/vendor/geo-kit.js'),
+      // 浏览器里靠站点根路径解析（public/ 下的文件），Node 侧需要映射 ——
+      // 否则 macro.js 一被 import 就 ERR_MODULE_NOT_FOUND，整个文件测不了
+      '/macro-graph.js': path.resolve(root, 'public/macro-graph.js'),
     },
   },
 

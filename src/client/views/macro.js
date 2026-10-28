@@ -10,7 +10,7 @@
 
 import { macroEl } from '../shared/dom.js';
 import { store } from '../shared/store.js';
-import { clockText, dirOf, esc } from '../shared/format.js';
+import { clockText, dirOf, esc, html, raw } from '../shared/format.js';
 import { macroGraphSectionHTML, findEdge, EDGE_BY_ID } from '/macro-graph.js';
 
 /* ------------------------------------------------------------------ *
@@ -379,8 +379,10 @@ export function richRollingSVG(points, opts = {}) {
 export function macroCompareHTML(data) {
   const changes = data.recent?.changes ?? {};
   const dates = data.recent?.dates ?? [];
-  const picked = [...(macroState.picked ?? [])];
-  if (!picked.length) return '<div class="chart-empty">勾选上面的标的后看归一化对比</div>';
+  // macroState 由 renderMacro 赋值；渲染函数单独被调用（测试、异常路径）时
+  // 它可能还是 null，不该因此崩掉
+  const picked = [...(macroState?.picked ?? [])];
+  if (!picked.length) return html`<div class="chart-empty">勾选上面的标的后看归一化对比</div>`;
   const meta = new Map(data.universe.map((u) => [u.id, u]));
   const series = picked.slice(0, LINE_COLORS.length).map((id, i) => {
     const u = meta.get(id);
@@ -395,17 +397,16 @@ export function macroCompareHTML(data) {
   const hasRate = series.some((s) => s.kind === 'rate');
   const chartW = Math.max(300, Math.round(macroEl.clientWidth - 40));
   const chartH = Math.round(Math.min(300, Math.max(170, chartW * 0.26)));
-  return `<div class="chart-legend">${series
-    .map(
-      (s) =>
-        `<span><i style="background:${s.color}"></i>${esc(s.name)}${
-          s.kind === 'rate' ? '<em class="legend-badge">久期折算</em>' : ''
-        }</span>`,
-    )
-    .join('')}<span class="legend-note">起点归一化为 100${
+  const chips = series.map(
+    (s) =>
+      html`<span><i style="background:${s.color}"></i>${s.name}${
+        s.kind === 'rate' ? html`<em class="legend-badge">久期折算</em>` : ''
+      }</span>`,
+  );
+  return html`<div class="chart-legend">${chips}<span class="legend-note">起点归一化为 100${
     hasRate ? `　·　利率按 ${BOND_DURATION_10Y} 年修正久期折算成债券价格（收益率上行＝曲线下跌）` : ''
   }</span></div>
-    ${multiLineSVG(series, { width: chartW, height: chartH, labels: dates })}`;
+    ${raw(multiLineSVG(series, { width: chartW, height: chartH, labels: dates }))}`;
 }
 
 /* ------------------------------------------------------------------ *

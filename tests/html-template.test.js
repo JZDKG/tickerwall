@@ -188,8 +188,11 @@ describe('raw() 的使用范围', () => {
    *   自己产出的 HTML」。当普通字符串插进外层 html`` 会被整体转义成
    *   &lt;path，整张地图变乱码 —— 所以必须显式放行。
    *   这些片段不接受外部输入直接透传，安全边界在各自的生成函数里。
+   *
+   * views/macro.js —— 同类：multiLineSVG / richRollingSVG 产出的是纯 SVG
+   *   几何（路径坐标由数值算出），不是 HTML 文本，必须原样嵌入。
    */
-  const RAW_ALLOWED = new Set([path.join('views', 'map.js')]);
+  const RAW_ALLOWED = new Set([path.join('views', 'map.js'), path.join('views', 'macro.js')]);
 
   function walk(dir) {
     const out = [];
@@ -461,5 +464,35 @@ describe('map.js 的 SVG 片段经过 raw() 放行', () => {
     expect(src).toContain('el.innerHTML = html`\n    <div class="nc-head">');
     // 事件流气泡
     expect(src).toContain('el.innerHTML = html`\n    <div class="bb-head">');
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * macro.js 子组件：必须返回 SafeHtml
+ *
+ * 主模板最终要 `${macroCompareHTML(data)}` 这样插值；若它们返回普通
+ * string，会被外层整体转义（events.js 那次整页空白的同款事故）。
+ *
+ * 这里逐个断言，加一个就锁一个，不等主模板迁移时才发现。
+ * ------------------------------------------------------------------ */
+describe('macro.js 子组件返回 SafeHtml', async () => {
+  const mod = await import('../src/client/views/macro.js');
+
+  const DATA = {
+    universe: [
+      { id: 'sp500', short: '标普500', kind: 'price' },
+      { id: 'us10y', short: '美债10年期', kind: 'rate' },
+    ],
+    recent: {
+      dates: ['10-25', '10-26', '10-27'],
+      changes: { sp500: [0, 0.5, 1.2], us10y: [0, -0.02, 0.03] },
+    },
+  };
+
+  it('macroCompareHTML 返回 SafeHtml（未勾选标的时是空态）', () => {
+    const out = mod.macroCompareHTML(DATA);
+    expect(out).toBeInstanceOf(SafeHtml);
+    // macroState 未初始化 → picked 为空 → 空态提示，而不是崩掉
+    expect(String(out)).toContain('chart-empty');
   });
 });
