@@ -15,6 +15,31 @@ import { sigmaOfHistory } from './views/explanations/questions.js';
 // 没人 import 它，那段代码在浏览器里从来没执行过 —— 按钮点了没反应。
 // 副作用式导入，不需要任何导出。
 import './views/briefing.js';
+import { refreshHomeBrief } from './views/home-brief-wiring.js';
+
+/** 首页问题优先区（产品 2.3 + 2.4）：容器不存在时整段跳过 */
+const homeBriefEl = document.getElementById('home-brief');
+export let homeBriefTimer = null;
+
+/**
+ * 拉一次「问题优先区」。失败不抛出：这一块是加分项，不能让它挡住行情列表。
+ * 关注项与 lastSeen 都在本地，所以每次都要重新读一遍（用户可能刚改过）。
+ */
+export async function refreshHomeBriefSafe(fetchJson = null) {
+  if (!homeBriefEl) return null;
+  try {
+    return await refreshHomeBrief({ host: homeBriefEl, storage: window.localStorage, fetchJson });
+  } catch {
+    return null;
+  }
+}
+
+/** 选择后立刻重拉，并停掉这一轮的定时器避免与主循环打架 */
+export function scheduleHomeBrief(delay = 300_000) {
+  clearTimeout(homeBriefTimer);
+  if (!homeBriefEl) return;
+  homeBriefTimer = setTimeout(() => { void refreshHomeBriefSafe(); }, delay);
+}
 
 
 /* ------------------------------ 取数 / 循环 ------------------------------ */

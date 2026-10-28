@@ -14,7 +14,7 @@
  *   · 两块都为空时整块隐藏，不留一块空白面板。
  * ================================================================== */
 
-import { esc } from '../shared/format.js';
+import { esc, html } from '../shared/format.js';
 import { watchBriefHTML } from './watch-brief.js';
 import { expectationsCardHTML } from './expectations.js';
 
@@ -59,14 +59,14 @@ export function watchPickerHTML(questions, chosen = []) {
   const list = (questions ?? []).map((q) => {
     const on = chosen.includes(q.key);
     const full = !on && chosen.length >= 3;
-    return `<label class="wp-item${on ? ' on' : ''}${full ? ' disabled' : ''}">
-        <input type="checkbox" data-watch="${esc(q.key)}" ${on ? 'checked' : ''} ${full ? 'disabled' : ''} />
-        <span class="wp-q">${esc(q.question)}</span>
-        <span class="wp-why">${esc(q.why)}</span>
+    return html`<label class="wp-item${on ? ' on' : ''}${full ? ' disabled' : ''}">
+        <input type="checkbox" data-watch="${q.key}" ${on ? 'checked' : ''} ${full ? 'disabled' : ''} />
+        <span class="wp-q">${q.question}</span>
+        <span class="wp-why">${q.why}</span>
       </label>`;
   });
-  return `<div class="wp" role="group" aria-label="选择关心的问题">
+  return html`<div class="wp" role="group" aria-label="选择关心的问题">
     <p class="wp-hint">最多选三个。选多了简报就变成「全部市场」，和现在没区别。</p>
-    ${list.join('')}
+    ${list}
   </div>`;
 }
