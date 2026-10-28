@@ -47,4 +47,11 @@ export {
 
 export { cnbcNum, parseCnbcQuotes, cnbcQuoteOf } from './cnbc.js';
 
-export { FRED_MIN_ROWS, parseFredCsv, parseFredCsvOrThrow, fredQuoteFromRows } from './fred.js';
+export {
+  FRED_MIN_ROWS,
+  FRED_SIGNED_SERIES,
+  fredValueDomain,
+  parseFredCsv,
+  parseFredCsvOrThrow,
+  fredQuoteFromRows,
+} from './fred.js';

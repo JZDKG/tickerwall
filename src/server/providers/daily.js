@@ -199,14 +199,16 @@ export async function fetchTencentDaily(code, count = 640) {
 }
 
 
-export async function fetchFredDaily(seriesId) {
+export async function fetchFredDaily(seriesId, opts = {}) {
   const csv = await fetchRaw(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${encodeURIComponent(seriesId)}`, {
     timeoutMs: 25_000,
     // FRED 对 Chrome 伪装的 UA 会挂起连接，必须用默认 UA
     omitUa: true,
     headers: { Accept: 'text/csv' },
   });
-  return parseFredCsvOrThrow(csv, seriesId);
+  // 值域按序列类型判定：利率 / 利差保留零与负值，价格仍要求 > 0。
+  // 调用方可以覆盖（回放样本、测试），默认由 fredValueDomain 决定。
+  return parseFredCsvOrThrow(csv, seriesId, opts.valueDomain ? { valueDomain: opts.valueDomain } : {});
 }
 
 

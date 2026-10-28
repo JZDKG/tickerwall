@@ -37,6 +37,9 @@ import {
   readJsonlField,
   writeHistoryFile,
   readHistoryFile,
+  schemaVersionOf,
+  SCHEMA_VERSION,
+  migrateDatabase,
 } from '../src/server/db/index.js';
 
 const REPO = fileURLToPath(new URL('..', import.meta.url));
@@ -64,12 +67,36 @@ afterEach(() => {
  * ================================================================== */
 
 describe('sqlite：连接与建表', () => {
-  it('建出四张表（daily_bars / daily_meta / snapshots / kv）', () => {
+  /**
+   * 2026-10-28：解释功能引入 7 张新表（方案 §6.3），原来的「恰好四张表」
+   * 断言改成「四张老表必须都在 + 新表按迁移建出」。老表仍然是
+   * CREATE IF NOT EXISTS，所以老库升级不会被动到。
+   */
+  const LEGACY_TABLES = ['daily_bars', 'daily_meta', 'kv', 'snapshots'];
+  const EXPLANATION_TABLES = [
+    'articles',
+    'collection_state',
+    'event_revisions',
+    'evidence',
+    'explanation_evidence',
+    'explanations',
+    'observation_revisions',
+  ];
+
+  it('老表仍在，解释相关的 7 张表由版本化迁移建出', () => {
     const names = getDb()
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
       .all()
       .map((r) => r.name);
-    expect(names).toEqual(['daily_bars', 'daily_meta', 'kv', 'snapshots']);
+    for (const t of [...LEGACY_TABLES, ...EXPLANATION_TABLES]) expect(names).toContain(t);
+    expect(names).toEqual([...LEGACY_TABLES, ...EXPLANATION_TABLES].sort());
+  });
+
+  it('迁移只前进一次：重复 openDatabase 不重复建表、不报错', () => {
+    const db = getDb();
+    expect(schemaVersionOf(db)).toBe(SCHEMA_VERSION);
+    // 再跑一次迁移：已是最新版，applied 为空
+    expect(migrateDatabase(db).applied).toEqual([]);
   });
 
   it('useDatabase(":memory:") 之后 currentDatabaseFile 反映的是内存库', () => {

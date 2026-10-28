@@ -57,9 +57,24 @@ export async function readDailyCache(id) {
 /**
  * 整段替换某个标的的日线。
  * 源可能回补历史，所以先 DELETE 再插 —— 留着旧行会和新的重复。
+ *
+ * 值域（2026-10-28）：默认 'positive'，只接受收盘 > 0；利率 / 利差序列传
+ * `{ valueDomain: 'signed' }` 以保留合法的零与负值。之前一律 `close > 0`，
+ * 导致 DFII10（实际收益率，2020 年曾为负）在**写库这一步**被丢光 ——
+ * 只改解析器不够，缺口就在这里补。
+ *
+ * 元数据 count / start_date / end_date 取自**实际写入**的行，不是过滤前的数组：
+ * 否则 count 报了 5000、库里有 4200，页面上「样本数」与实际图表长度对不上。
+ *
+ * @param {string} id
+ * @param {string|null} source
+ * @param {Array<{date, close, open?, high?, low?, volume?}>} rows
+ * @param {{ valueDomain?: 'positive'|'signed' }} [opts]
+ * @returns {Promise<number>} 实际写入行数（0 表示没写）
  */
-export async function writeDailyCache(id, source, rows) {
+export async function writeDailyCache(id, source, rows, opts = {}) {
   if (!Array.isArray(rows) || rows.length < 2) return;
+  const signed = opts.valueDomain === 'signed';
   try {
     const db = getDb();
     const insBar = db.prepare(
@@ -76,20 +91,24 @@ export async function writeDailyCache(id, source, rows) {
     try {
       db.prepare('DELETE FROM daily_bars WHERE id = ?').run(id);
       let written = 0;
+      let firstDate = null;
+      let lastDate = null;
       for (const r of rows) {
         const c = Number(r.close);
-        if (!r.date || !(c > 0)) continue; // 缺日期或收盘非正的行直接丢
+        if (!r.date || !Number.isFinite(c)) continue; // 缺日期或收盘非数字的行直接丢
+        if (!signed && !(c > 0)) continue; // 价格口径：0 / 负数当作缺失
         insBar.run(id, String(r.date), numOrNull(r.open), c, numOrNull(r.high), numOrNull(r.low), numOrNull(r.volume));
         written += 1;
+        if (firstDate == null || String(r.date) < firstDate) firstDate = String(r.date);
+        if (lastDate == null || String(r.date) > lastDate) lastDate = String(r.date);
       }
-      upsertMeta.run(
-        id,
-        source ?? null,
-        Date.now(),
-        rows.length,
-        rows[0]?.date ?? null,
-        rows[rows.length - 1]?.date ?? null,
-      );
+      if (written === 0) {
+        // 一行都没写进去就别留下「有缓存、0 行」的假象
+        db.prepare('DELETE FROM daily_meta WHERE id = ?').run(id);
+        db.exec('COMMIT');
+        return 0;
+      }
+      upsertMeta.run(id, source ?? null, Date.now(), written, firstDate, lastDate);
       db.exec('COMMIT');
       return written;
     } catch (err) {

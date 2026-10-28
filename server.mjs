@@ -23,6 +23,7 @@ import {
 import { getDetail } from './src/server/services/detail.service.js';
 import { getMacro } from './src/server/services/macro.service.js';
 import { getCalendar, getEventStudy } from './src/server/services/calendar.service.js';
+import { handleExplanationRoutes } from './src/server/routes.js';
 import http from 'node:http';
 import path from 'node:path';
 
@@ -100,6 +101,9 @@ async function handle(req, res) {
       const data = await getEventStudy({ force });
       return sendJson(res, 200, data);
     }
+    /* 解释读取与事件版本（方案 §8.1）：实现在 src/server/routes.js，
+       入口只保留一次委派，避免又长回「什么都放在这里」的老样子。 */
+    if (await handleExplanationRoutes(url, res, { takeForce })) return;
     if (url.pathname === '/api/calendar') {
       const force = takeForce(url);
       const data = await getCalendar({ force });

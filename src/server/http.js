@@ -26,6 +26,8 @@ const FORCE_ENDPOINTS = [
   '/api/events',
   '/api/eventstudy',
   '/api/calendar',
+  // 解释接口：force=1 表示「重新取数并重建解释」，同样受 5 秒预算约束
+  '/api/explanations',
   // detail 带 id 维度：5 秒内连刷两个不同标的，第二个不该被前一个的预算连累
   '/api/detail',
 ];

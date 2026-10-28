@@ -14,6 +14,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DATA_DIR } from '../paths.js';
+import { migrateDatabase, SCHEMA_VERSION } from './migrations.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 /** 仓库根目录：src/server/db → 上三级 */
@@ -37,10 +38,19 @@ let handle = null;
 /** 测试注入用：非 null 时覆盖默认路径 */
 let overrideFile = null;
 
-/** 建表语句集中在这里，改 schema 只改一处 */
+/**
+ * 建表语句集中在这里，改 schema 只改一处。
+ *
+ * 历史四张表（daily_bars / daily_meta / snapshots / kv）保持原样，全部
+ * CREATE IF NOT EXISTS —— 老库升级时它们本来就在，不会被动到。
+ * 解释功能的新表走 migrations.js 的版本化迁移（PRAGMA user_version），
+ * 因为新增 7 张表、还要能记录「这个库升到第几版了」。
+ */
 function applySchema(db) {
   db.exec('PRAGMA journal_mode = WAL');
   db.exec('PRAGMA synchronous = NORMAL');
+  // 外键约束默认关闭；不开这个 pragma，explanation_evidence 的 REFERENCES 只是注释
+  db.exec('PRAGMA foreign_keys = ON');
   db.exec(`CREATE TABLE IF NOT EXISTS daily_bars (
     id TEXT NOT NULL,
     date TEXT NOT NULL,
@@ -69,6 +79,8 @@ function applySchema(db) {
     v TEXT NOT NULL,
     at INTEGER NOT NULL
   )`);
+  // 版本化迁移：解释功能的 7 张表 + 后续增量结构。幂等，已是最新版时什么都不做。
+  migrateDatabase(db);
 }
 
 /**
@@ -81,6 +93,19 @@ export function openDatabase(file = DEFAULT_DB_FILE) {
   applySchema(db);
   return db;
 }
+
+/** 该连接的 schema 版本（诊断与测试用） */
+export function schemaVersionOf(db) {
+  try {
+    const row = db.prepare('PRAGMA user_version').get() ?? {};
+    return Number(row.user_version ?? 0) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** 当前代码期望的版本，暴露给启动日志与 /api/health */
+export { SCHEMA_VERSION };
 
 /** 当前实际使用的库文件：测试注入 > 环境变量 > 默认 */
 export function currentDatabaseFile() {

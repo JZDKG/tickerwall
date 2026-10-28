@@ -13,11 +13,42 @@ export {
   useDatabase,
   closeDb,
   currentDatabaseFile,
+  schemaVersionOf,
+  SCHEMA_VERSION,
   kvGet,
   kvSet,
   kvGetJson,
   kvSetJson,
 } from './sqlite.js';
+
+export { MIGRATIONS, migrateDatabase, currentSchemaVersion } from './migrations.js';
+
+export {
+  writeObservationRevisions,
+  readObservationRevision,
+  readObservationAsOf,
+  countObservationRevisions,
+  writeArticle,
+  readArticle,
+  latestArticleRevision,
+  writeEventRevision,
+  readEventRevision,
+  readEventAsOf,
+  listEventRevisions,
+  validateReferences,
+  writeExplanation,
+  readExplanation,
+  latestExplanation,
+  explanationIdByFingerprint,
+  listExplanationEvidence,
+  pruneUnlinkedEvidence,
+  countExplanations,
+  recordCollectionSuccess,
+  recordCollectionFailure,
+  readCollectionState,
+  listCollectionStates,
+  explanationStorageStatus,
+} from './explanations.js';
 
 export { DAILY_FRESH_MS, numOrNull, readDailyCache, writeDailyCache, isDailyCacheFresh } from './daily-cache.js';
 

@@ -45,7 +45,21 @@ export async function fetchMacroSeries(def) {
   // 1) 8 小时内的库缓存直接复用 —— 宏观页 2 分钟一过期就重拉 13 个品种数千条日线太浪费
   const cached = await readDailyCache(def.id);
   if (cached && Date.now() - cached.savedAt < DAILY_FRESH_MS) {
-    return { rows: cached.rows, meta: { source: cached.source, name: def.name, code: def.id } };
+    return {
+      rows: cached.rows,
+      meta: {
+        source: cached.source,
+        name: def.name,
+        code: def.id,
+        // 缓存命中也要说清「这是缓存」，否则解释层无法区分「刚抓到」与「复用旧值」
+        quality: {
+          fromCache: true,
+          fellBack: false,
+          savedAt: cached.savedAt,
+          ageMs: Date.now() - cached.savedAt,
+        },
+      },
+    };
   }
 
   // 2) 打源，取条数最多的一份
@@ -63,30 +77,76 @@ export async function fetchMacroSeries(def) {
   }
 
   if (best) {
-    // 只在「不比库里少」时覆盖，避免宏观页用 500 条的短序列把详情页 5000 条的历史冲掉
+    // 只在「不比库里少」时覆盖，避免宏观页用 500 条的短序列把详情页 5000 条的历史冲掉。
+    // 利率 / 利差序列用 signed 值域写库，否则零值与负值会在落库时被静默丢弃。
     if (!cached || best.rows.length >= cached.rows.length) {
-      await writeDailyCache(def.id, best.meta.source, best.rows);
+      const writeOpts = def.valueDomain === 'signed' ? { valueDomain: 'signed' } : undefined;
+      if (writeOpts) await writeDailyCache(def.id, best.meta.source, best.rows, writeOpts);
+      else await writeDailyCache(def.id, best.meta.source, best.rows);
     }
-    return best;
+    return {
+      ...best,
+      meta: {
+        ...best.meta,
+        name: def.name,
+        code: def.id,
+        quality: {
+          fromCache: false,
+          fellBack: false,
+          savedAt: Date.now(),
+          ageMs: 0,
+          sourceErrors: errors.length ? errors : undefined,
+        },
+      },
+    };
   }
 
-  // 3) 源全挂才退回旧缓存
+  // 3) 源全挂才退回旧缓存。
+  //    降级状态必须完整透传：之前这里只换了 rows，meta 里没有 stale 标记，
+  //    于是「昨天抓到的旧序列」在接口和解释层看起来和新数据一模一样。
   if (cached) {
-    return { rows: cached.rows, meta: { source: cached.source, name: def.name, code: def.id } };
+    return {
+      rows: cached.rows,
+      meta: {
+        source: cached.source,
+        name: def.name,
+        code: def.id,
+        quality: {
+          fromCache: true,
+          fellBack: true,
+          savedAt: cached.savedAt,
+          ageMs: Date.now() - cached.savedAt,
+          sourceErrors: errors.length ? errors : undefined,
+          reason: 'ALL_SOURCES_FAILED',
+        },
+      },
+    };
   }
   throw new Error(errors.join(' / ') || '无可用来源');
 }
 
-/** 收盘序列 → 日变化序列（利率用百分点差，其余用对数收益率） */
+/**
+ * 收盘序列 → 变动序列。
+ *
+ * 价格用对数收益率（要求两端都为正，否则 log 会产出 NaN / -Infinity）；
+ * 利率用百分点差（`cur - prev`），**允许零值与负值** —— 实际收益率可以跨零，
+ * 用「必须 > 0」去过滤会把整段负利率时期当成缺失，机会成本渠道永远算不出变化。
+ *
+ * 利率差的展示换算是 `1bp = 0.01 个百分点`（见 fmtChg / toBp）。
+ */
 export function toChanges(rows, kind) {
   const dates = [];
   const values = [];
+  const isRate = kind === 'rate';
   for (let i = 1; i < rows.length; i += 1) {
-    const prev = rows[i - 1].close;
-    const cur = rows[i].close;
-    if (!(prev > 0) || !(cur > 0)) continue;
+    const prev = Number(rows[i - 1].close);
+    const cur = Number(rows[i].close);
+    if (isRate) {
+      // 利率只要求「是有限数」：零和负值都是合法观测
+      if (!Number.isFinite(prev) || !Number.isFinite(cur)) continue;
+    } else if (!(prev > 0) || !(cur > 0)) continue;
     dates.push(rows[i].date);
-    values.push(kind === 'rate' ? cur - prev : Math.log(cur / prev));
+    values.push(isRate ? cur - prev : Math.log(cur / prev));
   }
   return { dates, values };
 }
@@ -183,6 +243,15 @@ export async function buildMacro(windowSize = 250, freq = 'day') {
   const universe = [];
   const series = new Map();
   const zSeries = new Map();
+  /**
+   * 原始**日线**收盘序列，与矩阵频率无关。
+   *
+   * 固定定义的「20 日实现波动率」必须从日线算：之前它吃的是 zSeries，
+   * 而 zSeries 在 freq='week' 时是周收益率，却仍乘 √252 的年化系数 ——
+   * 切一次频率，「20 日 RV」就变成一个既不是日频也不是周频的数字。
+   * 这里单独留一份原始日线，RV / VRP 永远取它。
+   */
+  const dailyCloses = new Map();
 
   results.forEach((r, i) => {
     const def = MACRO_UNIVERSE[i];
@@ -191,6 +260,10 @@ export async function buildMacro(windowSize = 250, freq = 'day') {
       return;
     }
     const rawRows = r.value.rows;
+    dailyCloses.set(
+      def.id,
+      rawRows.map((x) => ({ date: x.date, close: Number(x.close) })),
+    );
     const rows = freq === 'week' ? aggregateWeekly(rawRows) : rawRows;
     const chg = toChanges(rows, def.kind);
     series.set(def.id, tailWindow(chg, windowSize));
@@ -218,6 +291,10 @@ export async function buildMacro(windowSize = 250, freq = 'day') {
       start: chg.dates[0] ?? null,
       end: chg.dates[chg.dates.length - 1] ?? null,
       source: r.value.meta?.source ?? null,
+      // 质量：缓存命中 / 源全挂回退 / 各源错误，解释层据此判断能不能用这个窗口
+      quality: r.value.meta?.quality
+        ? { ...r.value.meta.quality, source: r.value.meta.source ?? null }
+        : { fromCache: false, fellBack: false, source: r.value.meta?.source ?? null },
     });
   });
 
@@ -378,26 +455,49 @@ export async function buildMacro(windowSize = 250, freq = 'day') {
   const spread = risk != null && hedge != null ? risk - hedge : null;
 
   /**
-   * 波动率风险溢价 VRP = VIX − 标普 20 日实现波动率。
-   * 隐含波动率长期高于实现波动率（期权卖方要报酬），溢价被压到极低说明保护便宜、
-   * 市场自满；溢价飙升说明大家在抢着买保护。
+   * 隐含与实现波动率之差（VIX − 标普 20 日实现波动率）。
+   * 隐含波动率长期高于实现波动率（期权卖方要报酬），差值被压到极低说明保护便宜、
+   * 市场自满；差值飙升说明大家在抢着买保护。
+   *
+   * 两条口径必须固定，否则日 / 周切换会让同一个指标换个数字：
+   *   1) RV 从**原始日线**算，不随矩阵频率变化；
+   *   2) 年化系数恒为 √252，因为底层就是日收益率。
+   *
+   * 命名也跟着收紧：这是「隐含减实现」的波动率差，而不是精确分解出来的
+   * 方差风险溢价（后者还要扣除方差本身的随机项与跳跃成分）。
    */
+  const realizedVol = (() => {
+    const spxDaily = dailyCloses.get('sp500');
+    if (!spxDaily || spxDaily.length < 21) return null;
+    const closes = spxDaily.slice(-21).map((r) => r.close);
+    if (closes.some((c) => !Number.isFinite(c) || !(c > 0))) return null;
+    const rets = [];
+    for (let i = 1; i < closes.length; i += 1) rets.push(Math.log(closes[i] / closes[i - 1]));
+    const m = rets.reduce((a, b) => a + b, 0) / rets.length;
+    const sd = Math.sqrt(rets.reduce((a, b) => a + (b - m) ** 2, 0) / (rets.length - 1));
+    if (!Number.isFinite(sd)) return null;
+    return {
+      sd,
+      rv20: sd * Math.sqrt(252) * 100,
+      asOf: spxDaily[spxDaily.length - 1].date,
+      from: spxDaily[spxDaily.length - 21].date,
+      observations: rets.length,
+    };
+  })();
+
   const vrp = (() => {
     const vixU = universe.find((u) => u.id === 'vix');
-    // 用 zSeries（固定 65 期）而不是受 windowSize 截断的 series，
-    // 否则切 周频+20日 时样本不足 20，VRP 会整个消失
-    const spx = zSeries.get('sp500');
-    if (!vixU?.ok || vixU.last == null || !spx || spx.values.length < 20) return null;
-    const sl = spx.values.slice(-20);
-    const m = sl.reduce((a, b) => a + b, 0) / sl.length;
-    const sd = Math.sqrt(sl.reduce((a, b) => a + (b - m) ** 2, 0) / (sl.length - 1));
-    const rv20 = sd * Math.sqrt(252) * 100;
+    if (!vixU?.ok || vixU.last == null || !realizedVol) return null;
     return {
       vix: vixU.last,
-      rv20,
-      vrp: vixU.last - rv20,
-      ratio: rv20 > 0 ? vixU.last / rv20 : null,
-      asOf: spx.dates[spx.dates.length - 1] ?? null,
+      rv20: realizedVol.rv20,
+      vrp: vixU.last - realizedVol.rv20,
+      ratio: realizedVol.rv20 > 0 ? vixU.last / realizedVol.rv20 : null,
+      asOf: realizedVol.asOf,
+      rvWindow: { from: realizedVol.from, to: realizedVol.asOf, observations: realizedVol.observations },
+      // 让调用方不必猜这是不是「方差风险溢价」的精确估计
+      label: 'implied-minus-realized',
+      unit: 'vol-points',
     };
   })();
 

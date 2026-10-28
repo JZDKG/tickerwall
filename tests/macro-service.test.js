@@ -272,6 +272,25 @@ describe('buildMacro：矩阵 / 风险篮子 / VRP', () => {
     expect(['Risk-On', 'Risk-Off', '中性']).toContain(data.riskAppetite.label);
   });
 
+  it('同一批原始日线切日 / 周矩阵：20 日 RV、波动率差与截至日期都不变', async () => {
+    // 方案 §10.1：固定定义的 20 日 RV 不能随矩阵频率变化。
+    // 之前周频用周收益率算 RV 却仍乘 √252，切一次频率这个指标就换了个含义。
+    prime();
+    const day = await buildMacro(250, 'day');
+    const week = await buildMacro(250, 'week');
+
+    expect(day.vrp).toBeTruthy();
+    expect(week.vrp).toBeTruthy();
+    expect(week.vrp.rv20).toBeCloseTo(day.vrp.rv20, 10);
+    expect(week.vrp.vrp).toBeCloseTo(day.vrp.vrp, 10);
+    expect(week.vrp.asOf).toBe(day.vrp.asOf);
+    // 口径标注：这是「隐含减实现」的波动率差，不是精确分解的方差风险溢价
+    expect(day.vrp.label).toBe('implied-minus-realized');
+    expect(day.vrp.rvWindow.observations).toBe(20);
+    // 日频矩阵本身样本数仍然远多于周频（说明 freq 确实生效了）
+    expect(week.universe[0].samples).toBeLessThan(day.universe[0].samples);
+  });
+
   it('周频走 aggregateWeekly，样本数明显少于日频', async () => {
     prime();
     const day = await buildMacro(250, 'day');
