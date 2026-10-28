@@ -91,6 +91,83 @@ export function eventItemHTML(ev) {
   </article>`;
 }
 
+/**
+ * 把同事件的重复报道折叠成一行（方案 B2 / §4.4）。
+ *
+ * 十条媒体转同一条央行发言不该占十行。折叠单位是**事件簇**而不是 URL：
+ * 同一原始报道的转载 URL 不同，但事件是同一个。
+ *
+ * 返回的行有两类：
+ *   { kind:'single', ev }
+ *   { kind:'cluster', primary, others, articleCount, publisherCount, sources }
+ * 折叠只影响展示：每条原文仍然保留，点开就能看到各自来源。
+ */
+export function groupEventsByCluster(items, clusters) {
+  if (!Array.isArray(clusters) || !clusters.length) return (items ?? []).map((ev) => ({ kind: 'single', ev }));
+  const byId = new Map((items ?? []).map((ev) => [ev.id, ev]));
+  const clusterOf = new Map();
+  for (const c of clusters) {
+    for (const id of c.articleIds ?? []) clusterOf.set(id, c);
+  }
+  const seen = new Set();
+  const rows = [];
+  for (const ev of items ?? []) {
+    const c = clusterOf.get(ev.id);
+    if (!c || (c.articleCount ?? 1) <= 1) {
+      rows.push({ kind: 'single', ev });
+      continue;
+    }
+    if (seen.has(c.eventId)) continue;
+    seen.add(c.eventId);
+    const members = (c.articleIds ?? []).map((id) => byId.get(id)).filter(Boolean);
+    const primary = members.find((m) => m.id === c.primary) ?? members[0] ?? ev;
+    rows.push({
+      kind: 'cluster',
+      primary,
+      others: members.filter((m) => m !== primary),
+      articleCount: c.articleCount ?? members.length,
+      publisherCount: c.independentPublisherCount ?? new Set(members.map((m) => m.publisher)).size,
+      sources: c.sources ?? [],
+    });
+  }
+  return rows;
+}
+
+/** 一行事件：单条事件，或折叠后的同事件多源 */
+export function eventRowHTML(row) {
+  if (row.kind === 'single') return eventItemHTML(row.ev);
+  const badge = html`<div class="ev-cluster" data-cluster="${row.primary.id}">
+    <button type="button" class="ev-cluster-toggle" aria-expanded="false">同事件 ${row.articleCount} 条报道 · ${row.publisherCount} 家来源</button>
+    <div class="ev-cluster-more" hidden>${row.others.map(eventItemHTML)}</div>
+  </div>`;
+  return html`${eventItemHTML(row.primary)}${badge}`;
+}
+
+/**
+ * 同事件折叠的展开/收起：只影响显示，不改变任何分类结果。
+ *
+ * 单独导出便于测试 —— 折叠是纯展示，但"点不开"和"吞掉原文"都是真故障。
+ */
+export function bindClusterToggles(root = document) {
+  for (const btn of root.querySelectorAll('.ev-cluster-toggle')) {
+    btn.addEventListener('click', () => {
+      const box = btn.closest('.ev-cluster');
+      const more = box?.querySelector('.ev-cluster-more');
+      if (!more) return;
+      const open = more.hidden;
+      more.hidden = !open;
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open) {
+        const total = box.querySelectorAll('.event').length + 1;
+        btn.dataset.label = btn.textContent;
+        btn.textContent = `收起其余报道（共 ${total} 条）`;
+      } else if (btn.dataset.label) {
+        btn.textContent = btn.dataset.label;
+      }
+    });
+  }
+}
+
 export function renderEvents(opts = {}) {
   const keepScroll = opts.keepScroll ? window.scrollY : null;
   const st = store.events;
@@ -152,7 +229,7 @@ export function renderEvents(opts = {}) {
 
     <section class="d-block">
       <div class="chart-head">
-        <h3>实时事件流 <span class="h3-note">共 ${data.total} 条 · 外媒 ${foreignCount} 条 · 一手 ${cov.origins?.direct ?? 0} 条 · 高影响 ${data.counts?.high ?? 0} 条 · 按时间倒序</span></h3>
+        <h3>实时事件流 <span class="h3-note">共 ${data.total} 条（同事件已折叠）· 外媒 ${foreignCount} 条 · 一手 ${cov.origins?.direct ?? 0} 条 · 高影响 ${data.counts?.high ?? 0} 条 · 按时间倒序</span></h3>
         <div class="seg" id="level-filter">
           <button type="button" data-l="" class="${!st.level ? 'on' : ''}">全部</button>
           <button type="button" data-l="high" class="${st.level === 'high' ? 'on' : ''}">只看重要</button>
@@ -174,7 +251,7 @@ export function renderEvents(opts = {}) {
         )}
       </div>
       <div class="event-list">
-        ${items.length ? items.map(eventItemHTML) : html`<div class="chart-empty">当前筛选下没有条目</div>`}
+        ${items.length ? groupEventsByCluster(items, data.clusters).map(eventRowHTML) : html`<div class="chart-empty">当前筛选下没有条目</div>`}
       </div>
     </section>
 
@@ -201,6 +278,7 @@ export function renderEvents(opts = {}) {
     renderEvents();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
+  bindClusterToggles();
   document.querySelectorAll('#level-filter button').forEach((btn) => {
     btn.addEventListener('click', () => {
       store.events.level = btn.dataset.l;

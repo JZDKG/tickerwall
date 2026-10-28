@@ -18,6 +18,8 @@ document.body.innerHTML = `
 
 const list = await import('../src/client/views/list.js');
 const events = await import('../src/client/views/events.js');
+// 从动态导入里取：events.js 会经 shared/dom.js 抓元素，必须在骨架写好之后再加载
+const { groupEventsByCluster, eventRowHTML, bindClusterToggles } = events;
 const { refs, store, PLACEHOLDER } = await import('../src/client/shared/store.js');
 const { on } = await import('../src/client/shared/bus.js');
 
@@ -580,5 +582,93 @@ describe('events.loadEvents / mount：网络、增量 NEW、失败与定时器',
     expect(eventsEl.hidden).toBe(true);
     expect(eventsEl.innerHTML).toBe('');
     scroll.mockRestore();
+  });
+});
+
+/* ================================================================== *
+ * 同事件折叠（B2 / §4.4）
+ *
+ * 十条媒体转同一条央行发言不该占十行；但折叠不能吞掉原文，
+ * 每条来源都要能展开看到。
+ * ================================================================== */
+describe('同事件折叠', () => {
+  const mk = (id, publisher, title = '新西兰联储维持利率不变') => ({
+    id,
+    time: '2026-10-28 10:00:00',
+    title,
+    body: '',
+    level: 'mid',
+    topics: [],
+    symbols: [],
+    publisher,
+    source: publisher,
+    url: `https://example.test/${id}`,
+  });
+
+  const items = [mk('a', '路透'), mk('b', '彭博'), mk('c', '日经'), mk('d', '金十', '隔夜美股收涨')];
+  const clusters = [
+    { eventId: 'a', revision: 1, articleCount: 3, independentPublisherCount: 3, primary: 'a', articleIds: ['a', 'b', 'c'], sources: ['路透', '彭博', '日经'] },
+    { eventId: 'd', revision: 1, articleCount: 1, independentPublisherCount: 1, primary: 'd', articleIds: ['d'], sources: ['金十'] },
+  ];
+
+  it('三条同事件报道折叠成一行，单条保持原样', () => {
+    const rows = groupEventsByCluster(items, clusters);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].kind).toBe('cluster');
+    expect(rows[0].articleCount).toBe(3);
+    expect(rows[0].others.map((o) => o.id)).toEqual(['b', 'c']);
+    expect(rows[1].kind).toBe('single');
+  });
+
+  it('主条目沿用聚类给出的 primary，不按顺序猜', () => {
+    const rows = groupEventsByCluster(items, [{ ...clusters[0], primary: 'c' }]);
+    expect(rows[0].primary.id).toBe('c');
+    expect(rows[0].others.map((o) => o.id)).toEqual(['a', 'b']);
+  });
+
+  it('没有聚类数据时退化成逐条渲染（不吞条目）', () => {
+    expect(groupEventsByCluster(items, null)).toHaveLength(4);
+    expect(groupEventsByCluster(items, [])).toHaveLength(4);
+  });
+
+  it('折叠行带展开按钮，其余报道默认隐藏', () => {
+    const el = document.createElement('div');
+    el.innerHTML = eventRowHTML(groupEventsByCluster(items, clusters)[0]).toString();
+    // 顶层只有一条（主条目）；其余在隐藏容器里
+    expect(el.querySelectorAll(':scope > article.event')).toHaveLength(1);
+    expect(el.querySelector('.ev-cluster-toggle').textContent).toContain('同事件 3 条报道');
+    expect(el.querySelector('.ev-cluster-more').hidden).toBe(true);
+    // 其余两条仍然在 DOM 里：折叠不等于删除
+    expect(el.querySelectorAll('.ev-cluster-more .event')).toHaveLength(2);
+  });
+
+  it('点开后能看到其余报道，再点收起；按钮文案与 aria 状态同步', () => {
+    const el = document.createElement('div');
+    el.innerHTML = eventRowHTML(groupEventsByCluster(items, clusters)[0]).toString();
+    document.body.appendChild(el);
+    bindClusterToggles(el);
+    const btn = el.querySelector('.ev-cluster-toggle');
+    const more = el.querySelector('.ev-cluster-more');
+
+    btn.click();
+    expect(more.hidden).toBe(false);
+    expect(btn.getAttribute('aria-expanded')).toBe('true');
+    expect(btn.textContent).toContain('收起其余报道');
+    expect(btn.textContent).toContain('共 3 条');
+
+    btn.click();
+    expect(more.hidden).toBe(true);
+    expect(btn.getAttribute('aria-expanded')).toBe('false');
+    expect(btn.textContent).toContain('同事件 3 条报道');
+    el.remove();
+  });
+
+  it('过滤后不在列表里的条目不会被当成折叠头', () => {
+    // 只看 'b'（其他被筛掉）时，b 自己就是一行，不应显示「同事件 3 条」
+    const rows = groupEventsByCluster([items[1]], clusters);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe('cluster');
+    expect(rows[0].primary.id).toBe('b');
+    expect(rows[0].others).toHaveLength(0);
   });
 });

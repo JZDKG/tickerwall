@@ -774,6 +774,14 @@ export async function getEvents({ force = false, limit = 160 } = {}) {
       pending: llmInFlight,
       ...llmStats,
     },
+    /**
+     * 同事件聚合（方案 B2 / §4.4）。
+     *
+     * 十条媒体转同一条央行发言不该在列表里出现十遍。这里把聚类结果**附带**
+     * 返回（不改动 items）：客户端按 articleIds 折叠成一行，并显示
+     * 「N 条报道 · M 家来源」。同一原始报道的转载不重复计证据。
+     */
+    clusters: clusterForClient(items),
     items: items.slice(0, limit),
   };
   eventsCache.set('ev', { at: Date.now(), data });

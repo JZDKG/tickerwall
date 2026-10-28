@@ -580,7 +580,7 @@ git diff --check
 | A5 地理口径 | `views/map/geo/regions.js`（欧洲 / 亚太、`REGION_SEMANTICS`）、`events.service.js` 提示词 | `tests/event-normalization.test.js`「地理口径」 |
 | B0 持久化 | `db/migrations.js`（版本表 + 7 张表）、`db/explanations.js`（引用校验、事务、清理只删未被引用者） | `tests/db-explanations.test.js`、`tests/db.test.js` |
 | B1 指标与机制 | `domain/explanations/instruments.js`、`mechanisms.js`（条件、例外、来源、版本）、DFII10 / T10YIE 接入 | `tests/explanation-metrics.test.js`、`tests/explanations.test.js` |
-| B2 事件聚合 | `domain/events/cluster.js`（同事件一张卡、来源保留、动作不一致不合并） | `tests/event-normalization.test.js` |
+| B2 事件聚合 | `domain/events/cluster.js`（同事件一张卡、来源保留、动作不一致不合并）；`/api/events` 附带 `clusters`；事件流按簇折叠成一行并显示「同事件 N 条报道 · M 家来源」，可展开看其余原文 | `tests/event-normalization.test.js`、`tests/views-list-events.test.js`「同事件折叠」 |
 | B3 解释服务 | `domain/explanations/{alignment,quality,evidence,compose}.js`、`services/explanations.service.js`、`/api/explanations`、`/api/explanations/:id`、`/api/events/:id/revisions[/n]` | `tests/explanations.test.js`、`tests/explanation-http.test.js` |
 | B4 资产详情 | `views/explanations/{card,state}.js`、`views/detail.js`（图表之前）、`public/styles/explanations.css` | `tests/views-explanations.test.js` |
 | B5 首页与图谱 | `views/explanations/questions.js`、`index.html#questions`、`main.js` 异步补卡 | `tests/views-questions.test.js` |

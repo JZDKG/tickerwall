@@ -593,3 +593,36 @@
 .stat-toggle span {
   font-size: 11.5px;
 }
+
+/* ------------------------------------------------------------------ *
+ * 同事件折叠（B2）：一行一个事件，重复报道收进「同事件 N 条报道」
+ * ------------------------------------------------------------------ */
+
+.ev-cluster {
+  margin: -2px 0 2px 62px;
+}
+
+.ev-cluster-toggle {
+  padding: 2px 8px;
+  border-radius: 5px;
+  border: 1px dashed var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.ev-cluster-toggle:hover {
+  color: var(--text);
+  border-color: var(--muted-2);
+}
+
+.ev-cluster-more {
+  margin-top: 6px;
+  padding-left: 8px;
+  border-left: 2px solid var(--line);
+}
+
+.ev-cluster-more .event {
+  opacity: 0.9;
+}
