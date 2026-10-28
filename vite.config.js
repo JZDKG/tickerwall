@@ -54,6 +54,43 @@ export default defineConfig({
       },
     },
   },
+  test: {
+    /**
+     * 覆盖率：分层门槛，不是全仓一刀切 95%。
+     *
+     * 理由：4000+ 行视图层是纯 DOM 渲染代码，在 Node 里根本不加载。给它
+     * 硬刷行覆盖只会产出一堆「跑通不断言」的面子测试。所以按风险分层：
+     *
+     *   server / shared / geo   大脑与安全底线（行情、时区、统计、清洗）
+     *                           → 爬到 90~95%
+     *   views                   守关键契约 → 40~50%，其余靠两道防线：
+     *                             · 静态：innerHTML 裸插值棘轮 + raw 白名单
+     *                             · 动态：6 视口探针 + 卡片交互探针
+     *   public/vendor           构建产物，已 exclude
+     *
+     * 下面每个数字都是**当前实测值**，只许升不许降；补完测试后顺手收紧。
+     */
+    coverage: {
+      provider: 'v8',
+      include: ['src/**'],
+      exclude: ['src/client/vendor/**'],
+      reporter: ['text-summary', 'text'],
+      thresholds: {
+        // 全站基线（当前实测 27.8 / 23.5 / 27.2 / 27.9）
+        statements: 27,
+        branches: 23,
+        functions: 27,
+        lines: 27,
+        // 核心逻辑层（39.7 / 33.5 / 38.6 / 40.9）→ 目标 90+
+        'src/server/**': { statements: 39, branches: 33, functions: 38, lines: 40 },
+        // 客户端基础设施（49.7 / 44.6 / 48.6 / 53.6）→ 目标 95
+        'src/client/shared/**': { statements: 49, branches: 44, functions: 48, lines: 53 },
+        // 视图层（18.3 / 15.8 / 19.4 / 17.6；只有 events.js 有组合渲染测试）→ 目标 40~50
+        'src/client/views/**': { statements: 18, branches: 15, functions: 19, lines: 17 },
+      },
+    },
+  },
+
   // bare specifier 的解析：业务代码统一写 `import ... from 'geo-kit'`，
   // 浏览器侧靠 index.html 的 import map，Node/Vitest 侧靠这条 alias。
   // 目标是同一份源码两种环境都能解析，纯函数模块才能直接单测。
