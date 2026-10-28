@@ -30,6 +30,9 @@ const FORCE_ENDPOINTS = [
   '/api/explanations',
   // detail 带 id 维度：5 秒内连刷两个不同标的，第二个不该被前一个的预算连累
   '/api/detail',
+  // 内外金对照（产品 2.1）：切窗口会重新读三个序列，同样要受预算约束。
+  // 漏掉它的后果是刷新按钮静默退回缓存，而且一声不响。
+  '/api/comparison/gold',
 ];
 /** key 数量上限。detail 的 id 集合有限，但仍是外部输入，兜一层硬顶 */
 const MAX_FORCE_KEYS = 128;

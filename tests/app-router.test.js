@@ -186,3 +186,35 @@ describe('方法与异常', () => {
     expect(res.statusCode).toBe(404);
   });
 });
+
+/* ================================================================== *
+ * 内外金对照端点（产品 2.1）
+ * ================================================================== */
+describe('/api/comparison/gold', () => {
+  const app = () =>
+    makeApp({
+      getGoldComparison: vi.fn(async ({ windowKey }) => ({ ok: true, windowKey, decomposition: null, windowLabel: 'x' })),
+    });
+
+  it('默认窗口 session', async () => {
+    const { app: a, deps } = app();
+    const res = await call(a, '/api/comparison/gold');
+    expect(res.statusCode).toBe(200);
+    expect(deps.getGoldComparison).toHaveBeenCalledWith({ windowKey: 'session', force: false });
+  });
+
+  it('透传 window 与 force', async () => {
+    const { app: a, deps } = app();
+    await call(a, '/api/comparison/gold?window=5d&force=1');
+    expect(deps.getGoldComparison).toHaveBeenCalledWith({ windowKey: '5d', force: true });
+  });
+
+  it('未知窗口 → 400 并列出允许值（不要让界面猜）', async () => {
+    const { app: a } = app();
+    const res = await call(a, '/api/comparison/gold?window=999d');
+    expect(res.statusCode).toBe(400);
+    const body = jsonOf(res);
+    expect(body.error).toContain('999d');
+    expect(body.allowed).toEqual(expect.arrayContaining(['session', '5d', '20d']));
+  });
+});

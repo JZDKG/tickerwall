@@ -13,6 +13,7 @@
 
 import { serveStatic, sendJson, takeForce } from './http.js';
 import { handleExplanationRoutes } from './routes.js';
+import { COMPARISON_WINDOWS } from './services/comparison.service.js';
 import { handleSystemRoutes } from './routes/system.js';
 
 /** 允许 POST 的路径前缀：只有维护端点会写 */
@@ -99,6 +100,21 @@ export function createApp(deps) {
       }
       if (url.pathname === '/api/eventstudy') {
         return sendJson(res, 200, await deps.getEventStudy({ force: takeForce(url) }));
+      }
+      /**
+       * 内外金对照（产品 2.1）：回答「国际跌、国内为什么涨」。
+       * 纯分解在 domain/explanations/comparison.js，这里只做参数归一。
+       */
+      if (url.pathname === '/api/comparison/gold') {
+        const windowKey = url.searchParams.get('window') ?? 'session';
+        if (!COMPARISON_WINDOWS[windowKey]) {
+          return sendJson(res, 400, {
+            ok: false,
+            error: `未知窗口: ${windowKey}`,
+            allowed: Object.keys(COMPARISON_WINDOWS),
+          });
+        }
+        return sendJson(res, 200, await deps.getGoldComparison({ windowKey, force: takeForce(url) }));
       }
       // 解释读取与事件版本（方案 §8.1）：实现在 routes.js，这里只委派一次
       if (await handleExplanationRoutes(url, res, { takeForce })) return;

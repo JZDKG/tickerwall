@@ -20,6 +20,9 @@ import {
 } from './explanations/state.js';
 import { clockText, dirOf, esc, fmtPct, fmtPrice, fmtSigned, html, prettySource, raw } from '../shared/format.js';
 import { store } from '../shared/store.js';
+import { createApi } from '../shared/api.js';
+import { createQueryCache, describeRefresh } from '../shared/query-cache.js';
+import { comparisonCardHTML } from './comparison.js';
 import { loadCalendarCached } from '../shared/calendar.js';
 
 
@@ -39,6 +42,22 @@ export function sliceByRange(daily, range) {
   return kept.length >= 2 ? kept : daily;
 }
 
+/** 对照数据的取数（同键缓存 30 秒：反复点开不该反复算） */
+let cmpCache = null;
+export async function loadGoldComparison({ windowKey = '5d', force = false } = {}) {
+  if (!cmpCache) {
+    cmpCache = createQueryCache({ api: createApi({ base: './', timeoutMs: 20_000 }) });
+  }
+  const snap = await cmpCache.fetchKey(`gold:${windowKey}`, {
+    path: 'api/comparison/gold',
+    params: { window: windowKey },
+    maxAgeMs: 30_000,
+    force,
+  });
+  if (snap.data) return snap.data;
+  return { ok: false, error: describeRefresh(snap).text };
+}
+
 /** 内外盘对照（国内金价专有） */
 export function goldSpreadBlock(derived, decimals) {
   if (!derived || !(derived.convertedPerGram > 0)) return '';
@@ -50,7 +69,9 @@ export function goldSpreadBlock(derived, decimals) {
     ['上金所 Au99.99', `${fmtPrice(derived.domesticPrice, decimals)} 元/克`],
   ].filter(([, v]) => v);
   return html`<section class="d-block">
-    <h3>内外盘对照 <span class="h3-note">国际金价 ÷ ${derived.gramsPerOunce} 克/盎司 × 汇率，再与上金所现货比较</span></h3>
+    <h3>内外盘对照 <span class="h3-note">国际金价 ÷ ${derived.gramsPerOunce} 克/盎司 × 汇率，再与上金所现货比较</span>
+      <button type="button" class="cmp-open" data-cmp-open="1" title="把这段变化拆成国际金、汇率、溢价三项">为什么不同步？</button>
+    </h3>
     <div class="d-metrics">
       ${items.map(
         ([label, value]) =>
@@ -62,6 +83,7 @@ export function goldSpreadBlock(derived, decimals) {
           : ''
       }
     </div>
+    <div class="cmp-slot" data-cmp-slot="1"></div>
   </section>`;
 }
 
@@ -1062,6 +1084,27 @@ export function renderDetail(data) {
     btn.addEventListener('click', () => {
       detailState.scale = btn.dataset.s;
       renderDetail(detailState.data);
+    });
+  });
+
+  /**
+   * 「为什么不同步？」（产品 2.1）：点开在原位展开，不跳页。
+   *
+   * 数据按需取：多数用户不会点，没必要每次打开详情都算三个序列的分解。
+   */
+  document.querySelectorAll('[data-cmp-open]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const slot = document.querySelector('[data-cmp-slot]');
+      if (!slot) return;
+      if (slot.dataset.loaded === '1') {
+        slot.innerHTML = '';
+        slot.dataset.loaded = '0';
+        return;
+      }
+      slot.innerHTML = '<p class="cmp-loading">正在对照三组数据…</p>';
+      const data = await loadGoldComparison({ windowKey: '5d' });
+      slot.innerHTML = comparisonCardHTML(data);
+      slot.dataset.loaded = data?.decomposition ? '1' : '0';
     });
   });
 
