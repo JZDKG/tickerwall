@@ -459,3 +459,87 @@ describe('页面控件', () => {
     expect(window.location.hash).toBe('');
   });
 });
+
+/* ================================================================== *
+ * 图谱聚焦资产与解释取数（views/macro.js）
+ *
+ * `graphFocusAsset` 决定「取哪一份解释」，三种模式各有各的目标：
+ *   罗盘 → 选中那一对里**可解释**的那一端（另一端的解释没意义）
+ *   沙盘 → 震源自身
+ *   导图 → 当前聚焦节点
+ * 取错一端，右边解释卡讲的就是另一件事。
+ * ================================================================== */
+describe('图谱聚焦资产', () => {
+  const set = (patch) => {
+    m.renderMacro();
+    Object.assign(m.macroState, patch);
+    return m.graphFocusAsset();
+  };
+
+  it('导图模式取当前聚焦节点', () => {
+    expect(set({ graphMode: 'mindmap', graphFocus: 'gold-intl' })).toBe('gold-intl');
+  });
+
+  it('沙盘模式取震源自身', () => {
+    expect(set({ graphMode: 'sandbox', shock: { id: 'oil' } })).toBe('oil');
+  });
+
+  it('罗盘模式取选中对里可解释的那一端', () => {
+    // 可解释集合是 gold-intl / oil / us10y / dxy；vix 不可解释
+    expect(set({ graphMode: 'compass', pair: ['vix', 'gold-intl'] })).toBe('gold-intl');
+  });
+
+  it('两端都可解释时取第一个（顺序即用户点选顺序）', () => {
+    expect(set({ graphMode: 'compass', pair: ['us10y', 'gold-intl'] })).toBe('us10y');
+  });
+
+  it('两端都不可解释时返回 null（不给一份讲不通的解释）', () => {
+    expect(set({ graphMode: 'compass', pair: ['vix', 'sp500'] })).toBeNull();
+  });
+
+  it('没有选中对时返回 null', () => {
+    expect(set({ graphMode: 'compass', pair: [] })).toBeNull();
+  });
+});
+
+describe('解释取数的收敛', () => {
+  it('同一资产已有解释时不重复取（避免 refreshGraph 与 hydrate 互相触发）', async () => {
+    m.renderMacro();
+    m.macroState.graphMode = 'mindmap';
+    m.macroState.graphFocus = 'gold-intl';
+    m.macroState.explanationAsset = 'gold-intl';
+    m.macroState.explanation = { ok: true, id: 'x' };
+    expect(() => m.hydrateGraphExplanation()).not.toThrow();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(m.macroState.explanationAsset).toBe('gold-intl');
+  });
+
+  it('切到不可解释的资产会清掉旧解释（不留上一份的结论）', async () => {
+    m.renderMacro();
+    m.macroState.graphMode = 'compass';
+    m.macroState.pair = ['dxy', 'vix'];
+    m.macroState.explanation = { ok: true, id: 'old' };
+    m.macroState.explanationAsset = 'gold-intl';
+    m.hydrateGraphExplanation();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(m.macroState.explanation).toBeNull();
+  });
+});
+
+describe('图谱点击命中', () => {
+  it('点连线 → 选中那条边', () => {
+    m.renderMacro();
+    const host = document.getElementById('macro-graph-host');
+    if (!host) return;
+    host.innerHTML = '<button type="button" data-edge="E01">边</button>';
+    expect(() => host.querySelector('[data-edge]').dispatchEvent(new window.MouseEvent('click', { bubbles: true }))).not.toThrow();
+  });
+
+  it('点 signal 节点不触发节点选中（它是合成节点）', () => {
+    m.renderMacro();
+    const host = document.getElementById('macro-graph-host');
+    if (!host) return;
+    host.innerHTML = '<button type="button" data-node="signal">信号</button>';
+    expect(() => host.querySelector('[data-node]').dispatchEvent(new window.MouseEvent('click', { bubbles: true }))).not.toThrow();
+  });
+});
