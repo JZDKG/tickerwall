@@ -485,7 +485,7 @@ export function bindGraph() {
 
 export function onGraphClick(e, host) {
   const hit = e.target.closest(
-    '[data-mode],[data-pb],[data-focus],[data-shock],[data-dir],[data-clear],[data-alert],[data-jump],[data-edge],[data-node]',
+    '[data-mode],[data-pb],[data-focus],[data-shock],[data-dir],[data-shock-condition],[data-clear],[data-alert],[data-jump],[data-edge],[data-node]',
   );
   if (!hit || !host.contains(hit)) return;
 
@@ -520,8 +520,15 @@ export function onGraphClick(e, host) {
     refreshGraph();
     return;
   }
+  // 冲击条件：同一涨价在不同条件下走的渠道不同（方案 §5.4）
+  if (hit.dataset.shockCondition) {
+    macroState.shockCondition = hit.dataset.shockCondition;
+    refreshGraph();
+    return;
+  }
   if (hit.dataset.clear) {
     macroState.shock = null;
+    macroState.shockCondition = null;
     refreshGraph();
     return;
   }
@@ -763,6 +770,8 @@ export async function loadMacro(windowSize = 250, force = false) {
         graphFocus: 'gold-intl',
         playbook: null,
         shock: null,
+        // 冲击条件：原因未分类 / 供给受阻 / 需求增强（方案 §5.4）
+        shockCondition: null,
       };
     }
     macroState.data = data;

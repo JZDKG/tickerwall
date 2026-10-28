@@ -929,3 +929,44 @@
     animation: none;
   }
 }
+
+/* ------------------------------------------------------------------ *
+ * 沙盘冲击条件（方案 §5.4）：同一涨价在不同条件下走的渠道不同
+ * ------------------------------------------------------------------ */
+
+.mg-conds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.mg-cond {
+  padding: 3px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.mg-cond.on {
+  color: var(--text);
+  border-color: rgba(245, 158, 11, 0.5);
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.mg-excl {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted-2);
+}
+
+.mg-foot-note {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--muted-2);
+}

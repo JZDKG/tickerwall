@@ -36,7 +36,8 @@ export const CHANNEL_TONE = {
 
 export const FRESHNESS_LABEL = {
   fresh: '数据在正常更新周期内',
-  stale: '已超过该数据的正常更新周期',
+  // 短标签 + 括号里的具体原因：两者都不重复自身
+  stale: '已过期',
   unavailable: '当前没有可用观测',
 };
 
@@ -208,8 +209,13 @@ function metaLine(meta, explanation) {
   const fresh = FRESHNESS_LABEL[meta?.freshness] ?? '—';
   const cs = CONTENT_STATUS_LABEL[explanation?.contentStatus] ?? null;
   const reasons = (meta?.freshnessReasons ?? []).map((r) => FRESHNESS_REASON_TEXT[r] ?? r);
+  // 过期状态由上面的提示条完整说明，meta 行不再重复一遍（同一件事只说一次）
+  const freshSpan =
+    meta?.freshness === 'stale'
+      ? ''
+      : `<span>数据状态：${esc(fresh)}${reasons.length ? `（${esc(reasons.join('；'))}）` : ''}</span>`;
   return `<div class="explain-meta">
-    <span>数据状态：${esc(fresh)}${reasons.length ? `（${esc(reasons.join('；'))}）` : ''}</span>
+    ${freshSpan}
     <span>截至 ${esc(shortTime(explanation?.asOf))}</span>
     ${cs ? `<span class="explain-cs ${cs.tone}" title="${esc(cs.note)}">${esc(cs.text)}</span>` : ''}
     ${cs ? `<span class="explain-cs-note">${esc(cs.note)}</span>` : ''}

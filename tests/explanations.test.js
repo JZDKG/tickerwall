@@ -17,6 +17,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { useDatabase, closeDb, readExplanation } from '../src/server/db/index.js';
 import {
   buildExplanation,
+  referencedInstrumentIds,
   getExplanationResponse,
   getExplanationById,
   explanationFingerprint,
@@ -532,5 +533,48 @@ describe('persistReferencedObservations：只写被引用的观测点', () => {
     expect(written).toBe(refs.size);
     expect(written).toBeGreaterThan(0);
     expect(written).toBeLessThan(m.size * 22);
+  });
+});
+
+/* ================================================================== *
+ * 事实范围与新鲜度：无关序列不该拖垮整张解释
+ * ================================================================== */
+
+describe('事实只列本次会用到的指标', () => {
+  it('与目标机制无关的序列（例如只服务于内外盘折算的汇率）不进事实', () => {
+    const m = goldWithRealYield();
+    // 一个更新很慢、但与国际金机制无关的序列
+    m.set('usdcny', obs('usdcny', levels(22, 7.1, 7.12), { lastObservedAt: '2026-08-01' }));
+    const built = buildExplanation({
+      assetId: 'gold-intl',
+      windowKey: '5d',
+      observations: m,
+      asOf: AS_OF,
+      generatedAt: AS_OF,
+      id: 'exp-relevance',
+    });
+    const ids = built.facts.map((f) => f.instrumentId);
+    expect(ids).toContain('gold-intl');
+    expect(ids).toContain('dfii10');
+    expect(ids).not.toContain('usdcny');
+    // 机制库里为「国内金」声明的折算渠道才需要汇率，它不应出现在国际金的事实里
+    const conversion = built.hypotheses.find((h) => h.mechanismId === 'M-GOLD-CN-CONVERSION');
+    expect(conversion).toBeUndefined();
+  });
+
+  it('无关序列再旧，也不会把 meta 的新鲜度拖成 stale', async () => {
+    const m = goldWithRealYield();
+    m.set('usdcny', obs('usdcny', levels(22, 7.1, 7.12), { lastObservedAt: '2026-08-01' }));
+    const out = await getExplanationResponse({ asset: 'gold-intl', windowKey: '5d', observations: m });
+    expect(out.status).toBe(200);
+    expect(out.body.meta.freshness).toBe('fresh');
+  });
+
+  it('被引用的驱动过期时，仍然如实报 stale', async () => {
+    const m = goldWithRealYield();
+    m.get('dfii10').lastObservedAt = '2026-08-01';
+    const out = await getExplanationResponse({ asset: 'gold-intl', windowKey: '5d', observations: m });
+    expect(out.body.meta.freshness).toBe('stale');
+    expect(out.body.meta.freshnessReasons).toContain('BEYOND_UPDATE_CYCLE');
   });
 });

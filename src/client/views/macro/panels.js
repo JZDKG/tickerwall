@@ -30,6 +30,8 @@ import {
   esc,
   signChar,
   relationTypeOf,
+  SHOCK_CONDITIONS,
+  shockConditionSet,
 } from './knowledge-base.js';
 import {
   findLastValid,
@@ -57,6 +59,13 @@ export function pctCls(v) {
  * 对利率节点不能说「利多 10Y」：收益率上行意味着债券价格下跌，两句话
  * 方向相反。这里按指标类型给不同措辞，界面上不存在一个笼统的「利多/利空」。
  */
+/** 冲击条件需要的证据类型（与机制库共用同一套说法） */
+export const CONDITION_REQUIRE_TEXT = {
+  EVENT_EVIDENCE: '可核实的事件与发布时间',
+  SHOCK_TYPE_CLASSIFIED: '冲击类型已分类（供给/需求）',
+  DEMAND_EVIDENCE: '需求侧证据（库存、开工、订单）',
+};
+
 export function directionLabel(kind, dir) {
   if (kind === 'rate') return dir > 0 ? '收益率上行压力' : '收益率下行压力';
   return dir > 0 ? '可能偏强' : '可能偏弱';
@@ -226,7 +235,12 @@ export function sandboxPanel(data, state) {
     return `<div class="mg-card-empty">选一个变量当震源，再点「模拟大涨 ↑」或「模拟大跌 ↓」。直接与间接渠道会逐层点亮；两条路径方向相反的标的会标成琥珀色「方向未定」。这里只展示路径结构，不推断幅度与时间。</div>`;
   }
   const src = data.universe.find((u) => u.id === shock.id);
-  const prop = propagateShock(shock.id, shock.dir);
+  // 条件来自沙盘状态（state.shockCondition），shock 上带的值只作为兜底
+  const condSet = shockConditionSet(shock.id, state.shockCondition ?? shock.conditionKey ?? 'unknown');
+  const activeEdges = condSet.enabled ? new Set(condSet.enabled) : null;
+  const prop = propagateShock(shock.id, shock.dir, 2, { activeEdges });
+  const cond = SHOCK_CONDITIONS.find((c) => c.key === (condSet.conditionKey ?? 'unknown')) ?? SHOCK_CONDITIONS[0];
+  const suppressed = Object.entries(condSet.suppressed ?? {});
 
   // 优先解剖「方向未定」的标的，否则挑被击中路径最多的
   const rows = [...prop.entries()].sort(
@@ -287,6 +301,21 @@ export function sandboxPanel(data, state) {
       <span class="mg-arrowsign ${shock.dir > 0 ? 'pos' : 'neg'}">${shock.dir > 0 ? '假设大涨 ↑' : '假设大跌 ↓'}</span>
     </div>
     <p class="mg-lead">这是<b>假设情景</b>：沿 ${CORE_EDGES.length} 条主干边做两跳传播，方向 = 冲击方向 × 边符号连乘。不推断幅度、概率与先后时间。</p>
+    <div class="mg-sect"><i class="dot"></i><h4>冲击条件：${esc(cond.label)}</h4>
+      <p>${esc(cond.note)}</p>
+      ${
+        suppressed.length
+          ? `<ul class="mg-excl">${suppressed.map(([id, why]) => `<li>${esc(EDGE_BY_ID.get(id)?.label ?? id)}：${esc(why)}</li>`).join('')}</ul>`
+          : ''
+      }
+      ${
+        (condSet.requires ?? []).length
+          ? `<p class="mg-foot-note">这个条件需要先有证据：${esc(
+              condSet.requires.map((r) => CONDITION_REQUIRE_TEXT[r] ?? r).join('、'),
+            )}。证据不足时上面只是结构预览。</p>`
+          : ''
+      }
+    </div>
     ${summary}
     ${conflictBlock}`;
 }
@@ -461,6 +490,17 @@ export function barsHTML(data, state) {
             <span class="mg-shock-sep"></span>
             <button type="button" class="mg-sgo up ${state.shock?.dir > 0 ? 'on' : ''}" data-dir="1">模拟大涨 ↑</button>
             <button type="button" class="mg-sgo down ${state.shock?.dir < 0 ? 'on' : ''}" data-dir="-1">模拟大跌 ↓</button>
+            ${
+              state.shock
+                ? `<div class="mg-conds" role="group" aria-label="冲击条件">
+                    ${SHOCK_CONDITIONS.map(
+                      (c) =>
+                        `<button type="button" class="mg-cond ${(state.shockCondition ?? 'unknown') === c.key ? 'on' : ''}"
+                          data-shock-condition="${c.key}">${esc(c.label)}</button>`,
+                    ).join('')}
+                  </div>`
+                : ''
+            }
             <button type="button" class="mg-sclear" data-clear="1">清除</button>
           </div>`;
   }

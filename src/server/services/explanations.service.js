@@ -243,15 +243,29 @@ export function buildExplanation({
   if (!asset || !spec) throw new Error(`不支持的资产或窗口：${assetId} / ${windowKey}`);
 
   const targetObs = observations.get(assetId) ?? null;
+
+  /**
+   * 事实只列「这次解释真的会用到的指标」：目标资产 + 机制库里声明过的驱动。
+   *
+   * 不把加载到的所有序列都写进事实 —— 那会让一个与本次结论无关、但更新较慢
+   * 的序列把整张解释拖成「已过期」（人民币汇率只服务于内外盘折算，与
+   * 国际金的机会成本渠道无关）。
+   */
+  const relevance = new Set([assetId]);
+  const mechanisms = mechanismsFor(assetId) ?? [];
+  for (const m of mechanisms) {
+    relevance.add(m.from);
+    for (const req of m.requires ?? []) relevance.add(req.instrument);
+  }
   const facts = buildFacts({
     targetId: assetId,
     targetDefinition: assetDefinition,
     targetSeries: targetObs?.series ?? null,
-    drivers: [...observations.entries()].filter(([id]) => id !== assetId),
+    drivers: [...observations.entries()].filter(([id]) => id !== assetId && relevance.has(id)),
     windowKey,
   });
 
-  const hypotheses = (mechanismsFor(assetId) ?? []).map((m) =>
+  const hypotheses = mechanisms.map((m) =>
     evaluateMechanism(m, observations, { windowKey, eventEvidence: events }),
   );
   markConflicts(hypotheses);
@@ -330,9 +344,26 @@ export function persistReferencedObservations(explanation, observations, { known
   return writeObservationRevisions(records);
 }
 
+/**
+ * 这次解释**实际引用**到的指标集合。
+ *
+ * 为什么不用「加载到的全部指标」算新鲜度：一个没有被任何事实或证据引用的
+ * 辅助序列（例如只服务于内外盘折算的美元兑人民币）落后几天，不该让整张
+ * 黄金解释变成「已过期」—— 那会把「有个旁支数据旧了」误报成「这次结论不可读」。
+ */
+export function referencedInstrumentIds(explanation) {
+  const ids = new Set();
+  for (const f of explanation?.facts ?? []) if (f.instrumentId) ids.add(f.instrumentId);
+  for (const h of explanation?.hypotheses ?? []) {
+    for (const e of h.evidence ?? []) if (e.instrumentId) ids.add(e.instrumentId);
+  }
+  return ids;
+}
+
 /** 读取元数据：freshness 与 contentStatus 是两件事，可以同时「证据不足且过期」 */
 function metaFor(explanation, observations) {
-  const list = observationQualityList(observations);
+  const used = referencedInstrumentIds(explanation);
+  const list = observationQualityList(observations).filter((o) => used.size === 0 || used.has(o.instrumentId));
   const fresh = assessExplanationFreshness({ observations: list, asOf: new Date().toISOString() });
   return {
     evaluatedAt: new Date().toISOString(),

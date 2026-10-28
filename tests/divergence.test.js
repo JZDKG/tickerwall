@@ -33,7 +33,13 @@ import {
   pickAlert,
   propagateShock,
 } from '../src/client/views/macro/divergence-engine.js';
-import { MACRO_TRANSMISSION_EDGES, CORE_EDGES } from '../src/client/views/macro/knowledge-base.js';
+import {
+  MACRO_TRANSMISSION_EDGES,
+  CORE_EDGES,
+  SHOCK_CONDITIONS,
+  SHOCK_CONDITION_SETS,
+  shockConditionSet,
+} from '../src/client/views/macro/knowledge-base.js';
 
 const FIXTURE = JSON.parse(
   readFileSync(fileURLToPath(new URL('./fixtures/macro-snapshot.json', import.meta.url)), 'utf8'),
@@ -543,5 +549,63 @@ describe('工具函数契约', () => {
     expect(r.status).toBe('neutral');
     expect(r.badge).toBe('○ 数据不足');
     expect(r.n).toBe(0);
+  });
+});
+
+/* ================================================================== *
+ * 条件化沙盘（方案 §5.4 / C2）
+ *
+ * 同一「原油大涨」在不同原因下走的渠道不同。这里钉住三件事：
+ *   · 供给受阻时成本与通胀渠道参与，需求渠道被排除并给出原因；
+ *   · 需求增强时通胀与避险渠道不自动生效；
+ *   · 原因未知时不筛边，但明确说明「只是结构预览」。
+ * 不产出概率与先后顺序 —— 断言里也不允许出现这类措辞。
+ * ================================================================== */
+describe('条件化沙盘：按冲击原因筛边', () => {
+  it('供给受阻：成本/通胀渠道参与，需求共振渠道被排除并说明原因', () => {
+    const set = shockConditionSet('oil', 'supply');
+    expect(set.enabled).toContain('E08');
+    expect(set.enabled).toContain('E09');
+    expect(set.suppressed.E10).toContain('成本冲击');
+    expect(set.requires).toContain('SHOCK_TYPE_CLASSIFIED');
+  });
+
+  it('需求增强：通胀与避险渠道不自动生效', () => {
+    const set = shockConditionSet('oil', 'demand');
+    expect(set.enabled).not.toContain('E09');
+    expect(set.suppressed.E09).toContain('通胀证据');
+    expect(set.requires).toContain('DEMAND_EVIDENCE');
+  });
+
+  it('原因未知：不筛边（enabled null），但条件本身有说明', () => {
+    const set = shockConditionSet('oil', 'unknown');
+    expect(set.enabled).toBeNull();
+    expect(set.conditionKey).toBe('unknown');
+    const label = SHOCK_CONDITIONS.find((c) => c.key === 'unknown');
+    expect(label.note).toContain('结构');
+  });
+
+  it('条件筛选真的改变传播结果：供给受阻时不把股市下跌当作需求共振', () => {
+    const all = propagateShock('oil', 1, 2);
+    const supply = shockConditionSet('oil', 'supply');
+    const filtered = propagateShock('oil', 1, 2, { activeEdges: new Set(supply.enabled) });
+    // 未筛选时应该有 sp500 这条路径（E10）
+    expect(all.has('sp500')).toBe(true);
+    // 筛掉 E10 之后就没有了
+    expect(filtered.has('sp500')).toBe(false);
+    // 但通胀渠道（us10y）仍在
+    expect(filtered.has('us10y')).toBe(true);
+  });
+
+  it('未知震源不报错，退化为全部参与', () => {
+    const set = shockConditionSet('not-a-node', 'supply');
+    expect(set.enabled).toBeNull();
+  });
+
+  it('文案不出现概率或先后顺序', () => {
+    const text = JSON.stringify(SHOCK_CONDITIONS) + JSON.stringify(SHOCK_CONDITION_SETS);
+    // 不出现概率、百分比或时间先后。
+    // 注意「先有需求证据」是条件语，不是时间顺序，所以不拦单独的「先」。
+    expect(text).not.toMatch(/概率|大概率|随后|之后|一周内|下周|%/);
   });
 });

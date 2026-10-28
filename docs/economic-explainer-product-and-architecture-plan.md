@@ -6,7 +6,7 @@
 
 项目的核心目标是让非金融专业用户在一分钟内理解：发生了什么、为什么可能发生、通过哪些渠道影响其他市场，以及哪些条件会改变这个解释。下一阶段围绕“带证据的经济解释”组织现有行情、新闻、地图和传导图谱，先完成黄金场景，再扩展到原油、美元和美债。
 
-本文给出产品流程、解释边界、数据模型、代码落点、实施顺序与验收标准。新增目录、接口、字段和任务均为目标设计，不代表当前已经实现。现状依据为 2026-10-28 的浏览器走查与源码核查；截图中的价格和新闻只用于说明当时界面，不用于证明当日行情的原因。
+本文给出产品流程、解释边界、数据模型、代码落点、实施顺序与验收标准。新增目录、接口、字段和任务均为目标设计，不代表当前已经实现；已完成情况见 §14（2026-10-28 追加）。现状依据为 2026-10-28 的浏览器走查与源码核查；截图中的价格和新闻只用于说明当时界面，不用于证明当日行情的原因。
 
 ## 1 产品目标与范围
 
@@ -564,3 +564,41 @@ git diff --check
 - [FRED T10YIE](https://fred.stlouisfed.org/series/T10YIE)：由名义与通胀指数国债收益率形成的 10 年期盈亏平衡通胀率，作为通胀补偿的候选观测来源。
 
 参考资料用于支持一般机制和指标定义。当期解释仍需连接对应窗口的数据、事件和反向证据。
+
+## 14 实施状态（2026-10-28）
+
+本节记录 §9 各任务的落地结果与验证位置，供复核时对照；不改变上文的设计口径。
+
+### 14.1 已完成
+
+| 任务 | 落点 | 验证 |
+| --- | --- | --- |
+| A1 文案与关系类型 | `views/macro/knowledge-base.js`（`RELATION_TYPES`、剧本与边文案）、`panels.js`（`directionLabel`、`corrCaption`）、`flow-nodes.js`（徽章）、`flow-canvas.js`（非因果边不画箭头、不叠流光）、`macro.js`（领先滞后标题） | `tests/views-macro-render.test.js`、`tests/divergence.test.js` |
+| A2 时间配对 | `views/macro/divergence-engine.js`（`lastCommonIndex`、`asOf`、`unaligned`、`n` 改为有效配对数）、`panels.js` 显示当期比较日期 | `tests/divergence.test.js`「共同日期配对」 |
+| A3 质量与频率 | `providers/fred.js`（值域）、`db/daily-cache.js`（signed 写入）、`services/macro.service.js`（RV 取原始日线、质量透传）、`macro.js`（隐含−实现） | `tests/explanation-metrics.test.js`、`tests/macro-service.test.js` |
+| A4 实体与空结果 | `domain/events/normalize.js`（实体证据、四态）、`domain/events/cluster.js`（聚合与转载）、`events.service.js`（`applyLlmResults` 支持清除旧标签） | `tests/event-normalization.test.js`、`tests/events-service.test.js` |
+| A5 地理口径 | `views/map/geo/regions.js`（欧洲 / 亚太、`REGION_SEMANTICS`）、`events.service.js` 提示词 | `tests/event-normalization.test.js`「地理口径」 |
+| B0 持久化 | `db/migrations.js`（版本表 + 7 张表）、`db/explanations.js`（引用校验、事务、清理只删未被引用者） | `tests/db-explanations.test.js`、`tests/db.test.js` |
+| B1 指标与机制 | `domain/explanations/instruments.js`、`mechanisms.js`（条件、例外、来源、版本）、DFII10 / T10YIE 接入 | `tests/explanation-metrics.test.js`、`tests/explanations.test.js` |
+| B2 事件聚合 | `domain/events/cluster.js`（同事件一张卡、来源保留、动作不一致不合并） | `tests/event-normalization.test.js` |
+| B3 解释服务 | `domain/explanations/{alignment,quality,evidence,compose}.js`、`services/explanations.service.js`、`/api/explanations`、`/api/explanations/:id`、`/api/events/:id/revisions[/n]` | `tests/explanations.test.js`、`tests/explanation-http.test.js` |
+| B4 资产详情 | `views/explanations/{card,state}.js`、`views/detail.js`（图表之前）、`public/styles/explanations.css` | `tests/views-explanations.test.js` |
+| B5 首页与图谱 | `views/explanations/questions.js`、`index.html#questions`、`main.js` 异步补卡 | `tests/views-questions.test.js` |
+| B6 采集与可观测性 | `jobs/collector.js`（同键合并、退避、触发链）、`jobs/index.js`（五类任务）、`/api/health` 暴露任务状态 | `tests/collector.test.js` |
+| C2 条件化沙盘 | `knowledge-base.js`（`SHOCK_CONDITIONS`、`SHOCK_CONDITION_SETS`）、`propagateShock` 支持 `activeEdges`、沙盘卡条件选择器 | `tests/divergence.test.js`「条件化沙盘」 |
+| C3 历史回放（读取路径） | `db/explanations.js`（`readObservationAsOf` / `readEventAsOf` / 固定版本读取） | `tests/db-explanations.test.js` |
+
+### 14.2 尚未完成
+
+- **C1 原油 / 美元 / 美债**：机制库目前只为 `gold-intl` 登记了条件与例外；其余资产仍是旧口径展示，`EXPLAINABLE_ASSETS` 未放开。
+- **C4 地图与生活影响联动**：地图仍只消费事件发生地，尚未接解释路径。
+- **C5 真实流量**：没有可靠数据源，保持不做。
+- **图谱消费同一解释快照**：B5 只完成了首页与详情的快照一致；聚焦图仍用旧的相关性状态渲染，接入点在 `flow-canvas.js` 的 `reality`，需要先给图谱一条「按 explanationId 取因素」的通道。
+- **§10.2 浏览器理解测试**：目前是人工走查（Chromium headless 脚本验证卡片出现、可展开、切窗口后内容更新、无控制台异常），尚未脚本化为 CI 用例。
+
+### 14.3 有意改变的口径（契约测试已记录原因）
+
+- 利率类序列允许 0 与负值（DFII10 长期为负），缺失标记不再变成 0。
+- `evaluateEdgeReality` 的当期比较改为共同日期配对；`n` 由数组长度改为有效配对数。
+- 沙盘不再输出「一阶 / 二阶」「多空交织」「利多 10Y」；改称直接 / 间接渠道、方向未定、收益率上行 / 下行压力。
+- `freshness` 只按本次解释实际引用的指标计算：与结论无关、更新较慢的序列不再把整张解释标成过期。

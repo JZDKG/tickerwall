@@ -276,11 +276,14 @@ export function pickAlert(edges, reality) {
  * 两跳遍历只说明**路径结构**，不产生幅度、概率或先后时间。所以这里输出的
  * hop 数不能再被翻译成「短期/中期」：那需要时间模型，而本项目没有。
  * ------------------------------------------------------------------ */
-export function propagateShock(sourceId, dir, maxHop = 2) {
+export function propagateShock(sourceId, dir, maxHop = 2, opts = {}) {
+  // activeEdges：冲击条件下「有资格参与」的边；null / 未给表示全部参与
+  const active = opts.activeEdges ?? null;
   const paths = [];
   const walk = (nodeId, d, hop, trail) => {
     for (const e of CORE_EDGES) {
       if (e.from !== nodeId) continue;
+      if (active && !active.has(e.id)) continue;
       if (trail.includes(e.to)) continue;
       const nd = d * e.sign;
       paths.push({ target: e.to, dir: nd, hop: hop + 1, trail: [...trail, e.to], edges: e.id, chain: trail.map((x) => ({ id: x })) });

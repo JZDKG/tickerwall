@@ -24,6 +24,7 @@ import {
   PLAYBOOK_BY_ID,
 } from './knowledge-base.js';
 import { evaluateAll, findEdge, propagateShock } from './divergence-engine.js';
+import { shockConditionSet } from './knowledge-base.js';
 import { MacroFlowCanvas } from './flow-canvas.js';
 import { headHTML, toolsHTML, barsHTML, legendHTML, alertBannerHTML, inspectorHTML, sectionShell } from './panels.js';
 import css from '../../styles/macro-flow.css?inline';
@@ -94,7 +95,11 @@ export function syncChrome(section, data, state, reality) {
 /** 剧本 / 沙盘只点亮一部分边，画布据此压暗其余 */
 export function activeEdgeSets(state) {
   if (state.graphMode === 'sandbox' && state.shock) {
-    const prop = propagateShock(state.shock.id, state.shock.dir);
+    // 冲击条件只在 sandbox 里生效；null 表示全部边参与（原因未分类时也一样）
+    const condSet = shockConditionSet(state.shock.id, state.shockCondition ?? 'unknown');
+    const prop = propagateShock(state.shock.id, state.shock.dir, 2, {
+      activeEdges: condSet.enabled ? new Set(condSet.enabled) : null,
+    });
     const edges = new Set();
     const nodes = new Set([state.shock.id]);
     for (const [id, p] of prop) {

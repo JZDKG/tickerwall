@@ -151,7 +151,9 @@ describe('六种页面状态都能渲染，没有白屏分支', () => {
       meta: { freshness: 'stale', freshnessReasons: ['BEYOND_UPDATE_CYCLE'], refreshStatus: 'idle' },
     });
     expect(htmlText).toContain('数据已过期');
+    // 标签短、原因具体，且「已过期」只出现一次（不重复声明同一件事）
     expect(htmlText).toContain('已超过该数据的正常更新周期');
+    expect(htmlText.split('已过期').length - 1).toBe(1);
     // 快照内容仍在
     expect(htmlText).toContain('国际金价本窗口下降');
   });

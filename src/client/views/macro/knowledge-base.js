@@ -28,6 +28,58 @@ export const TONE_DASH = { pos: null, neg: '6 4', div: '2 4' };
  * 所以它们不画箭头、改用点线，并且在图例与机理卡里用文字说明 ——
  * 颜色必须有等价的文字/线型，不能只靠颜色区分含义。
  */
+/**
+ * 沙盘的冲击条件（方案 §5.4 / C2）。
+ *
+ * 「原油大涨」可以由完全不同的原因造成，同一涨价在不同条件下走的渠道不同。
+ * 本项目的机制库只登记了条件，没有幅度与时间模型，所以这里**只做两件事**：
+ *   1. 按条件筛选「本次有资格参与的边」，其余标为暂不考虑并给出原因；
+ *   2. 用一句话说明这个条件要求什么证据。
+ * 不产出概率、幅度或先后顺序。
+ */
+export const SHOCK_CONDITIONS = [
+  { key: 'unknown', label: '原因未知', note: '原因未分类：只展示结构路径，不判断哪条渠道更强。' },
+  { key: 'supply', label: '供给受阻', note: '产能或运输受阻导致供给减少：成本与通胀渠道有资格参与。' },
+  { key: 'demand', label: '需求增强', note: '需求端走强：需要先有需求证据，通胀与避险渠道不自动生效。' },
+];
+
+/** 每个震源 + 条件下「有资格参与」的边；未列出的边在该条件下不参与 */
+export const SHOCK_CONDITION_SETS = {
+  oil: {
+    unknown: { enabled: null, suppressed: {}, requires: [] },
+    supply: {
+      // E10（油→股）在供给冲击下方向明确（成本上冲），但这不代表「需求共振」，
+      // 所以它参与传播、却在解释里必须写成成本冲击 —— 见 suppressed 里的说明。
+      enabled: ['E02', 'E08', 'E09', 'E18', 'E05', 'E01', 'E15'],
+      suppressed: {
+        E10: '供给冲击下的股市下跌主要是成本冲击，不能当作「需求共振」的证据',
+      },
+      requires: ['EVENT_EVIDENCE', 'SHOCK_TYPE_CLASSIFIED'],
+    },
+    demand: {
+      enabled: ['E10', 'E02', 'E18', 'E06', 'E17'],
+      suppressed: {
+        E08: '需求驱动的温和涨价通常不改变通胀预期，通胀渠道需要实际通胀证据',
+        E09: '同上：缺少通胀证据时，利率跟随涨价不是必然结果',
+      },
+      requires: ['DEMAND_EVIDENCE'],
+    },
+  },
+  dxy: {
+    unknown: { enabled: null, suppressed: {}, requires: [] },
+    supply: { enabled: null, suppressed: {}, requires: [] },
+    demand: { enabled: null, suppressed: {}, requires: [] },
+  },
+};
+
+/** 取某震源在某条件下的筛选结果；null 表示全部边参与 */
+export function shockConditionSet(sourceId, conditionKey = 'unknown') {
+  const sets = SHOCK_CONDITION_SETS[sourceId];
+  if (!sets) return { enabled: null, suppressed: {}, requires: [], conditionKey: 'unknown' };
+  const hit = sets[conditionKey] ?? sets.unknown;
+  return { ...hit, conditionKey: sets[conditionKey] ? conditionKey : 'unknown' };
+}
+
 export const RELATION_TYPES = {
   mechanism: { label: '机制假设', arrow: true, dash: null, plain: '一条有机制依据的传导渠道，方向有条件' },
   'valuation-conversion': { label: '计价换算', arrow: true, dash: null, plain: '同一个标的换币种/单位后的定价关系' },

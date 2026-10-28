@@ -925,7 +925,9 @@ export function renderDetail(data) {
 
     ${
       explainEnabled() && isExplainable(data.id)
-        ? `<div id="d-explain">${renderExplainCard(ensureExplainState(data.id), { assetName: data.name })}</div>`
+        ? // 卡片内部已经逐字段 esc()，所以这里整体标成已转义；
+          // 直接用普通字符串会被 html 标签再转义一次（页面上会看到源码）
+          raw(`<div id="d-explain">${renderExplainCard(ensureExplainState(data.id), { assetName: data.name })}</div>`)
         : ''
     }
 
