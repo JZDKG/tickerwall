@@ -37,6 +37,8 @@ export const CJK = /[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef]/;
 
 /** 估算文本宽度：胶囊宽度不能再依赖浏览器测量（服务端渲染/首帧都要一致） */
 export function textWidth(s, size) {
+  // null / undefined 当作「没有文本」：String(null) 是 'null'，会算出 23px 的假宽度
+  if (s == null) return 0;
   let w = 0;
   for (const ch of String(s)) w += CJK.test(ch) ? size : size * 0.58;
   return w;
@@ -399,10 +401,21 @@ export class MacroFlowCanvas {
     return { mode, ...lay, centerId: null };
   }
 
+  /**
+   * 沙盘冲击「被触及」的边集合。
+   *
+   * 注意 `q.edges` 是**数组**（一条路径上的多段）：早先这里 `set.add(q.edges)`
+   * 把整个数组当元素塞进去，于是 `touchedEdges.has(edgeId)` 永远 false ——
+   * 沙盘里所有边都被判成 dim，冲击路径根本看不出亮起来。必须逐个 edge id 加。
+   */
   computeTouchedEdges() {
     const set = new Set();
     if (this.state?.graphMode !== 'sandbox' || !this.state.shock || !this.prop) return set;
-    for (const p of this.prop.values()) for (const q of p.paths) set.add(q.edges);
+    for (const p of this.prop.values()) {
+      for (const q of p.paths ?? []) {
+        for (const edgeId of q.edges ?? []) set.add(edgeId);
+      }
+    }
     return set;
   }
 
