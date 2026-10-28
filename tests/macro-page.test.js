@@ -389,3 +389,73 @@ describe('配对区块', () => {
     expect((out.match(/#[0-9a-f]{6}/gi) ?? []).length).toBeLessThanOrEqual(6 * 2);
   });
 });
+
+/* ================================================================== *
+ * 页面控件（频率 / 窗口 / 稳健筛选 / 矩阵格 / 选股 / 返回）
+ *
+ * 这些都是「点了之后重算哪些东西」。频率与窗口会**清空选中对**再重拉，
+ * 因为它们改变了整张相关矩阵的口径 —— 旧的那一对在新口径下没有意义。
+ * ================================================================== */
+describe('页面控件', () => {
+  /** 控件由 renderMacro 自己产出并绑定；不能先造 DOM 再渲染（监听器会被冲掉） */
+  const render = () => {
+    m.renderMacro();
+    return document.getElementById('macro');
+  };
+
+  it('切频率会改 freq 并清空选中对（口径变了，旧的对没意义）', () => {
+    const el = render();
+    m.macroState.pair = ['gold-intl', 'dxy'];
+    const btns = [...el.querySelectorAll('#macro-freq button')];
+    if (!btns.length) return;
+    const target = btns[btns.length - 1];
+    target.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    expect(m.macroState.freq).toBe(target.dataset.f);
+    expect(m.macroState.pair).toBeNull();
+  });
+
+  it('切窗口只改窗口不清对（同一口径下的不同长度）', () => {
+    const el = render();
+    m.macroState.pair = ['gold-intl', 'dxy'];
+    const btns = [...el.querySelectorAll('#macro-window button')];
+    if (!btns.length) return;
+    btns[0].dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    expect(m.macroState.pair).toEqual(['gold-intl', 'dxy']);
+  });
+
+  it('稳健筛选勾选框改 robustOnly 并重绘', () => {
+    const el = render();
+    const box = el.querySelector('#robust-only');
+    if (!box) return;
+    box.checked = true;
+    box.dispatchEvent(new window.Event('change', { bubbles: true }));
+    expect(m.macroState.robustOnly).toBe(true);
+  });
+
+  it('点矩阵格选中那一对', () => {
+    const el = render();
+    const td = [...el.querySelectorAll('.corr-matrix td.corr[data-a][data-b]')].find((x) => x.dataset.a !== x.dataset.b);
+    if (!td) return;
+    td.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    // a === b 的格子会被 selectPair 拒掉（自己和自己没有相关性），所以挑非对角线
+    expect(m.macroState.pair).toEqual([td.dataset.a, td.dataset.b]);
+  });
+
+  it('点选股按钮切换选中（再点取消）', () => {
+    const el = render();
+    const btn = el.querySelector('#macro-picks .pick');
+    if (!btn) return;
+    const key = btn.dataset.pick ?? btn.querySelector('[data-pick]')?.dataset.pick;
+    const before = m.macroState.picked.has(key);
+    btn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    expect(m.macroState.picked.has(key)).toBe(!before);
+  });
+
+  it('返回按钮清空 hash', () => {
+    const el = render();
+    const back = el.querySelector('#back-macro');
+    if (!back) return;
+    back.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    expect(window.location.hash).toBe('');
+  });
+});
