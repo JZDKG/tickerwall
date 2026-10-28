@@ -33,12 +33,14 @@ const EXPECTED = [
   'styles/wide-screen.css',
   'styles/recap.css',
   'styles/macro-graph.css',
+  // 2026-10-28：解释卡需要自己的分片（方案 §3.2 的三层阅读）
+  'styles/explanations.css',
 ];
 
 const read = (rel) => readFileSync(`${ROOT}public/${rel}`, 'utf8');
 
 describe('样式分片：文件与顺序', () => {
-  it('index.html 正好按契约顺序挂了 11 个分片', () => {
+  it('index.html 正好按契约顺序挂了 12 个分片', () => {
     expect(linkOrder).toEqual(EXPECTED);
   });
 
@@ -106,12 +108,15 @@ describe('样式分片：层叠前提', () => {
     expect(seen.size).toBeGreaterThan(10);
   });
 
-  it('拆分前后规则数守恒：11 个文件里没有丢失 @media / @keyframes', () => {
+  it('拆分前后规则数守恒：12 个文件里没有丢失 @media / @keyframes', () => {
     const all = EXPECTED.map(read).join('\n');
     // @media 拆分时 13 个。地图 v2 加了第 14 条（播报台在 ≤720px 让位给
     // 标题）、第 15 条（宏观胶囊在窄屏换行）和第 16 条（时间轴格子在窄屏
-    // 收紧）——这个数字只会因为真的新增响应式规则而变。
-    expect((all.match(/@media/g) ?? []).length).toBe(16);
+    // 收紧）。2026-10-28 解释卡又加了 2 条：减少动态效果（prefers-reduced-motion）
+    // 与 ≤720px 的窄屏排版 —— 这个数字只会因为真的新增响应式规则而变。
+    // 其中含解释卡的 prefers-reduced-motion / ≤720px 两条，以及首页问题卡
+    // 的窄屏单列（2026-10-28）。
+    expect((all.match(/@media/g) ?? []).length).toBe(19);
     // @keyframes：拆分时 16 个。地图 v2 加了 sunPulse（太阳直射点呼吸）、
     // maBreath（城市锚点开市呼吸）、bcPulse/bcProgress（播报台呼吸灯与 6s
     // 进度条），所以是 20。改这个数字时请确认是「新增动画」而不是

@@ -24,9 +24,10 @@ import { getDetail } from './src/server/services/detail.service.js';
 import { getMacro } from './src/server/services/macro.service.js';
 import { getCalendar, getEventStudy } from './src/server/services/calendar.service.js';
 import { handleExplanationRoutes } from './src/server/routes.js';
+import { startCollector } from './src/server/jobs/collector.js';
+import { buildDefaultJobs } from './src/server/jobs/index.js';
 import http from 'node:http';
 import path from 'node:path';
-
 
 
 
@@ -109,8 +110,9 @@ async function handle(req, res) {
       const data = await getCalendar({ force });
       return sendJson(res, 200, data);
     }
+    // 调度状态也在这里暴露：没有它，只能靠「页面像不像在动」判断后台还活着
     if (url.pathname === '/api/health') {
-      return sendJson(res, 200, { ok: true, uptime: Math.round(process.uptime()), ttlMs: CACHE_TTL_MS });
+      return sendJson(res, 200, { ok: true, uptime: Math.round(process.uptime()), ttlMs: CACHE_TTL_MS, jobs: collector?.status?.() ?? [] });
     }
     // 只读自检：给时区/交易时段判断留一个可断言的入口。
     // isMarketOpen 是模块内函数，外部调不到，改时段逻辑时没法验证对错。
@@ -118,8 +120,7 @@ async function handle(req, res) {
       // 调试端点默认关闭（见 config.js）：它会把内部市场配置整份吐出来
       if (!DEBUG_API) return sendJson(res, 404, { ok: false, error: 'not found' });
       const m = url.searchParams.get('m') || 'us-index';
-      const raw = url.searchParams.get('t');
-      const t = raw ? new Date(raw) : new Date();
+      const t = new Date(url.searchParams.get('t') ?? Date.now());
       const p = MARKET_PROFILES[m];
       return sendJson(res, 200, {
         m,
@@ -146,15 +147,21 @@ const server = http.createServer((req, res) => {
   });
 });
 
-/* 后台定时刷新，保证走势连续（即使没有浏览器打开） */
+/* 后台采集：报价 / 新闻 / 日历 / 日频指标 / 解释重建，各自独立退避。
+   即使没有浏览器打开也照常运行（§7.3）；同键任务由调度器合并。 */
 function startBackground() {
-  setInterval(() => {
+  const started = startCollector({
+    jobs: buildDefaultJobs(),
+    everyMs: 15_000,
     // 不能完全静默：上游长期失败时，没有任何日志就只剩「走势断了」这个现象
-    getQuotes().catch((err) => {
-      console.error('[bg] 后台报价刷新失败', err?.message ?? err);
-    });
-  }, Math.max(CACHE_TTL_MS, 5000)).unref?.();
+    onError: (jobKey, err) => console.error('[bg] 后台任务失败', jobKey, err?.message ?? err),
+  });
+  collector = started.collector;
+  return started;
 }
+
+/** 采集调度器实例（启动后才有值；/api/health 读它的状态） */
+let collector = null;
 
 /* 进程级兜底：这是本地看板，宁可带着错误继续服务，也不要因为一次未处理
    的拒绝就整站消失。日志必须留，否则只剩「页面打不开」这一个现象。 */
@@ -187,6 +194,5 @@ server.listen(PORT, HOST, () => {
   console.log(`LISTENING ${port}`);
   if (DISABLE_BACKGROUND) return console.log('后台抓取已禁用');
   console.log(`刷新间隔 ${CACHE_TTL_MS}ms，历史点上限 ${HISTORY_LIMIT}`);
-  getQuotes().catch((err) => console.error('[boot] 首轮报价刷新失败', err?.message ?? err));
   startBackground();
 });

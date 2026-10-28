@@ -7,6 +7,9 @@ import { route } from './router.js';
 import { countdownEl, refreshBtn, updatedEl } from './shared/dom.js';
 import { store } from './shared/store.js';
 import { apply, renderSkeleton } from './views/list.js';
+import { questionsEl } from './shared/dom.js';
+import { loadQuestionCards, questionCardsHTML } from './views/explanations/questions.js';
+import { sigmaOfHistory } from './views/explanations/questions.js';
 // Phase 2 拆分时漏了这一行：briefing.js 顶层挂了「隔夜复盘」按钮的点击监听，
 // 没人 import 它，那段代码在浏览器里从来没执行过 —— 按钮点了没反应。
 // 副作用式导入，不需要任何导出。
@@ -33,6 +36,40 @@ export function paintCountdown() {
   countdownEl.textContent = `${left}s 后刷新`;
 }
 
+/* ------------------------------------------------------------------ *
+ * 首页问题卡
+ *
+ * 只读解释快照，不触发上游或模型调用；失败就不显示，行情列表不受影响。
+ * 阅读期间不自动重排：每轮只在「有新结果且卡还没被读过」时替换一次。
+ * ------------------------------------------------------------------ */
+let questionsAt = 0;
+export const QUESTIONS_TTL_MS = 120_000;
+
+export async function refreshQuestions({ force = false } = {}) {
+  if (!questionsEl) return;
+  if (!force && Date.now() - questionsAt < QUESTIONS_TTL_MS) return;
+  questionsAt = Date.now();
+  try {
+    const assets = (store.quotes ?? [])
+      .filter((q) => q.id === 'gold-intl')
+      .map((q) => ({ assetId: q.id, name: q.name, sigma: sigmaOfHistory(q.history) }));
+    const cards = await loadQuestionCards({
+      assets: assets.length ? assets : [{ assetId: 'gold-intl', name: '国际金价' }],
+      max: 3,
+    });
+    if (!cards.length) {
+      questionsEl.hidden = true;
+      questionsEl.innerHTML = '';
+      return;
+    }
+    questionsEl.innerHTML = questionCardsHTML(cards);
+    questionsEl.hidden = false;
+  } catch {
+    // 解释取不到不该影响行情首屏：静默隐藏问题区
+    questionsEl.hidden = true;
+  }
+}
+
 export async function loadQuotes(force = false) {
   if (store.loading) return;
   store.loading = true;
@@ -42,6 +79,8 @@ export async function loadQuotes(force = false) {
     const res = await fetch(`./api/quotes${force ? '?force=1' : ''}`, { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     apply(await res.json());
+    // 行情先落地，再异步补问题卡（慢也不挡首屏）
+    void refreshQuestions();
   } catch (err) {
     updatedEl.textContent = `连接失败：${err?.message ?? err}`;
   } finally {

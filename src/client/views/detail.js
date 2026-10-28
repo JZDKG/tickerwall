@@ -8,6 +8,14 @@
  * 详情页
  * ================================================================== */
 import { detailEl } from '../shared/dom.js';
+import {
+  createExplainState,
+  isExplainable,
+  explainEnabled,
+  refreshExplain,
+  renderExplainCard,
+  bindExplainInteractions,
+} from './explanations/state.js';
 import { clockText, dirOf, esc, fmtPct, fmtPrice, fmtSigned, html, prettySource, raw } from '../shared/format.js';
 import { store } from '../shared/store.js';
 import { loadCalendarCached } from '../shared/calendar.js';
@@ -915,6 +923,12 @@ export function renderDetail(data) {
 
     ${perfChips(data.stats)}
 
+    ${
+      explainEnabled() && isExplainable(data.id)
+        ? `<div id="d-explain">${renderExplainCard(ensureExplainState(data.id), { assetName: data.name })}</div>`
+        : ''
+    }
+
     <section class="d-block">
       <div class="chart-head">
         <h3>历史走势 <span class="h3-note">${ranged[0]?.[0] ?? ''} ~ ${data.history.endDate ?? ''} · ${ranged.length} 条</span></h3>
@@ -1107,6 +1121,66 @@ export function renderDetailError(id, message) {
   });
 }
 
+/* ------------------------------------------------------------------ *
+ * 解释卡：状态在模块里，重渲染不会丢展开状态
+ * ------------------------------------------------------------------ */
+
+let explainState = null;
+
+/** 取（或初始化）某个资产的解释状态 */
+export function ensureExplainState(assetId) {
+  if (!explainState || explainState.assetId !== assetId) {
+    explainState = createExplainState(assetId);
+    explainState.assetName = null;
+  }
+  return explainState;
+}
+
+/** 对外只读：便于测试与调试 */
+export function currentExplainState() {
+  return explainState;
+}
+
+/**
+ * 重新渲染解释卡（只换这一块，不动图表与其它区域）。
+ * 保留展开状态：openFactors 在状态里，不随 DOM 重建丢失。
+ */
+export function repaintExplainCard() {
+  const host = typeof document !== 'undefined' ? document.getElementById('d-explain') : null;
+  if (!host || !explainState) return;
+  const data = detailState?.data;
+  host.innerHTML = renderExplainCard(explainState, { assetName: data?.name });
+  bindExplain();
+}
+
+function bindExplain() {
+  const host = typeof document !== 'undefined' ? document.getElementById('d-explain') : null;
+  if (!host || !explainState) return;
+  bindExplainInteractions(host, () => explainState, {
+    onChange: (next, action) => {
+      explainState = next;
+      repaintExplainCard();
+      if (action === 'window' || action === 'refresh') void hydrateExplanation({ force: action === 'refresh' });
+    },
+  });
+}
+
+/**
+ * 取解释并写回状态。
+ *
+ * 序号保护：慢响应回来时如果用户已经切了窗口/资产，就直接丢弃。
+ */
+export async function hydrateExplanation({ force = false } = {}) {
+  if (!explainState || !isExplainable(explainState.assetId)) return null;
+  const seqAtStart = explainState.seq + 1;
+  const next = await refreshExplain(explainState, { force });
+  if (!explainState || next.seq !== seqAtStart) return null; // 旧响应，丢弃
+  // 保留用户已经展开的条目：refreshExplain 的 base 已带上 openFactors
+  explainState = { ...next, openFactors: explainState.openFactors, assetName: explainState.assetName };
+  repaintExplainCard();
+  return explainState;
+}
+
 export async function loadDetail(id, { force = false } = {}) {
   try {
     // 日历与详情并行取，失败也不影响详情渲染
@@ -1122,7 +1196,11 @@ export async function loadDetail(id, { force = false } = {}) {
     } else {
       detailState.data = data;
     }
-    if (location.hash.startsWith('#/d/')) renderDetail(detailState.data);
+    if (location.hash.startsWith('#/d/')) {
+      renderDetail(detailState.data);
+      // 图表先渲染，解释异步补上：取数慢不该让整页等
+      void hydrateExplanation();
+    }
   } catch (err) {
     renderDetailError(id, err?.message ?? String(err));
   }
@@ -1148,6 +1226,8 @@ export function mountDetail(id) {
   window.scrollTo({ top: 0 });
   if (!detailState || detailState.id !== id) {
     detailState = { id, data: null, period: 'day', range: 'all', scale: 'lin', ma: true, type: 'line', tableRows: 30 };
+    // 换标的就换解释状态：旧资产的解释不能留在新页面上
+    explainState = null;
     detailEl.innerHTML = html`<div class="d-loading">正在加载历史数据…</div>`.toString();
   }
   loadDetail(id, { force: true });
@@ -1161,4 +1241,6 @@ export function unmountDetail() {
   detailEl.hidden = true;
   detailEl.innerHTML = '';
   detailState = null;
+  // 丢掉解释状态：在飞的请求回来时 explainState 已是 null，写回会被直接丢弃
+  explainState = null;
 }

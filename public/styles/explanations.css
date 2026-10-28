@@ -1,0 +1,576 @@
+/* ================================================================== *
+ * explanations.css —— 解释卡：三层阅读（快速理解 / 路径 / 依据）与六种状态
+ *
+ * 设计约束（方案 §3.7 / §10.2）：
+ *   · 默认解释文字比图表注释更醒目（正文 14px，摘要 16px）；
+ *   · 颜色之外必须有文字或符号：状态徽章带中文字，不只靠红绿；
+ *   · 展开只靠按钮 / <details>，不依赖悬停；
+ *   · 减少动态效果时不做任何过渡。
+ * ================================================================== */
+
+.explain-card {
+  border-color: rgba(91, 156, 248, 0.28);
+}
+
+.explain-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.explain-head h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.explain-windows {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.explain-win {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.explain-win.on {
+  color: var(--text);
+  border-color: rgba(91, 156, 248, 0.5);
+  background: rgba(91, 156, 248, 0.12);
+}
+
+.explain-win:focus-visible,
+.explain-factor-head:focus-visible,
+.explain-retry:focus-visible,
+.explain-refresh:focus-visible {
+  outline: 2px solid var(--accent, #5b9cf8);
+  outline-offset: 2px;
+}
+
+.explain-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.explain-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+}
+
+.explain-fact-main {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.explain-fact-main b {
+  font-size: 18px;
+  font-family: -apple-system, sans-serif;
+  color: var(--text);
+}
+
+.explain-fact-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.explain-fact-chips li {
+  display: flex;
+  gap: 6px;
+}
+
+.explain-fact-chips b {
+  color: var(--text);
+  font-family: -apple-system, sans-serif;
+}
+
+.explain-summary {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--text);
+}
+
+.explain-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 12px;
+  color: var(--muted-2);
+}
+
+.explain-cs {
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+}
+
+.explain-cs.ok {
+  color: var(--down);
+  border-color: rgba(14, 203, 129, 0.35);
+}
+
+.explain-cs.warn {
+  color: #e0a83c;
+  border-color: rgba(224, 168, 60, 0.4);
+}
+
+.explain-cs.dim {
+  color: var(--muted-2);
+}
+
+.explain-stale,
+.explain-conflict {
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.explain-stale {
+  color: #e0a83c;
+  background: rgba(224, 168, 60, 0.1);
+  border: 1px solid rgba(224, 168, 60, 0.35);
+}
+
+.explain-conflict {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.09);
+  border: 1px solid rgba(245, 158, 11, 0.32);
+}
+
+.explain-factors {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.explain-factor {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.explain-factor-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 11px;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.explain-factor-head:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.explain-factor-idx {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.explain-factor-label {
+  font-weight: 600;
+}
+
+.explain-factor-caret {
+  margin-left: auto;
+  color: var(--muted-2);
+}
+
+.explain-badge {
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.explain-badge.ok {
+  color: var(--down);
+  border-color: rgba(14, 203, 129, 0.35);
+  background: rgba(14, 203, 129, 0.08);
+}
+
+.explain-badge.warn {
+  color: #e0a83c;
+  border-color: rgba(224, 168, 60, 0.4);
+  background: rgba(224, 168, 60, 0.08);
+}
+
+.explain-badge.dim {
+  color: var(--muted-2);
+}
+
+.explain-factor-body {
+  padding: 2px 12px 12px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.explain-factor-body[hidden] {
+  display: none;
+}
+
+.explain-plain {
+  margin: 8px 0 4px;
+  color: var(--text);
+}
+
+.explain-mech {
+  margin: 0 0 8px;
+}
+
+.explain-sub {
+  margin-top: 10px;
+}
+
+.explain-sub > b {
+  display: block;
+  font-size: 12px;
+  color: var(--text);
+  margin-bottom: 3px;
+}
+
+.explain-conds,
+.explain-excl {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.explain-excl li {
+  color: #e0a83c;
+}
+
+.explain-evidence {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.explain-evidence th,
+.explain-evidence td {
+  border-bottom: 1px solid var(--line);
+  padding: 4px 6px;
+  text-align: left;
+}
+
+.explain-evidence th {
+  color: var(--muted-2);
+  font-weight: 500;
+}
+
+.explain-src a {
+  color: #5b9cf8;
+  text-decoration: none;
+}
+
+.explain-src a:hover {
+  text-decoration: underline;
+}
+
+.explain-unknown,
+.explain-loading,
+.explain-error {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.explain-unknown {
+  color: var(--text);
+}
+
+.explain-loading {
+  color: var(--muted);
+}
+
+.explain-error {
+  color: var(--up);
+}
+
+.explain-more > summary,
+.explain-checks > summary,
+.explain-meaning > summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--muted);
+  padding: 6px 0;
+}
+
+.explain-checks ul,
+.explain-unknowns {
+  margin: 4px 0 8px;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.explain-meaning dl {
+  margin: 4px 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.explain-meaning dt {
+  color: var(--text);
+  font-weight: 600;
+  margin-top: 6px;
+}
+
+.explain-meaning dd {
+  margin: 2px 0 0;
+  color: var(--muted);
+}
+
+.explain-retry,
+.explain-refresh {
+  align-self: flex-start;
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.explain-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--muted-2);
+}
+
+.explain-dim {
+  font-size: 12px;
+  color: var(--muted-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .explain-card *,
+  .explain-card *::before,
+  .explain-card *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .explain-head {
+    flex-direction: column;
+  }
+
+  .explain-facts {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .explain-evidence {
+    font-size: 11px;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * 首页问题卡：先给三个值得理解的问题，再给行情入口
+ * ------------------------------------------------------------------ */
+
+.questions {
+  max-width: 1180px;
+  margin: 0 auto 18px;
+  padding: 0 16px;
+}
+
+.questions[hidden] {
+  display: none;
+}
+
+.q-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+
+.q-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.q-note {
+  font-size: 11px;
+  color: var(--muted-2);
+}
+
+.q-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.q-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.q-top {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.q-idx {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+
+.q-top h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+  flex: 1 1 180px;
+}
+
+.q-status {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  color: var(--muted-2);
+}
+
+.q-status.ok {
+  color: var(--down);
+  border-color: rgba(14, 203, 129, 0.35);
+}
+
+.q-status.warn {
+  color: #e0a83c;
+  border-color: rgba(224, 168, 60, 0.4);
+}
+
+.q-fact {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.q-fact b {
+  color: var(--text);
+  margin-right: 6px;
+}
+
+.q-brief {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.q-brief.q-dim,
+.q-dim {
+  color: var(--muted-2);
+}
+
+.q-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.q-primary,
+.q-secondary {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  text-decoration: none;
+}
+
+.q-primary {
+  color: var(--text);
+  border-color: rgba(91, 156, 248, 0.5);
+  background: rgba(91, 156, 248, 0.12);
+}
+
+.q-secondary {
+  color: var(--muted);
+}
+
+.q-primary:focus-visible,
+.q-secondary:focus-visible {
+  outline: 2px solid var(--accent, #5b9cf8);
+  outline-offset: 2px;
+}
+
+@media (max-width: 720px) {
+  .q-list {
+    grid-template-columns: 1fr;
+  }
+}
