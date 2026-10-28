@@ -1767,3 +1767,13 @@
   color: var(--muted-2);
   opacity: 0.85;
 }
+
+/* 制度条件（C4 后半）：这条解释在什么环境下成立 */
+.bc-policy {
+  color: var(--muted-2);
+  font-size: 11px;
+  line-height: 1.5;
+  border-top: 1px dashed var(--line);
+  padding-top: 2px;
+  margin-top: 2px;
+}

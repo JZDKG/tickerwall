@@ -591,11 +591,11 @@ git diff --check
 | C3 历史回放 | 读取路径：`db/explanations.js`（`readObservationAsOf` / `readEventAsOf` / `listExplanationHistory`）；接口 `GET /api/explanations/history?asset=&window=`；详情页「此前的解释（N 版）」+ 回放横幅；事件流「第 N 版」徽章与版本面板（`/api/events/:id/revisions`）；事件修订按内容哈希写入（`recordEventRevisions`） | `tests/db-explanations.test.js`、`tests/explanations-history.test.js`、`tests/event-revisions.test.js`、`tests/views-list-events.test.js`、`tests/explanation-http.test.js` |
 | §10.2 理解测试 | 六个问题与「不许出现的措辞」写成断言（不依赖浏览器，可进 CI） | `tests/understanding.test.js` |
 | 事件冲击分类 | `domain/events/shock.js`（供给/需求词表、资产相关性过滤、保守返回 null）、归档转证据 | `tests/shock-classification.test.js`、`tests/explanations.test.js`「事件证据与快照」 |
-| C4 地图与影响范围 | `views/explanations/impact.js`（发生地=地理赛区、影响范围取同一份解释的渠道状态、固定免责）、`map/layers/broadcast.js` + `map.js` 播报台接入 | `tests/map-impact.test.js`、浏览器走查 |
+| C4 地图与影响范围 | `views/explanations/impact.js`（发生地=地理赛区、影响范围取同一份解释的渠道状态、制度条件、弧顶带渠道状态、固定免责）、`map/geo/regions.js`（`REGION_POLICY_NOTES`）、`map/layers/broadcast.js` + `map.js` 接入 | `tests/map-impact.test.js`（15）、浏览器走查 |
 
 ### 14.2 尚未完成
 
-- **C4 的「地区与政策条件」只完成前半**：播报台现在同时给出发生地（地理赛区）、影响范围（受影响资产 + 渠道状态）与免责说明，但还没有把「政策条件」写进地图（例如同一 OPEC 减产在不同汇率制度下的传导差异），也还没有把解释路径画到地图上（目前只画定价中心弧线）。
+- **C4 的「实际流量」仍缺**：地图现在能区分发生地、影响范围（含渠道状态）、制度条件，弧顶标签也带上了渠道状态；但图上仍没有资金流 / 贸易量图层 —— 那需要 C5 的数据源。
 - **C5 真实流量**：基金流量、贸易量、能源运输等数据没有可靠来源，保持不做。
 - **事件冲击分类器只覆盖规则可判的情形**：`domain/events/shock.js` 用「数量约束词（减产/停产/航道/罢工）」与「需求词（开工率/补库/出行）」两套词表保守判定，两类同时出现或只有价格描述时返回 null（渠道显示「尚未确认」）。仍有局限：反讽、引述他人观点、跨品种同名事件（铜矿罢工）需要人复核，所以分类结果只进证据、不进标题结论。
 - **浏览器端 CI**：理解测试已脚本化（`tests/understanding.test.js`），但真实渲染的端到端走查仍是人工执行 Chromium headless 脚本（验证卡片出现、可展开、切窗口后内容更新、无控制台异常）。
@@ -616,3 +616,32 @@ git diff --check
 - 被引用的事件修订在写快照前先落库（`persistReferencedEvents`），满足「不接受不存在的引用」。
 - 事件修订的「内容是否变化」改以数据库中最新一版的 `contentHash` 为准（内存缓存只作快路径）：只靠内存时，进程重启会给所有事件追加一版重复修订。
 - 回放时摘掉新鲜度判定：用今天的时钟说一份历史解释「已过期」没有意义，横幅已说明它不是当前状态。
+
+### 14.4 验收对照（2026-10-28 复核）
+
+§10.1 的每一行都有落点；表里列的是**当前实际通过**的测试文件，不再有「拟新增」。
+
+| §10.1 场景 | 当前落点 |
+| --- | --- |
+| 最新为周二 / 最新为周一 | `tests/divergence.test.js`（共同日期配对、`unaligned` 标记） |
+| 大量缺失或窗口不足 | `tests/divergence.test.js`、`tests/stats-rigor.test.js` |
+| 相同原始日线切日周矩阵 | `tests/macro-service.test.js`（RV 取原始日线，与频率解耦） |
+| 实际收益率为负或跨零 | `tests/explanation-metrics.test.js`、`tests/db.test.js`、`tests/providers.test.js` |
+| 所有历史源失败 | `tests/macro-service.test.js`、`tests/explanations.test.js`（不可用指标进 `missing`，不补零） |
+| 名义收益率涨、实际收益率未知 | `tests/explanations.test.js`（`M-GOLD-NOMINAL-RATE` 为 `untested`） |
+| 油价上涨但冲击类型不同 | `tests/explanations.test.js`、`tests/shock-classification.test.js` |
+| AI 明确无关或成功空数组 | `tests/event-normalization.test.js`（四态，irrelevant 清标签） |
+| 中国国债与美国国债 | `tests/event-normalization.test.js`（实体证据表） |
+| 同一发言多来源报道 | `tests/event-normalization.test.js`、`tests/views-list-events.test.js`（折叠不吞原文） |
+| 模型新增数值或不存在的引用 | `tests/explanations.test.js`（`verifyExplanation` 失败回退模板）、`tests/db-explanations.test.js`（引用校验） |
+| 原文包含指令性文字 | `tests/explanations.test.js`（注入的新闻正文不改变生成规则） |
+| 并发请求 / 冷启动 / 部分源失败 | `tests/collector.test.js`（同键合并、退避）、`tests/http-integration.test.js` |
+| 新修订晚于历史截至时间 | `tests/db-explanations.test.js`（`readObservationAsOf` / `readEventAsOf`） |
+| 重复抓取与同一观测多次修订 | `tests/db-explanations.test.js`、`tests/event-revisions.test.js`（内容哈希去重、重启不重复） |
+| 报道更新 / 无效引用 / 历史清理 | `tests/db-explanations.test.js`、`scripts/dedupe-event-revisions.mjs` |
+| 证据不足随后过期 | `tests/explanations.test.js`（freshness 与 contentStatus 独立）、`tests/explanation-http.test.js` |
+| 快速切换资产与窗口 | `tests/views-explanations.test.js`（`seq` 递增、旧响应丢弃） |
+
+§10.2 的机器可验证部分已脚本化：`tests/understanding.test.js` 用同一套渲染函数检查六个问题都能读出来，并反向断言不出现「证实了 / 必然 / 一定会」、概率与裸条件码。人因测试（邀请 5 位非金融用户、1 分钟门槛）属于产品试用环节，不在本仓库范围内。
+
+§10.3 的命令在每次提交前执行：`npm test`（53 文件 / 1383 用例）、`npm run build`、`git diff --check`。

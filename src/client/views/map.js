@@ -20,7 +20,7 @@ import { regionBounds, viewForBounds, toggleRegion } from './map/logic/focus.js'
 import { createCamera, destroyCamera, applyTransform, syncCamera } from './map/camera.js';
 import { cityAnchorsHtml, lodClassFor } from './map/layers/markers.js';
 import { broadcastHtml } from './map/layers/broadcast.js';
-import { impactLine, impactBlockHtml, originLine } from './explanations/impact.js';
+import { impactLine, impactBlockHtml, originLine, policyNoteOf, arcTagText } from './explanations/impact.js';
 import { loadGraphExplanation } from './explanations/graph.js';
 import { isExplainable } from './explanations/state.js';
 import { relayBandHtml, macroCapsuleHtml, alertChipHtml, alertCardHtml, alertsNow, ALERT_ANCHOR } from './map/layers/hud.js';
@@ -195,7 +195,7 @@ export function arcBetween([x1, y1], [x2, y2]) {
  * 而且它和播报台讲的事件不是同一条 —— 眼睛在上下两处对不上。现在弧线跟着
  * spotlight 走：播报台念哪条，画面上就只画那条的传导路径。
  */
-export function impactArcsFor(ev) {
+export function impactArcsFor(ev, tagOverride = null) {
   if (!ev) return '';
   const anchor = REGION_ANCHORS[ev.region];
   if (!anchor) return '';
@@ -228,11 +228,12 @@ export function impactArcsFor(ev) {
     }
   });
 
-  // 弧顶标签：只有主主题，不重复标题（标题在播报台里）
-  if (apex && topic) {
+  // 弧顶标签：主主题（+ 解释渠道）。标题在播报台里，这里不重复
+  const label = tagOverride || topic;
+  if (apex && label) {
     svg += `<g class="arc-tag" transform="translate(${apex[0].toFixed(1)},${apex[1].toFixed(1)})">`
-      + `<g class="scene-fixed"><rect x="-1" y="-7" width="${(topic.length * 9 + 10).toFixed(0)}" height="14" rx="7" />`
-      + `<text x="${(topic.length * 4.5 + 4).toFixed(1)}" y="3.6" text-anchor="middle">${esc(topic)}</text></g></g>`;
+      + `<g class="scene-fixed"><rect x="-1" y="-7" width="${(label.length * 8 + 12).toFixed(0)}" height="14" rx="7" />`
+      + `<text x="${(label.length * 4 + 5).toFixed(1)}" y="3.6" text-anchor="middle">${esc(label)}</text></g></g>`;
   }
   return svg;
 }
@@ -355,7 +356,9 @@ function renderBroadcast() {
   const ev = spotlightEvent();
   const quotesById = new Map((store.quotes ?? []).filter((q) => q && q.ok).map((q) => [q.id, q]));
   const { impact } = impactFor(ev);
-  const impactHtml = ev ? impactBlockHtml({ origin: originLine(ev.region), impact }) : '';
+  const impactHtml = ev
+    ? impactBlockHtml({ origin: originLine(ev.region), impact, policyNote: policyNoteOf(ev.region) })
+    : '';
   box.innerHTML = broadcastHtml(ev, quotesById, impactHtml);
   if (ev) void hydrateImpact(ev);
   box.dataset.mode = bcState.mode;
@@ -410,7 +413,7 @@ function renderImpact(ev) {
   // 入场动画（animation-delay）反复重启，看起来一直在抽。
   const id = ev?.id ?? '';
   if (layer && layer.dataset.evId !== id) {
-    layer.innerHTML = impactArcsFor(ev);
+    layer.innerHTML = impactArcsFor(ev, arcTagText({ topic: ev?.topics?.find((t) => t.strong)?.label ?? ev?.topics?.[0]?.label ?? '', impact: impactFor(ev).impact }));
     layer.dataset.evId = id;
   }
 

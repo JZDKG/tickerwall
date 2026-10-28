@@ -8,12 +8,15 @@
  * ================================================================== */
 
 import { describe, it, expect } from 'vitest';
+import { REGION_POLICY_NOTES, regionPolicyNote } from '../src/client/views/map/geo/regions.js';
 import {
   originLine,
   leadChannelOf,
   impactLine,
   impactBlockHtml,
   IMPACT_DISCLAIMER,
+  policyNoteOf,
+  arcTagText,
 } from '../src/client/views/explanations/impact.js';
 
 const EXP = {
@@ -82,5 +85,51 @@ describe('影响范围取渠道状态', () => {
   it('免责句固定，不随事件变化', () => {
     expect(IMPACT_DISCLAIMER).toContain('不是资金流、贸易量或价格变化幅度');
     expect(IMPACT_DISCLAIMER).toContain('交易地');
+  });
+});
+
+/* ================================================================== *
+ * C4 后半：制度条件与「把解释带到地图上」
+ * ================================================================== */
+describe('制度与政策条件', () => {
+  it('按地区给出制度条件，不编未知地区', () => {
+    expect(policyNoteOf('me') ?? regionPolicyNote('me')).toContain('美元挂钩');
+    expect(regionPolicyNote('cn')).toContain('调价机制');
+    expect(regionPolicyNote('eu')).toContain('美元结算');
+  });
+
+  it('未知地区返回 null', () => {
+    expect(regionPolicyNote('atlantis')).toBeNull();
+    expect(policyNoteOf('atlantis')).toBeNull();
+  });
+
+  it('条件说明只讲前提，不给方向或幅度', () => {
+    const texts = Object.values(REGION_POLICY_NOTES).join(' ');
+    expect(texts).not.toMatch(/概率|将上涨|将下跌|目标价/);
+  });
+
+  it('渲染块里制度条件单独一行', () => {
+    const html = impactBlockHtml({
+      origin: originLine('me'),
+      impact: impactLine({ symbols: ['oil'] }, new Map([['oil', EXP]]), new Map([['oil', '原油']])),
+      policyNote: regionPolicyNote('me'),
+    });
+    expect(html).toContain('制度条件：');
+    expect(html).toContain('美元挂钩');
+  });
+});
+
+describe('弧顶标签带上解释渠道', () => {
+  it('有渠道状态时：主题 · 渠道 · 状态', () => {
+    const impact = impactLine({ symbols: ['oil'] }, new Map([['oil', EXP]]), new Map([['oil', '原油']]));
+    const label = arcTagText({ topic: '能源', impact });
+    expect(label).toContain('能源');
+    expect(label).toContain('避险需求');
+    expect(label).toContain('证据并存');
+  });
+
+  it('没有解释时退回主题，不编渠道', () => {
+    expect(arcTagText({ topic: '能源', impact: null })).toBe('能源');
+    expect(arcTagText({ topic: '', impact: null })).toBe('');
   });
 });

@@ -10,7 +10,7 @@
  * 得到一行可读文字。取不到解释就明说「尚未生成」，不猜。
  * ================================================================== */
 
-import { REGION_ANCHORS, REGION_SEMANTICS } from '../map/geo/regions.js';
+import { REGION_ANCHORS, REGION_SEMANTICS, regionPolicyNote } from '../map/geo/regions.js';
 
 const STATUS_TEXT = {
   consistent: '观测一致',
@@ -100,6 +100,27 @@ export function impactLine(event, explanationsByAsset, nameOf = new Map()) {
   };
 }
 
+/**
+ * 制度与政策条件（C4 后半）：同一事件在不同制度环境下传导不同。
+ *
+ * 只提示「这条解释成立需要什么制度前提」，不给方向、不给幅度。
+ */
+export function policyNoteOf(region) {
+  return regionPolicyNote(region);
+}
+
+/**
+ * 弧顶标签：把解释渠道带到地图上。
+ *
+ * 原来弧顶只挂主题（「能源」）。现在如果受影响资产有解释快照，就把
+ * 「渠道 · 状态」挂上去 —— 图上的线因此和详情页说的是同一件事。
+ */
+export function arcTagText({ topic, impact }) {
+  const lead = impact?.assets?.[0];
+  if (lead?.status && lead.text) return `${topic ? `${topic} · ` : ''}${lead.text}`;
+  return topic ?? '';
+}
+
 /** 固定免责：地图表达的是「地点 + 方向」，不是流量或幅度 */
 export const IMPACT_DISCLAIMER = `${REGION_SEMANTICS.tradingVenuesNote}；弧线表示受影响资产的定价中心，不是资金流、贸易量或价格变化幅度。`;
 
@@ -111,10 +132,12 @@ export const IMPACT_SHORT_NOTE = '弧线＝定价中心，不是资金流或价�
  *
  * @param {{origin:object, impact:object|null, disclaimer?:boolean}} parts
  */
-export function impactBlockHtml({ origin, impact, shortNote = true }) {
+export function impactBlockHtml({ origin, impact, shortNote = true, policyNote = null }) {
   const rows = [`<div class="bc-origin">${escapeHtml(origin.text)}</div>`];
   if (impact) rows.push(`<div class="bc-impact ${impact.tone}">影响范围：${escapeHtml(impact.text)}</div>`);
   else rows.push('<div class="bc-impact dim">影响范围：受影响资产还没有可用的解释</div>');
+  // 制度条件：这条解释在什么环境下才成立（不给方向）
+  if (policyNote) rows.push(`<div class="bc-policy">制度条件：${escapeHtml(policyNote)}</div>`);
   // 短注常驻、完整说明放 title：既说清"不是什么"，也不把播报台撑成一段免责声明
   if (shortNote) rows.push(`<div class="bc-note" title="${escapeHtml(IMPACT_DISCLAIMER)}">${escapeHtml(IMPACT_SHORT_NOTE)}</div>`);
   return rows.join('');
