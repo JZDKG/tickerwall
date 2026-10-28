@@ -23,7 +23,8 @@
     "dev:web": "vite",
     "lab": "node tools/layout-lab.mjs",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:cov": "vitest run --coverage"
   },
   "engines": {
     "node": ">=20"
