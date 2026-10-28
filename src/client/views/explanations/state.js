@@ -13,6 +13,7 @@
 import { explanationCardHTML } from './card.js';
 import { publishExplanation } from '../../shared/explanation-store.js';
 import { loadExplanationHistory, loadExplanationVersion, historyListHTML, replayBannerHTML } from './history.js';
+import { diffPanelHTML, diffToggleHTML } from './diff-panel.js';
 
 /** 解释能力开关（方案 §10.3：先置于可关闭的功能开关后） */
 export const EXPLAIN_FLAG_KEY = 'explain-card-enabled';
@@ -205,7 +206,15 @@ export function renderExplainCard(state, { assetName } = {}) {
   const banner = replay ? replayBannerHTML(replay) : '';
   // 只有拿到过至少两版才显示「此前的解释」，否则是一行空壳
   const history = historyListHTML({ items: state.history, currentId: state.explanation?.id ?? null });
-  return `${banner}${card}${history}`;
+  /**
+   * 变化记录入口（产品 2.2）：只有拿过至少两版才显示 —— 第一版没有可比对象，
+   * 给一个点了只会说「这是第一版」的按钮是浪费用户一次点击。
+   */
+  const canDiff = (state.history?.length ?? 0) > 1 && Boolean(state.explanation?.id);
+  const diffEntry = canDiff
+    ? `${diffToggleHTML(state.explanation.id)}<div class="explain-diff-slot" data-explain-diff-slot="1"></div>`
+    : '';
+  return `${banner}${card}${history}${diffEntry}`;
 }
 
 /**
@@ -213,6 +222,25 @@ export function renderExplainCard(state, { assetName } = {}) {
  *
  * 失败不影响当前卡片：列表拿不到就什么都不显示，不显示一个「加载中」空壳。
  */
+/**
+ * 取某一版相对上一版的变化记录（产品 2.2）。
+ *
+ * 失败不抛：返回 { status, body }，界面用 diffPanelHTML 决定显示什么。
+ */
+export async function fetchExplanationDiff(id, { withId = null, fetchImpl } = {}) {
+  if (!id) return { status: 400, body: { ok: false, error: '缺少解释版本号' } };
+  const f = fetchImpl ?? (typeof fetch === 'function' ? fetch : null);
+  if (!f) return { status: 503, body: { ok: false, error: '当前环境没有 fetch' } };
+  const qs = withId ? `?with=${encodeURIComponent(withId)}` : '';
+  try {
+    const res = await f(`./api/explanations/${encodeURIComponent(id)}/diff${qs}`, { cache: 'no-store' });
+    const body = await res.json().catch(() => ({}));
+    return { status: res.status, body: body ?? {} };
+  } catch (err) {
+    return { status: 503, body: { ok: false, error: String(err?.message ?? err) } };
+  }
+}
+
 export async function refreshHistory(state, { fetchImpl } = {}) {
   if (!isExplainable(state.assetId)) return state;
   const { status, items } = await loadExplanationHistory({

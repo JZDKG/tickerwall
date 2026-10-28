@@ -17,6 +17,7 @@ import {
   getExplanationHistory,
   explanationAssetIds,
   questionCandidates,
+  compareExplanations,
 } from './services/explanations.service.js';
 import { readEventRevision, listEventRevisions } from './db/index.js';
 
@@ -48,6 +49,18 @@ export async function handleExplanationRoutes(url, res, { takeForce }) {
     const windowKey = url.searchParams.get('window') || 'session';
     const limit = Number(url.searchParams.get('limit') || 20);
     const { status, body } = getExplanationHistory({ asset, windowKey, limit });
+    sendJson(res, status, body);
+    return true;
+  }
+  /**
+   * 变化记录（产品 2.2）：/api/explanations/:id/diff?with=<id>
+   * 必须在 :id 分支之前匹配，否则 `.../diff` 会被当成一个版本号。
+   */
+  const diffMatch = /^\/api\/explanations\/([^/]+)\/diff$/.exec(url.pathname);
+  if (diffMatch) {
+    const afterId = decodeURIComponent(diffMatch[1]);
+    const withId = url.searchParams.get('with');
+    const { status, body } = compareExplanations({ afterId, beforeId: withId || null });
     sendJson(res, status, body);
     return true;
   }

@@ -42,6 +42,7 @@ import {
 } from '../domain/explanations/instruments.js';
 import { WINDOW_KEYS, WINDOW_SPECS, windowSpec } from '../domain/explanations/alignment.js';
 import { assessExplanationFreshness } from '../domain/explanations/quality.js';
+import { diffExplanations, summarizeDiff } from '../domain/explanations/diff.js';
 import {
   mechanismsFor,
   mechanismLibraryVersion,
@@ -695,6 +696,73 @@ export function getExplanationHistory({ asset, windowKey, limit = 20 } = {}) {
       windowKey,
       count: items.length,
       items,
+    },
+  };
+}
+
+/**
+ * 解释变化记录（产品 2.2）。
+ *
+ * 取两版快照做比较：`with` 省略时自动取「同一资产同一窗口的上一版」——
+ * 用户问的是「和上一版差在哪」，让他先去找版本号是没必要的。
+ *
+ * 比较逻辑在 domain/explanations/diff.js（纯函数），这里只负责取数与
+ * 把「为什么变了」的必要上下文带上。
+ */
+export function compareExplanations({ afterId, beforeId = null, asset = null, windowKey = null } = {}) {
+  const after = readExplanation(afterId);
+  if (!after?.explanation) return { status: 404, body: { ok: false, error: `未知解释版本：${afterId}` } };
+
+  let before = null;
+  if (beforeId) {
+    before = readExplanation(beforeId);
+    if (!before?.explanation) return { status: 404, body: { ok: false, error: `未知解释版本：${beforeId}` } };
+  } else {
+    // 没指定对比版本：取同资产同窗口的上一版
+    const targetAsset = asset ?? after.explanation.assetId;
+    // 快照里的 window 是 { key, label }，不是字符串：直接传对象会查不到历史
+    const targetWindow = windowKey ?? after.explanation.window?.key ?? 'session';
+    const history = listExplanationHistory({ assetId: targetAsset, windowKey: targetWindow, limit: 50 });
+    const idx = history.findIndex((h) => h.id === afterId);
+    const prev = idx >= 0 ? history[idx + 1] : null;
+    if (prev?.id) before = readExplanation(prev.id);
+  }
+
+  if (!before?.explanation) {
+    return {
+      status: 200,
+      body: {
+        schemaVersion: EXPLANATION_SCHEMA_VERSION,
+        ok: true,
+        status: 'no-previous',
+        after: { id: after.explanation.id, generatedAt: after.explanation.generatedAt ?? null },
+        before: null,
+        diff: null,
+        message: '这是该资产该窗口的第一版解释，没有可比的历史版本',
+      },
+    };
+  }
+
+  const diff = diffExplanations(before.explanation, after.explanation);
+  return {
+    status: 200,
+    body: {
+      schemaVersion: EXPLANATION_SCHEMA_VERSION,
+      ok: true,
+      status: diff.status,
+      after: diff.after,
+      before: diff.before,
+      diff,
+      summary: summarizeDiff(diff),
+      /**
+       * 两版之间隔了多久很重要：「10 分钟内变了」与「隔三天变了」含义不同。
+       * 这里给毫秒差，界面自己决定怎么显示。
+       */
+      gapMs: (() => {
+        const a = Date.parse(after.explanation.generatedAt ?? '');
+        const b = Date.parse(before.explanation.generatedAt ?? '');
+        return Number.isFinite(a) && Number.isFinite(b) ? Math.abs(a - b) : null;
+      })(),
     },
   };
 }

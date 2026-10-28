@@ -199,7 +199,7 @@
 | 项 | 状态 | 现状 |
 | --- | --- | --- |
 | 2.1 对照解读（国内金 vs 国际金） | **已完成** | 纯分解 [`domain/explanations/comparison.js`](../src/server/domain/explanations/comparison.js)：按会计恒等式拆成「国际金（美元计价）/ 美元兑人民币 / 境内外溢价」三项，用对数分解保证可加；取数与三序列对齐在 [`services/comparison.service.js`](../src/server/services/comparison.service.js)（对齐到三序列共同覆盖的最后一个交易日，缺一个就明确 unknown）；`GET /api/comparison/gold?window=session|5d|20d`；界面 [`views/comparison.js`](../src/client/views/comparison.js)，入口放在详情页「内外盘对照」块里的「为什么不同步？」按钮，原位展开 | `tests/domain-comparison.test.js`（17：恒等式残差 <1e-9、三种场景、不可比时不给分解）、`tests/comparison-service.test.js`（14：对齐、缺序列、缓存过期警告、不碰真库）、`tests/views-comparison.test.js`（20：亏损项照常显示、残差标注、不可比只给原因）、`tests/app-router.test.js`（+3 端点）；真数据实测：cutoff 2026-10-23，国内 -4.17% / 折算 -4.22% / 残差 0.0 | 只做了黄金；原油的内外盘（WTI vs 上海原油）与铜的内外盘未做（数据源不同，需先确认可比的合约口径） |
-| 2.2 解释变化记录 | 未开始（依赖已就绪） | 解释快照与历史列表已可用（`/api/explanations/history`），缺「与上次相比」的差异视图 |
+| 2.2 解释变化记录 | **已完成** | 纯比较 [`domain/explanations/diff.js`](../src/server/domain/explanations/diff.js)：假设判定（含证据条数前后）、数据事实前后数值、contentStatus、摘要文案四类变化；**口径变化单列**（机制库/算法版本变了 → 说明判定规则改了，不是市场变了）；接口 `GET /api/explanations/:id/diff?with=<id>`（省略 `with` 自动取同资产同窗口上一版，第一版回 `no-previous` 而不是 404，附 `gapMs`）；界面 [`views/explanations/diff-panel.js`](../src/client/views/explanations/diff-panel.js) + 解释卡底部入口（≥2 版才显示） | `tests/domain-diff.test.js`（26：五种状态变化语义、浮点噪声不算变化、规则vs数据区分、禁用价值判断词）、`tests/explanations-diff-api.test.js`（7：自动取上一版、跨版本、时间差）、`tests/views-diff-panel.test.js`（16：口径说明排最前、不说好坏、新增/移除都显示） | 变化记录只在解释卡内；没做「变化日历」（按天聚合所有资产的变化），留待有需求再说 |
 | 2.3 关注问题与变化简报 | 未开始 | 依赖事件聚合（已按事件簇折叠）与解释变化（未做） |
 | 2.4 预期与实际解读 | 未开始 | 日历有 FOMC / BLS 日程，尚无共识预期数据源；按方案要求「没有预期就不补一个」 |
 | 2.5 原位术语与有范围追问 | 未开始 | 解释卡已有条件码白话（`plain` / `mechanism`），缺原位词条与三个上下文追问 |
