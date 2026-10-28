@@ -34,6 +34,16 @@ const DRAG_SLOP = 2;
  * @param {[number, number, number, number]} opts.bounds [width, height] 逻辑画布
  */
 export function createCamera(node, { onChange, onDragEnd, onDragState, width, height }) {
+  /**
+   * onChange 是相机的唯一出口：没有它，相机照常变换而画面不会更新 ——
+   * 表现是「能拖能缩放，但地图不动」，而且不报错。
+   *
+   * 放在这里立刻抛，而不是等第一次手势在 d3 的回调里抛：
+   * 那时变换已经落到 d3 状态上，画面与状态会不一致，排查成本高得多。
+   */
+  if (typeof onChange !== 'function') {
+    throw new TypeError('createCamera 需要 onChange 回调（相机事务的唯一出口）');
+  }
   let start = null;
 
   const behavior = zoom()
