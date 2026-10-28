@@ -584,3 +584,58 @@ describe('macro.js 子组件返回 SafeHtml', async () => {
     expect(String(out)).toContain('chart-empty');
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * detail.js 子组件：必须先返回 SafeHtml，主模板才能迁
+ * ------------------------------------------------------------------ */
+describe('detail.js 子组件返回 SafeHtml', async () => {
+  const mod = await import('../src/client/views/detail.js');
+
+  it('metricCards 返回 SafeHtml，标签与值都转义一次', () => {
+    const out = mod.metricCards({
+      decimals: 2,
+      quote: { open: 1, prevClose: 0.9, high: 1.1, low: 0.8 },
+      ext: { volume: 1000 },
+      stats: { ma20: 1.05 },
+    });
+    expect(out).toBeInstanceOf(SafeHtml);
+    expect(String(out)).toContain('d-metrics');
+  });
+
+  it('perfChips / crossCheckTable / historyTable 都是 SafeHtml', () => {
+    expect(mod.perfChips({ perf: { d1: 1.2, w1: -0.5 } })).toBeInstanceOf(SafeHtml);
+    expect(
+      mod.crossCheckTable([
+        { source: 'x', price: 1 },
+        { source: 'y', price: 1.1, note: '<b>' },
+      ], 2),
+    ).toBeInstanceOf(SafeHtml);
+    expect(mod.historyTable([['2026-10-27', 1, 1, 1, 1, 100, 0, 0.5]], 2, 30)).toBeInstanceOf(SafeHtml);
+  });
+
+  it('提示类子组件也是 SafeHtml，错误里的尖括号只转一次', () => {
+    expect(mod.altSources({ alternatives: [{ source: 's', count: 3 }] })).toBeInstanceOf(SafeHtml);
+    const empty = mod.historyEmptyNotice({ count: 0, errors: [{ source: 's', error: '<boom>' }] });
+    expect(empty).toBeInstanceOf(SafeHtml);
+    expect(String(empty)).toContain('&lt;boom&gt;');
+    expect(String(empty)).not.toContain('&amp;lt;');
+    const cache = mod.historyCacheNotice({ cache: { hit: 'stale', ageMs: 7200_000 }, endDate: '2026-10-25' });
+    expect(cache).toBeInstanceOf(SafeHtml);
+  });
+
+  it('goldSpreadBlock 返回 SafeHtml', () => {
+    const out = mod.goldSpreadBlock(
+      { convertedPerGram: 500, xauUsd: 2400, usdCny: 7.1, domesticPrice: 520, premiumPct: 4, gramsPerOunce: 31.1 },
+      2,
+    );
+    expect(out).toBeInstanceOf(SafeHtml);
+  });
+
+  it('空输入时返回空串（不是 SafeHtml），调用方按 falsy 判断', () => {
+    expect(mod.perfChips(null)).toBe('');
+    expect(mod.crossCheckTable(null, 2)).toBe('');
+    expect(mod.historyTable([], 2, 30)).toBe('');
+    expect(mod.altSources({})).toBe('');
+    expect(mod.goldSpreadBlock(null, 2)).toBe('');
+  });
+});

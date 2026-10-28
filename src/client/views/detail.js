@@ -8,7 +8,7 @@
  * 详情页
  * ================================================================== */
 import { detailEl } from '../shared/dom.js';
-import { clockText, dirOf, esc, fmtPct, fmtPrice, fmtSigned, prettySource } from '../shared/format.js';
+import { clockText, dirOf, esc, fmtPct, fmtPrice, fmtSigned, html, prettySource } from '../shared/format.js';
 import { store } from '../shared/store.js';
 import { loadCalendarCached } from '../shared/calendar.js';
 
@@ -39,15 +39,16 @@ export function goldSpreadBlock(derived, decimals) {
     ['折合人民币', `${fmtPrice(derived.convertedPerGram, decimals)} 元/克`],
     ['上金所 Au99.99', `${fmtPrice(derived.domesticPrice, decimals)} 元/克`],
   ].filter(([, v]) => v);
-  return `<section class="d-block">
+  return html`<section class="d-block">
     <h3>内外盘对照 <span class="h3-note">国际金价 ÷ ${derived.gramsPerOunce} 克/盎司 × 汇率，再与上金所现货比较</span></h3>
     <div class="d-metrics">
-      ${items
-        .map(([label, value]) => `<div class="metric"><span class="m-label">${esc(label)}</span><span class="m-value">${esc(value)}</span></div>`)
-        .join('')}
+      ${items.map(
+        ([label, value]) =>
+          html`<div class="metric"><span class="m-label">${label}</span><span class="m-value">${value}</span></div>`,
+      )}
       ${
         diff != null
-          ? `<div class="metric ${dirOf(diff)}"><span class="m-label">内外价差</span><span class="m-value">${diff > 0 ? '+' : ''}${diff.toFixed(2)}%</span></div>`
+          ? html`<div class="metric ${dirOf(diff)}"><span class="m-label">内外价差</span><span class="m-value">${diff > 0 ? '+' : ''}${diff.toFixed(2)}%</span></div>`
           : ''
       }
     </div>
@@ -485,8 +486,8 @@ export function bindChartCrosshair(host, payload) {
       return ek === key;
     });
 
-    tip.innerHTML = `
-      <div class="tip-date">${esc(String(date))}</div>
+    tip.innerHTML = html`
+      <div class="tip-date">${String(date)}</div>
       <div class="tip-grid">
         <span>开</span><b>${fmtPrice(o, d)}</b>
         <span>高</span><b>${fmtPrice(h, d)}</b>
@@ -494,23 +495,23 @@ export function bindChartCrosshair(host, payload) {
         <span>收</span><b>${fmtPrice(c, d)}</b>
       </div>
       <div class="tip-line">${pctTxt}${
-        chgTxt ? `<span class="tip-dim">　实体 ${chgTxt}</span>` : ''
+        chgTxt ? html`<span class="tip-dim">　实体 ${chgTxt}</span>` : ''
       }</div>
       ${
         vol > 0
-          ? `<div class="tip-line tip-dim">量 ${fmtVolume(vol)}${amt > 0 ? ` · 额 ${fmtAmount(amt)}` : ''}</div>`
+          ? html`<div class="tip-line tip-dim">量 ${fmtVolume(vol)}${amt > 0 ? ` · 额 ${fmtAmount(amt)}` : ''}</div>`
           : ''
       }
       ${
         payload.overlays?.length
-          ? `<div class="tip-line tip-dim">${payload.overlays.map((ov) => `${ov.name} ${maCell(ov.name)}`).join(' · ')}</div>`
+          ? html`<div class="tip-line tip-dim">${payload.overlays.map((ov) => `${ov.name} ${maCell(ov.name)}`).join(' · ')}</div>`
           : ''
       }
       ${
         dayEvents.length
-          ? `<div class="tip-line tip-evt">${dayEvents.map((e) => esc(payload.eventLabel?.(e.kind) ?? e.kind)).join(' · ')}</div>`
+          ? html`<div class="tip-line tip-evt">${dayEvents.map((e) => payload.eventLabel?.(e.kind) ?? e.kind).join(' · ')}</div>`
           : ''
-      }`;
+      }`.toString();
 
     // 定位：默认在光标右侧，靠近右边界时翻到左侧；垂直方向夹在容器内。
     // 必须先显示再测量 —— 隐藏状态下 offsetHeight 为 0，clamp 会失效导致浮层溢出图表。
@@ -671,7 +672,8 @@ export function metricCards(data) {
   const cards = [];
   const add = (label, value, cls = '') => {
     if (value == null || value === '') return;
-    cards.push(`<div class="metric ${cls}"><span class="m-label">${label}</span><span class="m-value">${value}</span></div>`);
+    // label / value 可能带外部数据（如备注、波动率分位），交给模板转义
+    cards.push(html`<div class="metric ${cls}"><span class="m-label">${label}</span><span class="m-value">${value}</span></div>`);
   };
 
   const basisLabel = data.priceBasis === 'settle' ? '昨结算' : '昨收';
@@ -718,7 +720,7 @@ export function metricCards(data) {
   if (s.worstDay) add('单日最大跌', `${s.worstDay.pct.toFixed(2)}%`, 'down');
   if (s.streak) add('连续涨跌', s.streak > 0 ? `连涨 ${s.streak} 日` : `连跌 ${Math.abs(s.streak)} 日`, s.streak > 0 ? 'up' : 'down');
 
-  return `<div class="d-metrics">${cards.join('')}</div>`;
+  return html`<div class="d-metrics">${cards}</div>`;
 }
 
 export function perfChips(stats) {
@@ -733,26 +735,24 @@ export function perfChips(stats) {
     ['近3年', stats.perf.y3],
     ['年初至今', stats.perf.ytd],
   ].filter(([, v]) => v != null);
-  return `<div class="d-perf">${items
-    .map(([label, v]) => `<span class="perf-chip ${dirOf(v)}"><em>${label}</em><b>${fmtPct(v)}</b></span>`)
-    .join('')}</div>`;
+  return html`<div class="d-perf">${items.map(
+    ([label, v]) => html`<span class="perf-chip ${dirOf(v)}"><em>${label}</em><b>${fmtPct(v)}</b></span>`,
+  )}</div>`;
 }
 
 export function crossCheckTable(list, decimals) {
   if (!list || list.length < 2) return '';
   const base = list[0].price;
-  const rows = list
-    .map((c) => {
-      const diff = base && c.price ? ((c.price - base) / base) * 100 : null;
-      return `<tr>
-        <td class="mono">${esc(prettySource(c.source))}</td>
+  const rows = list.map((c) => {
+    const diff = base && c.price ? ((c.price - base) / base) * 100 : null;
+    return html`<tr>
+        <td class="mono">${prettySource(c.source)}</td>
         <td class="mono num">${fmtPrice(c.price, decimals)}</td>
         <td class="mono num ${diff != null ? dirOf(diff) : ''}">${diff != null ? fmtPct(diff) : '—'}</td>
-        <td class="dim">${esc(c.note ?? '')}</td>
+        <td class="dim">${c.note ?? ''}</td>
       </tr>`;
-    })
-    .join('');
-  return `<section class="d-block">
+  });
+  return html`<section class="d-block">
     <h3>多源对照 <span class="h3-note">同一标的不同数据源的取价一致性</span></h3>
     <table class="d-table"><thead><tr><th>数据源</th><th class="num">取价</th><th class="num">与主源偏差</th><th>说明</th></tr></thead><tbody>${rows}</tbody></table>
   </section>`;
@@ -761,11 +761,10 @@ export function crossCheckTable(list, decimals) {
 export function historyTable(daily, decimals, tableRows) {
   if (!daily.length) return '';
   const rows = daily.slice(-tableRows).reverse();
-  const body = rows
-    .map((r) => {
-      const [date, open, close, high, low, volume, , pct] = r;
-      return `<tr>
-        <td class="mono">${esc(date)}</td>
+  const body = rows.map((r) => {
+    const [date, open, close, high, low, volume, , pct] = r;
+    return html`<tr>
+        <td class="mono">${date}</td>
         <td class="mono num">${fmtPrice(open, decimals)}</td>
         <td class="mono num">${fmtPrice(high, decimals)}</td>
         <td class="mono num">${fmtPrice(low, decimals)}</td>
@@ -773,10 +772,9 @@ export function historyTable(daily, decimals, tableRows) {
         <td class="mono num ${pct != null ? dirOf(pct) : ''}">${pct != null ? fmtPct(pct) : '—'}</td>
         <td class="mono num dim">${fmtVolume(volume) ?? '—'}</td>
       </tr>`;
-    })
-    .join('');
+  });
   const more = tableRows < daily.length;
-  return `<section class="d-block">
+  return html`<section class="d-block">
     <h3>历史日线 <span class="h3-note">共 ${daily.length} 个交易日，按时间倒序</span></h3>
     <div class="table-wrap">
       <table class="d-table hist-table">
@@ -784,7 +782,7 @@ export function historyTable(daily, decimals, tableRows) {
         <tbody>${body}</tbody>
       </table>
     </div>
-    ${more ? `<button type="button" class="more-btn" id="more-rows">再显示 30 行</button>` : ''}
+    ${more ? html`<button type="button" class="more-btn" id="more-rows">再显示 30 行</button>` : ''}
   </section>`;
 }
 
@@ -795,15 +793,15 @@ export function altSources(history) {
   );
   if (!alts.length) return '';
   const text = alts.map((a) => `${prettySource(a.source)} ${a.count} 条`).join('、');
-  return `<span>同时采集：${esc(text)}</span>`;
+  return html`<span>同时采集：${text}</span>`;
 }
 
 /** 历史全空时把每个源的失败原因摊开，否则页面只有一句「0 条」，分不清是源挂了还是没数据 */
 export function historyEmptyNotice(history) {
   if ((history.count ?? 0) > 0) return '';
   const errs = history.errors ?? [];
-  return `<div class="chart-empty chart-empty-err">
-    历史数据暂时取不到${errs.length ? `：${errs.map((e) => `${esc(e.source)} — ${esc(e.error)}`).join('；')}` : ''}
+  return html`<div class="chart-empty chart-empty-err">
+    历史数据暂时取不到${errs.length ? `：${errs.map((e) => `${e.source} — ${e.error}`).join('；')}` : ''}
     <br>行情报价与关键指标仍然可用；等数据源恢复后会自动重试。
   </div>`;
 }
@@ -818,9 +816,9 @@ export function historyCacheNotice(history) {
   const hours = Math.round((c.ageMs ?? 0) / 3600_000);
   const age = hours >= 24 ? `${Math.floor(hours / 24)} 天` : `${hours} 小时`;
   const errs = history.errors ?? [];
-  return `<div class="chart-empty chart-empty-err">
-    数据源暂时不可用，当前显示的是 <b>${age}前</b> 落盘的日线缓存（截止 ${esc(history.endDate ?? '—')}）。
-    ${errs.length ? `<br>失败原因：${errs.map((e) => `${esc(e.source)} — ${esc(e.error)}`).join('；')}` : ''}
+  return html`<div class="chart-empty chart-empty-err">
+    数据源暂时不可用，当前显示的是 <b>${age}前</b> 落盘的日线缓存（截止 ${history.endDate ?? '—'}）。
+    ${errs.length ? html`<br>失败原因：${errs.map((e) => `${e.source} — ${e.error}`).join('；')}` : ''}
     <br>实时报价与当日分时不受影响；刷新到新数据后会自动覆盖。
   </div>`;
 }
