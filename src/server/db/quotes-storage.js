@@ -21,7 +21,8 @@ import fsp from 'node:fs/promises';
 import { createHistoryRing } from '../domain/history-ring.js';
 import { fetchRaw, toNum } from '../providers/index.js';
 import { INSTRUMENTS } from '../providers/instruments.js';
-import { getDb, readJson, writeHistoryFile, writeDailyCache } from './index.js';
+import { getDb, readJson, writeHistoryFile, writeDailyCache, registerFlushHook } from './index.js';
+import { runLegacyImport } from './legacy-import.js';
 import { DATA_DIR } from '../paths.js';
 
 /** 每个标的保留的分时点数上限（240 点 × 5 分钟 ≈ 一个交易日） */
@@ -170,6 +171,26 @@ export function dailyCacheFile(id) {
 
 export let saveTimer = null;
 
+/**
+ * 立即落盘（不等 2 秒节流）。
+ *
+ * 由 sqlite 的 flush() 调用：备份 / 退出 / 恢复演练之前必须把缓冲写下去，
+ * 否则备份里会少最后两秒的走势。registerFlushHook 在模块加载时注册，
+ * 所以只要存储层被用到，等待的就是它自己。
+ */
+export async function flushHistoryNow() {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  await writeHistoryFile(HISTORY_FILE, {
+    notes: Object.fromEntries([...seedNotes].map(([id, rec]) => [id, rec])),
+    history: Object.fromEntries(ring.entries()),
+  });
+}
+
+registerFlushHook(flushHistoryNow);
+
 export function scheduleHistorySave() {
   if (saveTimer) return;
   saveTimer = setTimeout(async () => {
@@ -188,97 +209,24 @@ export function scheduleHistorySave() {
 
 /**
  * 一次性迁移：把旧的 JSON / JSONL 落盘数据导入 SQLite。
- * 只跑一次（kv 里记 migrated-sqlite-v1 标记），迁移完保留原文件不删，
- * 方便回滚核对。新数据一律只写库。
+ *
+ * 实现已移到 `legacy-import.js`（方案 E05：导入不该长在采集存储里，而且原来
+ * 用单个 kv 标记无法区分「文件不存在 / 文件坏了 / 导了一半」）。
+ * 这里保留同名导出给入口与测试用，行为差异只有一处：**有失败项时不再写
+ * 总体完成标记**，下次启动会重试失败的那几条。
  */
-export async function migrateLegacyStorage() {
-  try {
-    const db = getDb();
-    const done = db.prepare("SELECT v FROM kv WHERE k = 'migrated-sqlite-v1'").get();
-    if (done) return;
-
-    let importedBars = 0;
-    let importedSnaps = 0;
-    let importedLlm = 0;
-
-    // 1) data/daily/*.json
-    try {
-      const files = await fsp.readdir(DAILY_CACHE_DIR);
-      for (const f of files) {
-        if (!f.endsWith('.json')) continue;
-        try {
-          const obj = JSON.parse(await fsp.readFile(path.join(DAILY_CACHE_DIR, f), 'utf8'));
-          if (Array.isArray(obj?.rows) && obj.rows.length >= 2 && obj.id) {
-            await writeDailyCache(obj.id, obj.source, obj.rows);
-            importedBars += obj.rows.length;
-          }
-        } catch {
-          /* 单个坏文件跳过 */
-        }
-      }
-    } catch {
-      /* 目录不存在 */
-    }
-
-    // 2) data/snapshots.jsonl
-    try {
-      const raw = await fsp.readFile(SNAPSHOT_FILE, 'utf8');
-      const ins = db.prepare(
-        'INSERT OR REPLACE INTO snapshots (at, id, name, price, change_pct) VALUES (?, ?, ?, ?, ?)',
-      );
-      db.exec('BEGIN');
-      try {
-        for (const line of raw.split('\n')) {
-          if (!line.trim()) continue;
-          // 只把「JSON 解析失败」当半截行跳过。写入失败（约束冲突、磁盘满）
-          // 必须冒到事务层，否则整批 0 行也会静默 COMMIT，迁移看起来成功。
-          let obj;
-          try {
-            obj = JSON.parse(line);
-          } catch {
-            continue;
-          }
-          if (!obj?.at || !Array.isArray(obj.quotes)) continue;
-          for (const snap of obj.quotes) {
-            if (!snap?.id || !(snap.price > 0)) continue;
-            ins.run(obj.at, snap.id, snap.name ?? null, snap.price, snap.changePct ?? null);
-            importedSnaps += 1;
-          }
-        }
-        db.exec('COMMIT');
-      } catch (err) {
-        db.exec('ROLLBACK');
-        throw err;
-      }
-    } catch (err) {
-      // 文件不存在是正常情况（首次运行）；写库失败不能一起被吞掉
-      if (err?.code !== 'ENOENT') throw err;
-    }
-
-    // 3) data/llm-cache.json
-    try {
-      const obj = JSON.parse(await fsp.readFile(LLM_STORE_FILE, 'utf8'));
-      if (obj && Object.keys(obj).length) {
-        db.prepare(
-          `INSERT INTO kv (k, v, at) VALUES ('llm-cache', ?, ?)
-           ON CONFLICT(k) DO UPDATE SET v = excluded.v, at = excluded.at`,
-        ).run(JSON.stringify(obj), Date.now());
-        importedLlm = Object.keys(obj).length;
-      }
-    } catch {
-      /* 文件不存在 */
-    }
-
-    db.prepare("INSERT INTO kv (k, v, at) VALUES ('migrated-sqlite-v1', ?, ?)").run(
-      JSON.stringify({ importedBars, importedSnaps, importedLlm }),
-      Date.now(),
-    );
-    console.log(
-      `SQLite 迁移完成：日线 ${importedBars} 行 / 快照 ${importedSnaps} 行 / LLM 缓存 ${importedLlm} 条`,
-    );
-  } catch (err) {
-    console.warn('SQLite 迁移失败:', err?.message ?? err);
-  }
+export async function migrateLegacyStorage(opts = {}) {
+  const { skipped, results, pending } = await runLegacyImport(opts);
+  if (skipped) return { skipped: true, results, pending };
+  const byStatus = results.reduce((acc, r) => {
+    acc[r.status] = (acc[r.status] ?? 0) + 1;
+    return acc;
+  }, {});
+  console.log(
+    `SQLite 迁移：${results.map((r) => `${r.source}=${r.status}(${r.rows})`).join(' / ')}`
+      + (pending.length ? ` · 待重试 ${pending.map((r) => r.source).join(',')}` : ''),
+  );
+  return { skipped: false, results, byStatus, pending };
 }
 
 export async function loadPersistedHistory() {

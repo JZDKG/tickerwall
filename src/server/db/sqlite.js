@@ -138,6 +138,92 @@ export function closeDb() {
     }
     handle = null;
   }
+  maintenance = false;
+}
+
+/* ------------------------------------------------------------------ *
+ * 维护窗口：停写、排空、再备份（方案 E05 / §9.2）
+ *
+ * 为什么用 PRAGMA query_only 而不是在每个写入函数里加开关：写入点有十几处，
+ * 逐个加判断必然有漏网的（漏掉的那一处正好会在备份过程中写进去，产生
+ * 一份「看起来完整、实际半新半旧」的快照）。query_only 是 SQLite 自己在
+ * 语句层拦，谁也绕不过去。
+ * ------------------------------------------------------------------ */
+
+let maintenance = false;
+/** 排空钩子：延迟落盘的定时器由各存储层注册自己的 flush */
+const flushHooks = new Set();
+
+/** 注册一个「把缓冲写下去」的钩子，返回取消函数 */
+export function registerFlushHook(fn) {
+  flushHooks.add(fn);
+  return () => flushHooks.delete(fn);
+}
+
+/** 当前是否处于维护窗口（测试与健康接口可读） */
+export function inMaintenance() {
+  return maintenance;
+}
+
+/**
+ * 进入维护窗口：拒绝一切写语句。
+ * 备份 / 迁移 / 恢复演练之前调用；与 resumeWrites 成对使用。
+ */
+export function stopWrites() {
+  const db = getDb();
+  db.exec('PRAGMA query_only = ON');
+  maintenance = true;
+  return { queryOnly: true };
+}
+
+/** 退出维护窗口，恢复写入 */
+export function resumeWrites() {
+  const db = getDb();
+  db.exec('PRAGMA query_only = OFF');
+  maintenance = false;
+}
+
+/**
+ * 在维护窗口里临时获得写权限，执行一个**同步**回调。
+ *
+ * 为什么要这个口子：`VACUUM INTO` 与 checkpoint 本身是写操作，被 query_only
+ * 挡住就没法备份。安全性来自 Node 的单线程 + 回调必须同步：从放开到收回
+ * 之间没有 await，事件循环不会切到别的请求处理，所以不存在「备份过程中
+ * 应用又写进去」的窗口。
+ *
+ * 异步回调会被直接拒绝（那才会真的漏写）。
+ */
+export function withWriteAccess(fn) {
+  if (fn?.constructor?.name === 'AsyncFunction') {
+    throw new Error('withWriteAccess 只接受同步回调：异步会让维护窗口漏出写机会');
+  }
+  const db = getDb();
+  const wasMaintenance = maintenance;
+  if (wasMaintenance) db.exec('PRAGMA query_only = OFF');
+  try {
+    return fn(db);
+  } finally {
+    if (wasMaintenance) db.exec('PRAGMA query_only = ON');
+  }
+}
+
+/**
+ * 排空：先跑所有钩子（延迟落盘的定时器），再把 WAL 合并回主库。
+ *
+ * 维护窗口里 checkpoint 需要写文件，而 query_only 会把写语句挡掉 ——
+ * 所以这里临时放开、checkpoint 完再关上，而不是要求调用方自己记得顺序。
+ */
+export async function flush() {
+  const hookErrors = [];
+  for (const hook of flushHooks) {
+    try {
+      await hook();
+    } catch (err) {
+      hookErrors.push(String(err?.message ?? err));
+    }
+  }
+  withWriteAccess((db) => db.exec('PRAGMA wal_checkpoint(TRUNCATE)'));
+  return { hooks: flushHooks.size, hookErrors };
 }
 
 /* ------------------------------------------------------------------ *

@@ -83,13 +83,17 @@ describe('sqlite：连接与建表', () => {
     'observation_revisions',
   ];
 
-  it('老表仍在，解释相关的 7 张表由版本化迁移建出', () => {
+  /** E05 之后由迁移 v2 带来的运维表 */
+  const MAINTENANCE_TABLES = ['import_ledger', 'schema_migrations'];
+
+  it('老表仍在，解释相关的 7 张表与运维表都由版本化迁移建出', () => {
     const names = getDb()
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
       .all()
       .map((r) => r.name);
-    for (const t of [...LEGACY_TABLES, ...EXPLANATION_TABLES]) expect(names).toContain(t);
-    expect(names).toEqual([...LEGACY_TABLES, ...EXPLANATION_TABLES].sort());
+    const expected = [...LEGACY_TABLES, ...EXPLANATION_TABLES, ...MAINTENANCE_TABLES];
+    for (const t of expected) expect(names).toContain(t);
+    expect(names).toEqual(expected.sort());
   });
 
   it('迁移只前进一次：重复 openDatabase 不重复建表、不报错', () => {

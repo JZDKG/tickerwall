@@ -12,6 +12,12 @@ export {
   getDb,
   useDatabase,
   closeDb,
+  flush,
+  stopWrites,
+  resumeWrites,
+  inMaintenance,
+  registerFlushHook,
+  withWriteAccess,
   currentDatabaseFile,
   schemaVersionOf,
   SCHEMA_VERSION,
@@ -21,7 +27,23 @@ export {
   kvSetJson,
 } from './sqlite.js';
 
-export { MIGRATIONS, migrateDatabase, currentSchemaVersion } from './migrations.js';
+export {
+  MIGRATIONS,
+  SCHEMA_VERSION as DB_SCHEMA_VERSION,
+  migrateDatabase,
+  currentSchemaVersion,
+  appliedMigrations,
+  migrationDrift,
+  assertDatabaseCompatible,
+} from './migrations.js';
+export {
+  LEGACY_SOURCES,
+  LEGACY_DONE_KEY,
+  runLegacyImport,
+  importLedger,
+  pendingImports,
+  recordImport,
+} from './legacy-import.js';
 
 export {
   writeObservationRevisions,

@@ -25,7 +25,9 @@
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
     "doctor": "node tools/doctor.mjs",
-    "verify:build": "node tools/verify-build.mjs"
+    "verify:build": "node tools/verify-build.mjs",
+    "backup": "node tools/backup.mjs",
+    "restore": "node tools/restore.mjs"
   },
   "engines": {
     "node": ">=24.0.0",

@@ -359,7 +359,7 @@ SQLite 提供 Online Backup API，也支持 `VACUUM INTO`。后续在线备份�
 | E02 离线夹具、隔离启动、请求键 | **进行中** | ① 回放键改为「方法 + 规范化 URL + body 摘要 + 语义头摘要 + 凭据存在性」，凭据值永不入键（[`replay.js`](../src/server/providers/replay.js)），补齐 6 条单测；② 契约快照从 `/tmp` 迁到 [`tests/fixtures/golden/`](../tests/fixtures/golden/)，缺文件直接失败（不再 `describe.skip`）；③ HTTP 隔离断言改为**内容摘要**比对，干净 checkout 也成立；④ `DISABLE_BACKGROUND=1` 时 `seedHistory()` 不联网（原来在 `listen()` 前补种） | `tests/services.test.js`（29）、`tests/golden-contract.test.js`（12）、`tests/http-integration.test.js`（17）、`tests/quotes-service.test.js`（40） | 固定时钟与临时数据目录尚未覆盖全部测试；子进程环境变量白名单只做到「不遗传模型凭据」这一条 |
 | E03 CI、vendor 核对、发布包冒烟 | **进行中** | [`tools/verify-build.mjs`](../tools/verify-build.mjs)：两个独立临时目录各构建一次，比对文件集合与 sha256，再与 `public/vendor/` 逐文件比；[`.github/workflows/ci.yml`](../.github/workflows/ci.yml)：doctor → `npm ci` → `npm test` → `test:cov` → `verify:build` | `npm run verify:build` → 2 个文件 / 1115.6 KB，两次构建摘要一致且与入库产物一致 | 发布包（白名单收集 + 新目录启动冒烟）未做 |
 | E04 数据契约与来源注册表 | **已完成** | [`src/contracts/`](../src/contracts/)（Observation / DataQuality / 解释外壳三份 JSON Schema，带 `$id` 与 examples）；[`contracts/index.js`](../src/server/contracts/index.js)（Ajv + ajv-formats，返回带字段路径的 `{ok, errors}`，并提供「合格/不合格」分组而不丢数据）；[`providers/registry.js`](../src/server/providers/registry.js)（15 个源：kinds / 超时与预算 / 能力开关 / 两级时间 / 凭据需求）；写库前校验接入 `persistReferencedObservations`（不合格进 `rejected` 并计入 `meta.invalidObservations`） | `tests/contracts.test.js`（21：单位、值域、日期格式、多字段、批量不丢、注册表自洽、标的↔适配器全覆盖） | 仅覆盖「观测」这一条链路；HTTP 响应尚未逐端点跑 schema 校验（留给 E07） |
-| E05 迁移、导入、flush、备份恢复 | 未开始 | — | — | `schema_migrations`、旧 JSONL 导入清单、`flush`/`closeDb`、`tools/backup.mjs`、`tools/restore.mjs` |
+| E05 迁移、导入、flush、备份恢复 | **已完成** | ① `schema_migrations(version, name, checksum, applied_at)` + 漂移检测（改过的迁移立刻报错）+ 「库比程序新」拒绝打开；② 导入抽到 [`db/legacy-import.js`](../src/server/db/legacy-import.js)，`import_ledger` 按来源记 `ok/absent/partial/failed` + 文件（或目录）校验和，只有全部成功才写总体标记，失败项下次启动重试；③ [`db/sqlite.js`](../src/server/db/sqlite.js) 的维护窗口：`stopWrites()`（`PRAGMA query_only=ON`，语句层拦写）、`flush()`（排空钩子 + WAL checkpoint）、`withWriteAccess()`（同步回调 + 自动收回）；④ [`db/maintenance.js`](../src/server/db/maintenance.js) 备份/校验/恢复；⑤ [`tools/backup.mjs`](../tools/backup.mjs)、[`tools/restore.mjs`](../tools/restore.mjs) + `POST /api/maintenance/backup`（进程内备份，默认关闭） | `tests/db-migrations.test.js`（8）、`tests/db-maintenance.test.js`（14）、`tests/db-legacy-import.test.js`（13）；实测：CLI 备份 17 文件 / 22.4 MB → 恢复新目录 → 完整性 ok、外键 0 违规 → 隔离端口起服务首页 200；进程内端点 `flushed.hooks=1`（CLI 拿不到运行中进程的内存，所以两者都需要） | 在线备份（不停写）未做；保留策略只按份数，不做时间/容量维度 |
 | E06 调度、请求合并、质量状态 | 未开始 | — | — | 除报价外的同键合并、按来源频率调度、`collection_jobs` 可恢复任务 |
 | E07 客户端请求层与浏览器测试 | 未开始 | — | — | `src/client/shared/api.js`、`query-cache.js`、视图迁移、Playwright 四条路径 |
 | E08 日志、健康、退出、单容器 | **进行中**（健康部分完成） | [`observability/health.js`](../src/server/observability/health.js)：存活 / 就绪 / 数据健康分开报，就绪检查静态入口、数据目录可写、契约可编译、注册表自洽；`/api/health` 保留旧字段并新增 `readiness` / `contracts` / `sources`（缺凭据的源被点名）；[`routes/system.js`](../src/server/routes/system.js) 把健康与市场探针从入口抽出（server.mjs 199 → 180 行） | `tests/health-and-system-routes.test.js`（10） | 结构化日志（requestId/jobId 贯穿）、SIGTERM 排空、Dockerfile 未做 |
@@ -367,7 +367,7 @@ SQLite 提供 Online Backup API，也支持 `VACUUM INTO`。后续在线备份�
 ### 13.2 覆盖率推进（目标 95%）
 
 2026-10-29 实测（`npm run test:cov`）：**全站 73.25% statements / 65.29% branches / 73.82% functions / 73.84% lines**。
-（E01–E04 落地后 `src/server/**` 已回到门槛之上；下一阶段的主战场是视图层。）
+（E01–E05 落地后 `src/server/**` 已回到门槛之上；下一阶段的主战场是视图层。）
 
 | 范围 | 实测 | 门槛 | 说明 |
 | --- | --- | --- | --- |

@@ -13,7 +13,15 @@
  *
  * 迁移在独立测试库上验证（tests/db-explanations.test.js 用 :memory:），
  * 真实库升级前先备份 —— 见 docs 方案 §6.3。
+ *
+ * 2026-10 补强（方案 E05）：
+ *   · 增加 schema_migrations 表，逐条记录 version / name / **checksum** / applied_at。
+ *     只有 user_version 一个数字时，「这个库升过但没有记录」和「升到一半失败」
+ *     长得一模一样；有了校验和还能发现「已上线的迁移被别人悄悄改过」。
+ *   · 库版本比程序新时**拒绝写入**（旧程序操作新结构会把数据改坏），抛出可读错误。
  * ================================================================== */
+
+import { createHash } from 'node:crypto';
 
 /**
  * @typedef {{ version:number, name:string, up:(db:any)=>void }} Migration
@@ -118,10 +126,46 @@ export const MIGRATIONS = [
       )`);
     },
   },
+  {
+    version: 2,
+    name: 'import-ledger',
+    up(db) {
+      /**
+       * 旧 JSON / JSONL 的导入台账（方案 E05 / §9.1）。
+       *
+       * 原来只有一个 kv 标记 `migrated-sqlite-v1`：一旦写上，就无法区分
+       * 「文件本来就不存在」「文件坏了没导进去」「导进去一半」——三种状态
+       * 在库里长得一模一样，而这三种状态该做的事完全不同。
+       *
+       * 现在按来源逐条记录：status ∈ ok | absent | partial | failed，
+       * 并保存文件校验和与行数，重跑时只重试没成功的那几条。
+       */
+      db.exec(`CREATE TABLE IF NOT EXISTS import_ledger (
+        source TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        rows INTEGER NOT NULL DEFAULT 0,
+        checksum TEXT,
+        error TEXT,
+        attempted_at TEXT NOT NULL,
+        finished_at TEXT
+      )`);
+    },
+  },
 ];
 
 /** 当前代码期望的 schema 版本 */
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]?.version ?? 0;
+
+/**
+ * 每个迁移的稳定校验和。
+ *
+ * 取 `up` 的源码文本：函数体一改，校验和立刻变 —— 这正是我们要的信号
+ * （已上线的迁移**不该再改**；改了就必须新开一版，否则老库与新代码的结构
+ * 会静默分叉）。调用方不许把返回值用于安全用途，它只用来发现漂移。
+ */
+export function migrationChecksum(migration) {
+  return createHash('sha256').update(`${migration.version}:${migration.name}:${String(migration.up)}`).digest('hex');
+}
 
 export function currentSchemaVersion(db) {
   try {
@@ -139,16 +183,92 @@ export function currentSchemaVersion(db) {
  * @param {any} db 已打开的 node:sqlite DatabaseSync
  * @returns {{ from:number, to:number, applied:string[] }}
  */
+const MIGRATIONS_TABLE = `CREATE TABLE IF NOT EXISTS schema_migrations (
+  version INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  checksum TEXT NOT NULL,
+  applied_at TEXT NOT NULL
+)`;
+
+/** 已应用的迁移记录（读不到表时返回空数组，兼容刚建的库） */
+export function appliedMigrations(db) {
+  try {
+    return db.prepare('SELECT version, name, checksum, applied_at FROM schema_migrations ORDER BY version ASC').all();
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 校验「记录里的迁移」与「代码里的迁移」是否一致。
+ *
+ * 两种漂移都要报：
+ *   · 记录里有、代码里没有 → 这个库来自更全的版本，或者迁移被删了；
+ *   · 校验和不同 → 已上线的迁移被改过（结构可能与数据对不上）。
+ *
+ * @returns {string[]} 问题列表（空数组表示一致）
+ */
+export function migrationDrift(db) {
+  const recorded = new Map(appliedMigrations(db).map((r) => [Number(r.version), r]));
+  const known = new Map(MIGRATIONS.map((m) => [m.version, m]));
+  const problems = [];
+  for (const [version, row] of recorded) {
+    const m = known.get(version);
+    if (!m) {
+      problems.push(`迁移 v${version}（${row.name}）在代码里不存在`);
+      continue;
+    }
+    const want = migrationChecksum(m);
+    if (row.checksum !== want) {
+      problems.push(`迁移 v${version}（${row.name}）内容被改过：记录 ${row.checksum.slice(0, 12)} ≠ 当前 ${want.slice(0, 12)}`);
+    }
+  }
+  return problems;
+}
+
+/**
+ * 库是否比程序新。是的话调用方**必须拒绝写入**：
+ * 旧程序不认识新表/新列，写进去的数据可能被新版本的约束判为非法，
+ * 而且升级路径也断了。
+ */
+export function assertDatabaseCompatible(db) {
+  const version = currentSchemaVersion(db);
+  if (version > SCHEMA_VERSION) {
+    throw new Error(
+      `数据库 schema 版本 ${version} 比本程序支持的 ${SCHEMA_VERSION} 新：请升级程序，或把数据恢复到新目录后再启动。`,
+    );
+  }
+  const drift = migrationDrift(db);
+  if (drift.length) throw new Error(`迁移记录与代码不一致：${drift.join('；')}`);
+  return version;
+}
+
+/**
+ * 把库升到最新版本。
+ *
+ * @param {any} db 已打开的 node:sqlite DatabaseSync
+ * @returns {{ from:number, to:number, applied:string[] }}
+ */
 export function migrateDatabase(db) {
   const from = currentSchemaVersion(db);
   const applied = [];
+  db.exec(MIGRATIONS_TABLE);
+  // 先判兼容性：库比程序新时直接停，别把它「升级」成一半新一半旧
+  assertDatabaseCompatible(db);
+
+  const recorded = new Set(appliedMigrations(db).map((r) => Number(r.version)));
   for (const m of MIGRATIONS) {
-    if (m.version <= from) continue;
+    // 同一个库可能 user_version 到了但记录缺（老库第一次升级）：按记录补
+    if (m.version <= from && recorded.has(m.version)) continue;
     db.exec('BEGIN');
     try {
-      m.up(db);
+      if (m.version > from) m.up(db);
       // PRAGMA 不接受参数绑定，这里只拼数字
-      db.exec(`PRAGMA user_version = ${Number(m.version)}`);
+      db.exec(`PRAGMA user_version = ${Math.max(m.version, from)}`);
+      db.prepare(
+        `INSERT INTO schema_migrations (version, name, checksum, applied_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT(version) DO NOTHING`,
+      ).run(m.version, m.name, migrationChecksum(m), new Date().toISOString());
       db.exec('COMMIT');
       applied.push(m.name);
     } catch (err) {

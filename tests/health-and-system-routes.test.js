@@ -35,9 +35,9 @@ function fakeRes() {
   };
 }
 
-const call = (pathname, search = '', deps = { ttlMs: 15_000, jobs: () => [{ key: 'quotes', ok: true }] }) => {
+const call = (pathname, search = '', deps = { ttlMs: 15_000, jobs: () => [{ key: 'quotes', ok: true }] }, method = 'GET') => {
   const res = fakeRes();
-  const handled = handleSystemRoutes(new URL(`http://127.0.0.1:8787${pathname}${search}`), res, deps);
+  const handled = handleSystemRoutes(new URL(`http://127.0.0.1:8787${pathname}${search}`), res, { ...deps, method });
   return { handled, res };
 };
 
@@ -155,5 +155,32 @@ describe('启动脚本：依赖安装必须先于 doctor', () => {
 
   it('doctor 的警告（exit 2）不会拦住启动', () => {
     expect(script()).toMatch(/-ne 0.+\n?.*-ne 2/);
+  });
+});
+
+/* ================================================================== *
+ * 维护端点（方案 E05 / §9.2）
+ *
+ * 默认关闭；开放后只认 POST —— GET 触发整份备份会被浏览器预取或爬虫误触。
+ * 这条路径也是唯一允许 POST 的 API（入口的 405 守卫对它开了口子）。
+ * ================================================================== */
+describe('维护备份端点', () => {
+  it('默认关闭时返回 404（不是一个谁都能点的按钮）', () => {
+    const { handled, res } = call('/api/maintenance/backup', '', undefined, 'POST');
+    expect(handled).toBe(true);
+    expect(res.status).toBe(404);
+  });
+
+  it('开放后 GET 被拒：会写盘的操作用 POST', () => {
+    const { res } = call('/api/maintenance/backup', '', { ttlMs: 1, jobs: () => [], maintenance: true }, 'GET');
+    expect(res.status).toBe(405);
+    expect(res.body.error).toContain('POST');
+  });
+
+  it('入口只在 /api/maintenance/ 前缀放行 POST，其它路径仍然 405', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { fileURLToPath: toPath } = await import('node:url');
+    const src = readFileSync(toPath(new URL('../server.mjs', import.meta.url)), 'utf8');
+    expect(src).toContain("url.pathname.startsWith('/api/maintenance/')");
   });
 });

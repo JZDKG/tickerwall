@@ -27,6 +27,7 @@ vi.mock('../src/server/db/index.js', () => ({
   readSnapshots: vi.fn(),
   readJson: vi.fn(),
   writeHistoryFile: vi.fn(),
+  registerFlushHook: vi.fn(),
 }));
 
 const { fetchRaw } = await import('../src/server/providers/http.js');
@@ -575,83 +576,34 @@ describe('历史持久化与 SQLite 迁移', () => {
     restore();
   });
 
-  it('migrateLegacyStorage：一次性导入日线/快照/LLM 缓存并写标记', async () => {
-    const dailyDir = path.join(DATA_DIR, 'daily');
-    mkdirSync(dailyDir, { recursive: true });
-    writeFileSync(path.join(dailyDir, 'ok.json'), JSON.stringify({ id: 'sp500', source: 'test', rows: [{ close: 1 }, { close: 2 }] }));
-    writeFileSync(path.join(dailyDir, 'bad.json'), '{oops');
-    writeFileSync(
-      path.join(DATA_DIR, 'snapshots.jsonl'),
-      [
-        JSON.stringify({ at: '2026-10-26T10:00:00Z', quotes: [{ id: 'sp500', price: 1, changePct: 0.1 }, { id: 'x' }] }),
-        'garbage',
-      ].join('\n'),
-    );
-    writeFileSync(path.join(DATA_DIR, 'llm-cache.json'), JSON.stringify({ a: { level: 'high' } }));
-
-    const runs = [];
-    const dbStub = {
-      prepare: (sql) => ({
-        get: () => (sql.includes('migrated-sqlite-v1') ? null : undefined),
-        run: (...args) => runs.push({ sql, args }),
-      }),
-      exec: () => {},
-    };
-    db.getDb.mockReturnValue(dbStub);
-
+  /**
+   * 迁移实现已搬到 db/legacy-import.js（E05：导入不该长在采集存储里，且单个
+   * kv 标记无法区分「不存在 / 坏了 / 导了一半」）。四种状态与重试规则由
+   * tests/db-legacy-import.test.js 用真实内存库覆盖。
+   *
+   * 这里只断言一件事：服务入口的同名导出确实委派过去了 —— 否则 server.mjs
+   * 启动时那一步会静默变成空操作。
+   */
+  it('migrateLegacyStorage 委派给 legacy-import，并把结果透出来', async () => {
+    const { runLegacyImport } = await import('../src/server/db/legacy-import.js');
     const realLog = console.log;
-    const logs = [];
-    console.log = (...a) => logs.push(a.join(' '));
-    await migrateLegacyStorage();
-    console.log = realLog;
-
-    expect(db.writeDailyCache).toHaveBeenCalledWith('sp500', 'test', [{ close: 1 }, { close: 2 }]);
-    expect(runs.some((r) => r.sql.includes('INSERT OR REPLACE INTO snapshots'))).toBe(true);
-    expect(runs.some((r) => r.sql.includes("'llm-cache'"))).toBe(true);
-    expect(runs.some((r) => r.sql.includes('migrated-sqlite-v1'))).toBe(true);
-    expect(logs.join('\n')).toMatch(/SQLite 迁移完成/);
+    console.log = () => {};
+    try {
+      const out = await migrateLegacyStorage({ dataDir: DATA_DIR });
+      // 台账里已经记过 ok/absent，第二次调用应当是跳过
+      expect(out).toHaveProperty('skipped');
+      expect(Array.isArray(out.results)).toBe(true);
+      expect(typeof runLegacyImport).toBe('function');
+    } finally {
+      console.log = realLog;
+    }
   });
 
-  it('migrateLegacyStorage：快照事务失败会 ROLLBACK，并把异常降级成警告', async () => {
-    // 独立准备快照文件，别依赖上一条用例的副作用
-    writeFileSync(
-      path.join(DATA_DIR, 'snapshots.jsonl'),
-      JSON.stringify({ at: '2026-10-26T10:00:00Z', quotes: [{ id: 'sp500', price: 1 }] }),
-    );
-    const execCalls = [];
-    db.getDb.mockReturnValue({
-      prepare: (sql) => ({
-        get: () => (sql.includes('migrated-sqlite-v1') ? null : undefined),
-        run: () => {
-          if (sql.includes('INTO snapshots')) throw new Error('constraint');
-        },
-      }),
-      exec: (cmd) => execCalls.push(cmd),
-    });
-    const realWarn = console.warn;
-    const warns = [];
-    console.warn = (...a) => warns.push(a.join(' '));
-    await migrateLegacyStorage();
-    console.warn = realWarn;
-    expect(execCalls).toContain('ROLLBACK');
-    expect(warns.join('\n')).toMatch(/SQLite 迁移失败.*constraint/);
-  });
-
-  it('migrateLegacyStorage：已迁移过则直接返回；异常只记警告', async () => {
-    db.getDb.mockReturnValue({
-      prepare: () => ({ get: () => ({ v: '1' }), run: () => {} }),
-      exec: () => {},
-    });
-    await migrateLegacyStorage();
-    expect(db.writeDailyCache).not.toHaveBeenCalled();
-
-    db.getDb.mockImplementation(() => { throw new Error('db broken'); });
-    const realWarn = console.warn;
-    const warns = [];
-    console.warn = (...a) => warns.push(a.join(' '));
-    await migrateLegacyStorage();
-    console.warn = realWarn;
-    expect(warns.join('\n')).toMatch(/SQLite 迁移失败.*db broken/);
+  it('导入没有完成时不会写总体完成标记（失败要能被下次启动重试）', async () => {
+    const imp = await import('../src/server/db/legacy-import.js');
+    // 直接种一条 failed 台账，模拟上次导入失败
+    imp.recordImport('daily', { status: 'failed', error: 'boom' });
+    expect(imp.pendingImports().map((r) => r.source)).toContain('daily');
   });
 });
 

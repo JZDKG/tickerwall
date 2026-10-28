@@ -38,6 +38,14 @@ export const HOST = process.env.HOST || '127.0.0.1';
 export const DEBUG_API = process.env.ENABLE_DEBUG_API === '1';
 
 /**
+ * 维护端点（/api/maintenance/backup）的开关。
+ *
+ * 默认关闭，理由与 DEBUG_API 相同：它会进入维护窗口（停写）并生成整份数据
+ * 副本，不该是一个「谁都能点」的按钮。本地用的时候显式 `ENABLE_MAINTENANCE_API=1`。
+ */
+export const MAINTENANCE_API = process.env.ENABLE_MAINTENANCE_API === '1';
+
+/**
  * 关掉后台抓取（定时器 + 首轮请求）。
  * 集成测试用：不碰外网、不起定时器，进程能干净退出。
  * 断网环境下也算有用（页面能起，只是没有数据）。

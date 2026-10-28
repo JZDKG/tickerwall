@@ -54,7 +54,12 @@ async function handle(req, res) {
   }
   // 405 必须在任何分发之前判：原来它只挡静态资源，于是 POST /api/quotes
   // 会一路落到 /api/quotes 的 GET 分支被当成正常请求处理
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
+  //
+  // 例外：维护端点要 POST（它确实会写 —— 生成备份、进入维护窗口）。放行范围
+  // 只到这一个前缀，别的路径仍然只读。
+  const methodAllowed =
+    req.method === 'GET' || req.method === 'HEAD' || (req.method === 'POST' && url.pathname.startsWith('/api/maintenance/'));
+  if (!methodAllowed) {
     res.writeHead(405, { Allow: 'GET, HEAD' });
     return res.end();
   }
@@ -111,7 +116,14 @@ async function handle(req, res) {
       return sendJson(res, 200, data);
     }
     /* 健康状态与市场时段探针：实现在 routes/system.js */
-    if (handleSystemRoutes(url, res, { ttlMs: CACHE_TTL_MS, jobs: () => collector?.status?.() ?? [] })) return;
+    if (
+      handleSystemRoutes(url, res, {
+        ttlMs: CACHE_TTL_MS,
+        jobs: () => collector?.status?.() ?? [],
+        method: req.method,
+      })
+    )
+      return;
     return serveStatic(res, url.pathname);
   } catch (err) {
     // 对外只给通用文案：err.message 常带路径 / 内部 URL，等于把实现细节发给浏览器

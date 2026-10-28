@@ -21,6 +21,7 @@ vi.mock('../src/server/db/index.js', () => ({
   readSnapshots: vi.fn(),
   readJson: vi.fn(),
   writeHistoryFile: vi.fn(),
+  registerFlushHook: vi.fn(),
 }));
 
 const { fetchRaw } = await import('../src/server/providers/http.js');
