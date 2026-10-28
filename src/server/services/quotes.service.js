@@ -792,6 +792,20 @@ export const lastGood = new Map(); // id -> 最近一次成功快照
 
 
 export let saveTimer = null;
+
+/**
+ * 仅供测试：清掉模块级节流状态。
+ *
+ * saveTimer / lastSnapshotAt 都是「进程内只该有一份」的状态，跨用例会互相
+ * 影响（上一个用例排的 2 秒落盘定时器会让下一个用例的 scheduleHistorySave
+ * 直接 early-return）。生产代码不调用它。
+ */
+export function __resetRuntimeStateForTests() {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = null;
+  lastSnapshotAt = 0;
+}
+
 export function scheduleHistorySave() {
   if (saveTimer) return;
   saveTimer = setTimeout(async () => {
@@ -852,16 +866,19 @@ export async function migrateLegacyStorage() {
       try {
         for (const line of raw.split('\n')) {
           if (!line.trim()) continue;
+          // 只把「JSON 解析失败」当半截行跳过。写入失败（约束冲突、磁盘满）
+          // 必须冒到事务层，否则整批 0 行也会静默 COMMIT，迁移看起来成功。
+          let obj;
           try {
-            const obj = JSON.parse(line);
-            if (!obj?.at || !Array.isArray(obj.quotes)) continue;
-            for (const q of obj.quotes) {
-              if (!q?.id || !(q.price > 0)) continue;
-              ins.run(obj.at, q.id, q.name ?? null, q.price, q.changePct ?? null);
-              importedSnaps += 1;
-            }
+            obj = JSON.parse(line);
           } catch {
-            /* 半截行跳过 */
+            continue;
+          }
+          if (!obj?.at || !Array.isArray(obj.quotes)) continue;
+          for (const snap of obj.quotes) {
+            if (!snap?.id || !(snap.price > 0)) continue;
+            ins.run(obj.at, snap.id, snap.name ?? null, snap.price, snap.changePct ?? null);
+            importedSnaps += 1;
           }
         }
         db.exec('COMMIT');
@@ -869,8 +886,9 @@ export async function migrateLegacyStorage() {
         db.exec('ROLLBACK');
         throw err;
       }
-    } catch {
-      /* 文件不存在 */
+    } catch (err) {
+      // 文件不存在是正常情况（首次运行）；写库失败不能一起被吞掉
+      if (err?.code !== 'ENOENT') throw err;
     }
 
     // 3) data/llm-cache.json
@@ -1380,7 +1398,11 @@ export const BRIEFING_MAX_LINES = 20_000;
 
 export function shanghaiDay(iso) {
   try {
-    return new Date(iso).toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
+    const d = new Date(iso);
+    // toLocaleDateString 对 Invalid Date 不抛错，而是返回字符串 "Invalid Date"。
+    // 只靠 try/catch 会把它当成合法日期，隔夜复盘的基准切分就会算错。
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
   } catch {
     return null;
   }
@@ -1389,7 +1411,9 @@ export function shanghaiDay(iso) {
 /** 北京时间的「当日第几分钟」，用来切 15:00 这个收盘边界 */
 export function shanghaiMinuteOfDay(iso) {
   try {
-    const t = new Date(iso).toLocaleTimeString('en-GB', { timeZone: 'Asia/Shanghai', hour12: false });
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return null;
+    const t = d.toLocaleTimeString('en-GB', { timeZone: 'Asia/Shanghai', hour12: false });
     const [h, m] = t.split(':').map(Number);
     return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null;
   } catch {

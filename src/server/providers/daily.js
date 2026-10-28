@@ -9,8 +9,17 @@
  * ================================================================== */
 
 import { fetchRaw, toNum, UA, SINA_REFERER, parseFredCsvOrThrow } from './index.js';
+// CBOE 指数日线（VIX/VXN）的抓取实现放在 cboe.js（它只依赖 http.js，不会成环）。
+// 原来这里直接调用 fetchCboeIndexDetail 却没 import：spec.cboe 的任务一定
+// ReferenceError，VXN 这种只有 CBOE 一个源的标的整条历史静默为空。
+import { fetchCboeIndexDetail } from './cboe.js';
+// 东财 K 线上限（约 20 年日线）。默认参数以前写成 DETAIL_HISTORY_LIMIT，
+// 但那个常量定义在 services/detail.service.js 里，本模块根本没 import ——
+// 只要调用方不显式传 limit 就直接 ReferenceError。providers 不能反向依赖
+// services，所以在本层保留一个本地常量。
+const EASTMONEY_MAX_LIMIT = 5000;
 
-export async function fetchEastmoneyDaily(secid, limit = DETAIL_HISTORY_LIMIT) {
+export async function fetchEastmoneyDaily(secid, limit = EASTMONEY_MAX_LIMIT) {
   const url =
     'https://push2his.eastmoney.com/api/qt/stock/kline/get' +
     `?secid=${encodeURIComponent(secid)}` +

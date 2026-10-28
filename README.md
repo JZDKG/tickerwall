@@ -163,7 +163,7 @@ src/server/db/          持久层：SQLite 打开建表（sqlite）、日线缓�
 src/server/providers/   上游源层：抓取底座（http，可注入 fetcher）、新浪（sina）、CBOE（cboe）、CNBC（cnbc）、FRED（fred）、录制回放（replay）
 src/server/services/    服务层：事件中心（events.service）
 src/server/paths.js     仓库路径唯一来源（ROOT / DATA_DIR / PUBLIC_DIR）
-tests/                  75 个契约测试（npm test）
+tests/                  1068 个测试（npm test，含分层覆盖率门槛）
 tools/                  布局引擎实验台
 public/app.js           入口（一行转发，业务逻辑已拆到 src/client/）
 src/client/             客户端模块（浏览器原生加载 ES 模块，零构建）
@@ -1143,7 +1143,7 @@ if (prevSrc && prevSrc !== meta.source
 ```bash
 npm install         # 只为构建与测试；运行看板不需要
 npm run build       # 生成 public/vendor/macro-flow.js
-npm test            # Vitest：67 个契约测试（背离引擎 + 统计层）
+npm test            # Vitest：1068 个测试（含覆盖率门槛，分层见下）
 npm run lab         # 布局引擎对比实验（dagre / elkjs / 本项目）
 npm start           # node server.mjs，单进程单端口 8787
 npm run dev:web     # 可选：Vite 开发服务器，/api 代理到 8787
@@ -1169,9 +1169,25 @@ VXN 聚焦             回退到宿主 VIX 的上下游  cards=4  errs=0
 横向溢出              1600 / 1440 / 1280 全部 false
 ```
 
-## 测试：67 个契约测试（`npm test`）
+## 测试：1068 个用例（`npm test`）
 
 拆 `app.js` 之前先把两块最容易悄悄算错的东西钉住：背离判据与统计层。
+
+### 分层覆盖率（2026-10 实测，只许升不许降）
+
+`vite.config.js` 的 `test.coverage.thresholds` 按风险分层，而不是全仓一刀切：
+
+| 层 | 实测（stmts / branch / funcs / lines） | 门槛 | 为什么 |
+| --- | --- | --- | --- |
+| 全站 | 71.4 / 64.8 / 70.2 / 71.5 | 70 / 63 / 69 / 70 | 兜底，防止整体回退 |
+| `src/server/**` | 97.4 / 87.2 / 97.9 / 99.1 | 96 / 86 / 96 / 98 | 行情、日历、统计、清洗：错了会静默给错数 |
+| `src/client/shared/**` | 98.9 / 98.6 / 100 / 100 | 97 / 97 / 99 / 99 | 转义、href 白名单、格式化：安全底线 |
+| `views/map/geo`+`logic` | 95.9~97.9 | 94~96 | 经纬度出入口、赛区包围盒、24h 时间轴 |
+| `src/client/views/**` | 51.7 / 48.1 / 52.3 / 51.0 | 50 / 46 / 50 / 49 | 纯 DOM 渲染，靠契约测试 + 探针守关键路径 |
+
+视图层不追 95%：4000+ 行是 DOM 拼装，硬刷行覆盖只会产出「跑通不断言」的面子测试。
+地图、宏观、列表、事件四块用 jsdom 钉结构与类名（`tests/views-*.test.js`），
+其余交给静态棘轮（`innerHTML` 裸插值 + `raw` 白名单）和视口探针。
 
 | 文件 | 用例 | 覆盖什么 |
 | --- | ---: | --- |

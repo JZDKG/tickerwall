@@ -101,11 +101,15 @@ export function aggregateWeekly(rows) {
   for (const r of rows) {
     const ts = Date.parse(r.date);
     if (!Number.isFinite(ts)) continue;
-    const key = Math.floor((ts / 86400000 + 4) / 7);
+    // 分桶口径：周一 ~ 周日（周日必须归入**前一个**周一开的周）。
+    // 原来写成 floor((d+4)/7) 实际是「周日 ~ 周六」分桶：美股周五与 BTC 周日
+    // 会落进相邻两个桶，标签永远对不上，BTC 整行相关全是 null —— 与注释里
+    // 「统一用该周周一」的意图相反。这里改成 +3，桶边界落在周一。
+    const key = Math.floor((ts / 86400000 + 3) / 7);
     // 关键：标签统一用「该周周一」。
     // 若沿用原始交易日日期，美股（周五收）与加密（周日收）的标签会不同，
     // 跨标的配对时会全部错开——之前 BTC 整行都算不出相关性就是这个原因。
-    const monday = new Date((key * 7 - 4) * 86400000).toISOString().slice(0, 10);
+    const monday = new Date((key * 7 - 3) * 86400000).toISOString().slice(0, 10);
     weeks.set(key, { ...r, date: monday });
   }
   return [...weeks.entries()].sort((a, b) => a[0] - b[0]).map(([, r]) => r);

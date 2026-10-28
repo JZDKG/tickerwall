@@ -76,17 +76,20 @@ export default defineConfig({
       exclude: ['src/client/vendor/**'],
       reporter: ['text-summary', 'text'],
       thresholds: {
-        // 全站基线（当前实测 27.8 / 23.5 / 27.2 / 27.9）
-        statements: 27,
-        branches: 23,
-        functions: 27,
-        lines: 27,
-        // 核心逻辑层（39.7 / 33.5 / 38.6 / 40.9）→ 目标 90+
-        'src/server/**': { statements: 39, branches: 33, functions: 38, lines: 40 },
-        // 客户端基础设施（49.7 / 44.6 / 48.6 / 53.6）→ 目标 95
-        'src/client/shared/**': { statements: 49, branches: 44, functions: 48, lines: 53 },
-        // 视图层（18.3 / 15.8 / 19.4 / 17.6；只有 events.js 有组合渲染测试）→ 目标 40~50
-        'src/client/views/**': { statements: 18, branches: 15, functions: 19, lines: 17 },
+        // 全站基线（2026-10 实测 71.4 / 64.8 / 70.2 / 71.5）
+        statements: 70,
+        branches: 63,
+        functions: 69,
+        lines: 70,
+        // 核心逻辑层（实测 97.4 / 87.2 / 97.9 / 99.1）→ 目标 90+，已达成
+        'src/server/**': { statements: 96, branches: 86, functions: 96, lines: 98 },
+        // 客户端基础设施（实测 98.9 / 98.6 / 100 / 100）→ 目标 95，已达成
+        'src/client/shared/**': { statements: 97, branches: 97, functions: 99, lines: 99 },
+        // 地图的投影/赛区/时间轴（实测 95~98）：经纬度出入口，错了不会抛异常
+        'src/client/views/map/geo/**': { statements: 94, branches: 86, functions: 95, lines: 97 },
+        'src/client/views/map/logic/**': { statements: 96, branches: 85, functions: 99, lines: 98 },
+        // 视图层（实测 51.7 / 48.1 / 52.3 / 51.0）→ 目标 40~50，已达成
+        'src/client/views/**': { statements: 50, branches: 46, functions: 50, lines: 49 },
       },
     },
   },
@@ -100,6 +103,10 @@ export default defineConfig({
       // 浏览器里靠站点根路径解析（public/ 下的文件），Node 侧需要映射 ——
       // 否则 macro.js 一被 import 就 ERR_MODULE_NOT_FOUND，整个文件测不了
       '/macro-graph.js': path.resolve(root, 'public/macro-graph.js'),
+      // macro.js 用浏览器绝对路径 `import('/vendor/macro-flow.js')` 懒加载构建产物。
+      // 浏览器靠站点根路径解析（public/ 下的文件），Node 侧没有这个概念 ——
+      // 不映射的话 Vite 在测试转换阶段会判定「模块不存在」，macro.js 整个文件测不了。
+      '/vendor/macro-flow.js': path.resolve(root, 'public/vendor/macro-flow.js'),
     },
   },
 

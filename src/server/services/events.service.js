@@ -610,7 +610,11 @@ function kickLlmClassify(items) {
             llmStats.lastError = null;
             break;
           } catch (err) {
-            llmStats.lastError = String(err?.message ?? err);
+            const message = String(err?.message ?? err);
+            llmStats.lastError = message;
+            // 凭据缺失是配置问题，不是瞬时故障：退避重试只会让 llmInFlight
+            // 被占住 1.5 秒，期间所有轮询都拿不到复核结果。
+            if (message.includes('未找到 LLM 凭据')) break;
             if (attempt === 0) await new Promise((r) => setTimeout(r, 1500));
           }
         }

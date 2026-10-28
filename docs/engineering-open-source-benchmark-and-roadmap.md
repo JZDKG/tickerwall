@@ -210,6 +210,8 @@ tools/restore.mjs                 恢复到新目录
 
 延续现有覆盖率基线，对高风险模块补分支测试。不要直接将注释中的 90%–95% 目标改成全仓门槛；先测量，再为有明确遗漏风险的模块逐步收紧。
 
+2026-10 实测：全站 71.4%（statements），`src/server/**` 97.4%、`src/client/shared/**` 98.9%、`views/map/geo|logic` 95.9~97.9%、`src/client/views/**` 51.7%。门槛已按实测值写进 `vite.config.js`（只许升不许降），视图层维持 50% 而不是 95% —— 理由同上一段：DOM 拼装的行覆盖不等于行为覆盖。
+
 浏览器测试建议加入 Playwright，先覆盖黄金详情、图谱、地图和新闻四条核心路径，使用固定 API 数据；再增加少量通过真实本地 API 与来源回放的完整路径。CI 保存失败 trace 和截图，便于复现。[Playwright CI 文档](https://playwright.dev/docs/ci-intro)。
 
 ### 6.3 CI 执行顺序
