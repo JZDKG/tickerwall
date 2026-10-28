@@ -292,7 +292,7 @@ export function bindExplainInteractions(root, getState, handlers = {}) {
     const target =
       ev.target instanceof Element
         ? ev.target.closest(
-            '[data-explain-window], [data-explain-toggle], [data-explain-retry], [data-explain-refresh], [data-explain-version], [data-explain-current]',
+            '[data-explain-window], [data-explain-toggle], [data-explain-retry], [data-explain-refresh], [data-explain-version], [data-explain-current], [data-explain-diff]',
           )
         : null;
     if (!target) return;
@@ -316,6 +316,30 @@ export function bindExplainInteractions(root, getState, handlers = {}) {
     }
     if (target.dataset.explainRetry || target.dataset.explainRefresh) {
       handlers.onChange?.({ ...state, phase: state.explanation ? state.phase : 'loading' }, 'refresh');
+      return;
+    }
+    /**
+     * 变化记录（产品 2.2）。之前只有按钮和空插槽，**没有任何人填它** ——
+     * 用户点了「和上一版差在哪？」什么都不会发生。这里补上真正的取数 + 渲染：
+     * 再点一次收起（不重复请求）。
+     */
+    if (target.dataset.explainDiff) {
+      const slot = root.querySelector('[data-explain-diff-slot]');
+      if (!slot) return;
+      const wasOpen = slot.dataset.open === '1';
+      if (wasOpen) {
+        slot.dataset.open = '0';
+        slot.innerHTML = '';
+        target.setAttribute('aria-expanded', 'false');
+        return;
+      }
+      slot.dataset.open = '1';
+      target.setAttribute('aria-expanded', 'true');
+      slot.innerHTML = '<p class="explain-diff-loading">正在对比上一版…</p>';
+      void fetchExplanationDiff(target.dataset.explainDiff, { fetchImpl: handlers.fetchImpl }).then(({ status, body }) => {
+        // 失败也给可读内容：diffPanelHTML 自己决定说「没有上一版」还是「取不到」
+        slot.innerHTML = diffPanelHTML({ status, body });
+      });
     }
   });
 }
