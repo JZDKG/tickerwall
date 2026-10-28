@@ -7,6 +7,10 @@ import { route } from './router.js';
 import { countdownEl, refreshBtn, updatedEl } from './shared/dom.js';
 import { store } from './shared/store.js';
 import { apply, renderSkeleton } from './views/list.js';
+// Phase 2 拆分时漏了这一行：briefing.js 顶层挂了「隔夜复盘」按钮的点击监听，
+// 没人 import 它，那段代码在浏览器里从来没执行过 —— 按钮点了没反应。
+// 副作用式导入，不需要任何导出。
+import './views/briefing.js';
 
 
 /* ------------------------------ 取数 / 循环 ------------------------------ */

@@ -3,7 +3,7 @@
  *
  * 来源：public/app.js（原 3655 行单体）L3568-3655，整段搬运，逻辑未改写。
  * ================================================================== */
-import { esc, fmtPrice } from '../shared/format.js';
+import { esc, fmtPrice, html } from '../shared/format.js';
 
 
 /* ------------------------------------------------------------------ *
@@ -23,17 +23,16 @@ export function closeBriefing() {
 }
 
 export function briefingRows(items) {
-  if (!items.length) return '<p class="briefing-empty">还没有足够的快照样本。</p>';
-  return `<div class="briefing-list">${items
-    .map((it) => {
-      const dir = it.movePct > 0 ? 'up' : it.movePct < 0 ? 'down' : 'flat';
-      return `<div class="briefing-row">
-        <span class="briefing-name">${esc(it.name)}</span>
+  if (!items.length) return html`<p class="briefing-empty">还没有足够的快照样本。</p>`;
+  const rows = items.map((it) => {
+    const dir = it.movePct > 0 ? 'up' : it.movePct < 0 ? 'down' : 'flat';
+    return html`<div class="briefing-row">
+        <span class="briefing-name">${it.name}</span>
         <span class="briefing-px">${fmtPrice(it.to, 2)}</span>
         <span class="briefing-move ${dir}">${it.movePct >= 0 ? '+' : ''}${it.movePct.toFixed(2)}%</span>
       </div>`;
-    })
-    .join('')}</div>`;
+  });
+  return html`<div class="briefing-list">${rows}</div>`;
 }
 
 export async function openBriefing() {
@@ -43,7 +42,7 @@ export async function openBriefing() {
   const panel = document.createElement('div');
   panel.id = 'briefing-panel';
   panel.className = 'briefing-panel';
-  panel.innerHTML = '<div class="briefing-head"><h3>隔夜复盘</h3><p class="briefing-sub">载入中…</p></div>';
+  panel.innerHTML = html`<div class="briefing-head"><h3>隔夜复盘</h3><p class="briefing-sub">载入中…</p></div>`.toString();
   document.body.appendChild(panel);
 
   try {
@@ -67,21 +66,21 @@ export async function openBriefing() {
         : data.status === 'intraday'
           ? `今日开盘以来 · 基准 ${hhmm(data.baselineAt)}`
           : `隔夜 · 距 ${data.cutLabel ?? '15:00'}（${dayLabel(data.baselineAt)} ${hhmm(data.baselineAt)}）→ ${hhmm(data.latestAt)}`;
-    panel.innerHTML = `
+    panel.innerHTML = html`
       <div class="briefing-head">
         <div>
           <h3>隔夜复盘</h3>
-          <p class="briefing-sub">${esc(sub)}</p>
+          <p class="briefing-sub">${sub}</p>
         </div>
         <button type="button" class="briefing-close" aria-label="关闭">×</button>
       </div>
       ${briefingRows(data.items ?? [])}
-      <p class="briefing-foot">按变动幅度排序 · 数据来自本机快照</p>`;
+      <p class="briefing-foot">按变动幅度排序 · 数据来自本机快照</p>`.toString();
     panel.querySelector('.briefing-close')?.addEventListener('click', closeBriefing);
   } catch (err) {
     if (briefingOpen) {
-      panel.innerHTML = `<div class="briefing-head"><h3>隔夜复盘</h3></div>
-        <p class="briefing-empty">读取失败：${esc(err?.message ?? String(err))}</p>`;
+      panel.innerHTML = html`<div class="briefing-head"><h3>隔夜复盘</h3></div>
+        <p class="briefing-empty">读取失败：${err?.message ?? String(err)}</p>`.toString();
     }
   }
 }

@@ -4,7 +4,7 @@
  * 来源：public/app.js（原 3655 行单体）L158-372，整段搬运，逻辑未改写。
  * ================================================================== */
 import { rowsEl, updatedEl } from '../shared/dom.js';
-import { clockText, dirOf, esc, fmtPct, fmtPrice, fmtSigned, metaRange, prettySource, sparklineSVG } from '../shared/format.js';
+import { clockText, dirOf, esc, fmtPct, fmtPrice, fmtSigned, html, metaRange, prettySource, sparklineSVG } from '../shared/format.js';
 import { PLACEHOLDER, refs, store } from '../shared/store.js';
 import { emit } from '../shared/bus.js';
 
@@ -15,15 +15,15 @@ export function buildRow(item) {
   const el = document.createElement('article');
   el.className = 'row skeleton';
   el.dataset.id = item.id;
-  el.innerHTML = `
+  el.innerHTML = html`
     <div class="id">
-      <div class="name">${esc(item.name)}</div>
-      <div class="sub">${esc(item.sub)}</div>
+      <div class="name">${item.name}</div>
+      <div class="sub">${item.sub}</div>
       <div class="extras" data-f="extras"></div>
     </div>
     <div class="price">
       <div class="value" data-f="price">—</div>
-      <div class="unit">${esc(item.unit)}</div>
+      <div class="unit">${item.unit}</div>
     </div>
     <div class="delta">
       <span class="pct" data-f="pct">—</span>
@@ -36,7 +36,7 @@ export function buildRow(item) {
       <span class="stale-tag" data-f="stale">数据过期</span>
       <span class="err" data-f="err"></span>
     </div>
-  `;
+  `.toString();
   el.tabIndex = 0;
   el.setAttribute('role', 'button');
   el.setAttribute('aria-label', `${item.name} 详情`);
@@ -82,27 +82,25 @@ export function renderExtras(host, item, decimals) {
     return;
   }
   host.style.display = '';
-  host.innerHTML = list
-    .map((ex) => {
-      const has = ex.price != null && Number.isFinite(ex.price);
-      const d = decimals ?? 2;
-      const ed = dirOf(ex.changePct);
-      const cls = ex.ok === false ? ' extra-dead' : '';
-      const tip = ex.source
-        ? `${prettySource(ex.source)}${ex.sessionTime ? ` · 行情 ${ex.sessionTime}` : ''}`
-        : (ex.error ?? '');
-      const price = has ? ex.priceText ?? fmtPrice(ex.price, d) : '—';
-      const pct = has && ex.changePct != null ? fmtPct(ex.changePct) : '';
-      // changePct 为 null 的 Chip（如 Brent-WTI 价差只有美元差额）不渲染 <i>，
-      // 否则会多出一个无意义的「—」
-      const pctHtml = pct ? `<i class="${has ? ed : 'flat'}">${pct}</i>` : '';
-      return `<span class="extra${cls}" data-detail-id="${esc(ex.id)}" title="${esc(tip)}　点击查看详情">
-        <em>${esc(ex.name)}</em>
+  host.innerHTML = html`${list.map((ex) => {
+    const has = ex.price != null && Number.isFinite(ex.price);
+    const d = decimals ?? 2;
+    const ed = dirOf(ex.changePct);
+    const cls = ex.ok === false ? ' extra-dead' : '';
+    const tip = ex.source
+      ? `${prettySource(ex.source)}${ex.sessionTime ? ` · 行情 ${ex.sessionTime}` : ''}`
+      : (ex.error ?? '');
+    const price = has ? ex.priceText ?? fmtPrice(ex.price, d) : '—';
+    const pct = has && ex.changePct != null ? fmtPct(ex.changePct) : '';
+    // changePct 为 null 的 Chip（如 Brent-WTI 价差只有美元差额）不渲染 <i>，
+    // 否则会多出一个无意义的「—」
+    const pctHtml = pct ? html`<i class="${has ? ed : 'flat'}">${pct}</i>` : '';
+    return html`<span class="extra${cls}" data-detail-id="${ex.id}" title="${tip}　点击查看详情">
+        <em>${ex.name}</em>
         <b>${price}</b>
         ${pctHtml}
       </span>`;
-    })
-    .join('');
+  })}`.toString();
 }
 
 export function updateRow(item) {

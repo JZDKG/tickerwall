@@ -280,6 +280,20 @@ describe('events.js 迁移后的输出快照', async () => {
 });
 
 /* ------------------------------------------------------------------ *
+ * main.js 必须引入所有副作用模块
+ *
+ * 事故：Phase 2 拆分时 briefing.js 没被任何地方 import，它顶层挂的
+ * 「隔夜复盘」按钮监听从未执行 —— 按钮点了完全没反应，而所有测试全绿
+ * （单测直接 import 模块，绕过了「入口有没有引它」这个问题）。
+ * ------------------------------------------------------------------ */
+describe('main.js 的副作用模块引入', () => {
+  it('briefing.js 被 main.js 引入', () => {
+    const main = readFileSync(path.join(CLIENT, 'main.js'), 'utf8');
+    expect(main, 'briefing.js 没被引入 → 隔夜复盘按钮点击无效').toContain("import './views/briefing.js'");
+  });
+});
+
+/* ------------------------------------------------------------------ *
  * 棘轮：innerHTML 里裸 ${} 的次数只许减少
  *
  * 不要求一次改完（那会是个巨大的 diff），但要求**不会变多**。
@@ -302,7 +316,14 @@ describe('棘轮：innerHTML 里的裸插值', () => {
    * 逐文件列入比「列一个文件但允许它有裸插值」有意义得多 —— 后者只是把
    * 数字挪个地方，没有守住任何东西。
    */
-  const MIGRATED = new Set(['views/events.js', 'views/map.js', 'views/macro.js']);
+  const MIGRATED = new Set([
+    'views/events.js',
+    'views/map.js',
+    'views/macro.js',
+    'views/briefing.js',
+    'views/list.js',
+    path.join('views', 'macro', 'flow-canvas.js'),
+  ]);
 
   /**
    * 全站基线。这个数字只允许变小，不许变大。
@@ -313,8 +334,11 @@ describe('棘轮：innerHTML 里的裸插值', () => {
    * 必须为 0」来守，两者合起来才有意义。195 是 `innerHTML` 这一类当前
    * 的实测值（detail 82 / macro 45 / events 33 / map 28 / 其余 7）。
    */
-  /** 全站基线：134 → 89（macro.js 归零）。 */
-  const BASELINE = 89;
+  /**
+   * 全站基线：195 → 134（map）→ 89（macro）→ 82（三个小文件）。
+   * 现在只剩 detail.js 一个未迁移文件，它就是 82。
+   */
+  const BASELINE = 82;
 
   function bareInterpolations(code) {
     // 数 `innerHTML = \`…\`` 之后的模板里出现的 ${，粗略但足够做棘轮

@@ -29,6 +29,7 @@ import {
   edgeTone,
 } from './knowledge-base.js';
 import { cardHTML, buildPorts, outPortId, inPortId, PORT_MARKUP } from './flow-nodes.js';
+import { html } from '../../shared/format.js';
 import { layoutTiered, layoutMindmap, assignPorts } from './flow-layouts.js';
 
 export const CJK = /[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef]/;
@@ -147,13 +148,13 @@ export class MacroFlowCanvas {
   buildTools() {
     const bar = document.createElement('div');
     bar.className = 'mgx-tools';
-    bar.innerHTML = `
+    bar.innerHTML = html`
       <button type="button" class="mgx-tbtn" data-ctl="in" title="放大">+</button>
       <button type="button" class="mgx-tbtn" data-ctl="out" title="缩小">−</button>
       <button type="button" class="mgx-tbtn wide" data-ctl="fit" title="适应画布">⊡ 适应</button>
       <button type="button" class="mgx-tbtn wide" data-ctl="reset" title="清除手动拖拽，回到自动布局">↺ 复位</button>
       <button type="button" class="mgx-tbtn wide" data-ctl="style" title="切换连线风格">⇄ <span class="mgx-style">${EDGE_STYLE_LABEL[this.style]}</span></button>
-      <span class="mgx-zoom">100%</span>`;
+      <span class="mgx-zoom">100%</span>`.toString();
     bar.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-ctl]');
       if (!btn) return;
