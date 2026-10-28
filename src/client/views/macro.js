@@ -292,22 +292,21 @@ export function macroLeadLagHTML(data) {
   const meta = new Map(data.universe.map((u) => [u.id, u]));
   const unit = data.freq === 'week' ? '周' : '日';
   const rows = (data.leadLag ?? []).slice(0, 12);
-  if (!rows.length) return '<div class="chart-empty">当前窗口没有明显的领先滞后关系</div>';
-  return `<table class="d-table">
-    <thead><tr><th>领先方</th><th>跟随方</th><th class="num">滞后</th><th class="num">滞后相关</th><th class="num">同期相关</th><th class="num" title="Benjamini-Hochberg 校正后的 q 值">BH q</th><th class="num">样本</th></tr></thead>
-    <tbody>${rows
-      .map(
-        (r) => `<tr>
-      <td>${esc(meta.get(r.leader)?.short ?? r.leader)}</td>
-      <td>${esc(meta.get(r.follower)?.short ?? r.follower)}</td>
+  if (!rows.length) return html`<div class="chart-empty">当前窗口没有明显的领先滞后关系</div>`;
+  const body = rows.map(
+    (r) => html`<tr>
+      <td>${meta.get(r.leader)?.short ?? r.leader}</td>
+      <td>${meta.get(r.follower)?.short ?? r.follower}</td>
       <td class="mono num">${r.lag} ${unit}</td>
-      <td class="mono num ${r.corr >= 0 ? 'corr-pos' : 'corr-neg'}">${r.corr.toFixed(3)}${r.significantBH ? '<i class="sig">*</i>' : ''}</td>
+      <td class="mono num ${r.corr >= 0 ? 'corr-pos' : 'corr-neg'}">${r.corr.toFixed(3)}${r.significantBH ? html`<i class="sig">*</i>` : ''}</td>
       <td class="mono num dim">${r.sameDay?.toFixed(3) ?? '—'}</td>
       <td class="mono num dim">${r.q != null ? r.q.toFixed(3) : '—'}</td>
       <td class="mono num dim">${r.n}</td>
     </tr>`,
-      )
-      .join('')}</tbody>
+  );
+  return html`<table class="d-table">
+    <thead><tr><th>领先方</th><th>跟随方</th><th class="num">滞后</th><th class="num">滞后相关</th><th class="num">同期相关</th><th class="num" title="Benjamini-Hochberg 校正后的 q 值">BH q</th><th class="num">样本</th></tr></thead>
+    <tbody>${body}</tbody>
   </table>`;
 }
 

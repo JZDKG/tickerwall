@@ -489,6 +489,25 @@ describe('macro.js 子组件返回 SafeHtml', async () => {
     },
   };
 
+  it('macroLeadLagHTML 返回 SafeHtml，且表格内容只转义一次', () => {
+    const out = mod.macroLeadLagHTML({
+      freq: 'day',
+      universe: [{ id: 'sp500', short: '标普<500>' }, { id: 'us10y', short: '美债&10年' }],
+      leadLag: [{ leader: 'sp500', follower: 'us10y', lag: 2, corr: -0.431, significantBH: true, sameDay: 0.12, q: 0.004, n: 120 }],
+    });
+    expect(out).toBeInstanceOf(SafeHtml);
+    const h = String(out);
+    expect(h).toContain('标普&lt;500&gt;');
+    expect(h).toContain('美债&amp;10年');
+    expect(h).not.toContain('&amp;lt;');
+  });
+
+  it('macroLeadLagHTML 空态也是 SafeHtml', () => {
+    const out = mod.macroLeadLagHTML({ freq: 'day', universe: [], leadLag: [] });
+    expect(out).toBeInstanceOf(SafeHtml);
+    expect(String(out)).toContain('chart-empty');
+  });
+
   it('macroCompareHTML 返回 SafeHtml（未勾选标的时是空态）', () => {
     const out = mod.macroCompareHTML(DATA);
     expect(out).toBeInstanceOf(SafeHtml);
