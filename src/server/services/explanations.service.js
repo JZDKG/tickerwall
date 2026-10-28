@@ -19,6 +19,9 @@
 
 import { createHash } from 'node:crypto';
 import { MACRO_UNIVERSE, fetchMacroSeries } from './macro.service.js';
+import { readArchiveRowsForSpan } from '../db/event-archive.js';
+import { writeEventRevision } from '../db/explanations.js';
+import { toEventEvidence } from '../domain/events/shock.js';
 import { readDailyCache, writeDailyCache } from '../db/index.js';
 import {
   writeExplanation,
@@ -205,7 +208,7 @@ export function observationQualityList(observations) {
  * 组成 = 资产 + 窗口 + 三个版本 + 每个指标的「最后观测日期 + 最后值」。
  * 只有这些变化才需要新快照；单纯经过时间不改变内容（读取时再算新鲜度）。
  */
-export function explanationFingerprint({ assetId, windowKey, observations }) {
+export function explanationFingerprint({ assetId, windowKey, observations, events = [] }) {
   const parts = [assetId, windowKey, MECHANISM_LIBRARY_VERSION, CALCULATION_VERSION, LANGUAGE_VERSION];
   const ids = [...observations.keys()].sort();
   for (const id of ids) {
@@ -214,6 +217,16 @@ export function explanationFingerprint({ assetId, windowKey, observations }) {
     const lastVal = obs?.series?.values?.length ? obs.series.values[obs.series.values.length - 1] : 'none';
     const fellBack = obs?.quality?.fellBack ? 'fallback' : 'direct';
     parts.push(`${id}:${last}:${lastVal}:${fellBack}`);
+  }
+  /**
+   * 事件证据必须进指纹（方案 §6.3 / §7.2）。
+   *
+   * 漏掉它的后果是实测到的：日频指标没变、但窗口里新出现了「供给受阻」报道，
+   * 指纹相同 → 直接复用旧快照（events = []）→ 事件渠道永远停在「尚未确认」。
+   * 参与指纹的身份 = eventId + revision + shockType；转载不影响（同一事件同一版本）。
+   */
+  for (const e of [...events].sort((a, b) => String(a.eventId).localeCompare(String(b.eventId)))) {
+    parts.push(`ev:${e.eventId}#${e.revision ?? 1}:${e.shockType ?? 'none'}`);
   }
   return createHash('sha256').update(parts.join('|')).digest('hex').slice(0, 32);
 }
@@ -311,6 +324,41 @@ export function buildExplanation({
  * 只写被引用的点：把整段序列都塞进 observation_revisions 会让库迅速膨胀，
  * 而解释只需要「它引用的那两个日期」可回溯。
  */
+/**
+ * 把本次解释引用的**事件修订**落库。
+ *
+ * 写库时的引用校验要求每条 eventRef 都真实存在（方案 §6.3「不接受不存在的
+ * 引用」）。归档里的条目还没有 event_revisions 行，所以先写再引用；已经存在
+ * 的用 INSERT OR IGNORE，重复引用不会产生新版本。
+ *
+ * payload 只存解释需要的字段：事件身份、时间、冲击类型与判定依据 ——
+ * 不复制整篇正文，避免两处内容各自漂移。
+ */
+export function persistReferencedEvents(explanation, events, { knownAt } = {}) {
+  const byId = new Map((events ?? []).map((e) => [`${e.eventId}#${e.revision ?? 1}`, e]));
+  const written = [];
+  for (const h of explanation?.hypotheses ?? []) {
+    for (const ref of h.eventRefs ?? []) {
+      const key = `${ref.eventId}#${ref.revision ?? 1}`;
+      if (!byId.has(key)) continue;
+      const e = byId.get(key);
+      writeEventRevision({
+        eventId: e.eventId,
+        revision: e.revision ?? 1,
+        knownAt: knownAt ?? new Date().toISOString(),
+        payload: {
+          shockType: e.shockType ?? null,
+          evidence: e.evidence ?? [],
+          at: e.at ?? null,
+          source: 'event-archive',
+        },
+      });
+      written.push(key);
+    }
+  }
+  return written;
+}
+
 export function persistReferencedObservations(explanation, observations, { knownAt } = {}) {
   const wanted = new Set();
   for (const f of explanation.facts ?? []) for (const id of f.observationIds ?? []) wanted.add(id);
@@ -375,6 +423,31 @@ export function referencedInstrumentIds(explanation, { directionalOnly = false }
     for (const e of h.evidence ?? []) if (e.instrumentId) ids.add(e.instrumentId);
   }
   return ids;
+}
+
+/**
+ * 窗口内「已分类」的事件证据。
+ *
+ * 事件型渠道（供给受阻 / 需求增强）需要它才能成立；取不到就返回空数组，
+ * 渠道相应地显示「尚未确认」—— 这是有意的保守默认，不是故障。
+ *
+ * 只用归档里能判出冲击类型的条目：判不出来的事件留给 nextChecks 提示补证据。
+ */
+export async function loadEventEvidence(assetId, windowKey, { nowMs = Date.now() } = {}) {
+  if (!explanationAssetIds().includes(assetId)) return [];
+  const spec = windowSpec(windowKey);
+  // 交易时段 ↔ 自然日：session 取 1 天，5d 取 7 天，1m 取 31 天（含周末）
+  const days = windowKey === 'session' ? 1 : windowKey === '5d' ? 7 : 31;
+  void spec;
+  const sinceMs = nowMs - days * 86400000;
+  try {
+    const rows = await readArchiveRowsForSpan({ sinceMs, nowMs });
+    // 带上资产相关性过滤：只统计确实在讲这个品种的报道
+    return toEventEvidence(rows, { sinceMs, nowMs, assetId });
+  } catch {
+    // 归档读不到（首次启动、目录未建）不是错误：解释仍可给「尚未确认」
+    return [];
+  }
 }
 
 /** 读取元数据：freshness 与 contentStatus 是两件事，可以同时「证据不足且过期」 */
@@ -463,8 +536,13 @@ export async function getExplanationResponse({
   }
 
   let observations;
+  let eventsResolved;
   try {
     observations = injected ?? (await loadAssetObservations(asset, { force }));
+    // 事件证据与观测一起取：事件型渠道没有它只能「尚未确认」
+    eventsResolved = Array.isArray(eventEvidence)
+      ? eventEvidence
+      : await loadEventEvidence(asset, windowKey, { nowMs: Date.now() }).catch(() => []);
   } catch (err) {
     const stale = latestExplanation({ assetId: asset, windowKey });
     if (stale?.explanation) {
@@ -518,7 +596,7 @@ export async function getExplanationResponse({
     };
   }
 
-  const fingerprint = explanationFingerprint({ assetId: asset, windowKey, observations });
+  const fingerprint = explanationFingerprint({ assetId: asset, windowKey, observations, events: eventsResolved });
   const existingId = explanationIdByFingerprint(fingerprint);
   if (existingId) {
     const stored = readExplanation(existingId);
@@ -537,7 +615,7 @@ export async function getExplanationResponse({
     assetId: asset,
     windowKey,
     observations,
-    events: Array.isArray(eventEvidence) ? eventEvidence : [],
+    events: eventsResolved,
     asOf: generatedAt,
     generatedAt,
     id,
@@ -546,6 +624,8 @@ export async function getExplanationResponse({
 
   try {
     persistReferencedObservations(explanation, observations, { knownAt: generatedAt });
+    // 事件引用必须先落库，否则 writeExplanation 的引用校验会拒绝这次快照
+    persistReferencedEvents(explanation, eventsResolved, { knownAt: generatedAt });
     writeExplanation({ explanation });
   } catch (err) {
     // 写库失败不该让用户看不到内容：返回快照但明确标持久化失败

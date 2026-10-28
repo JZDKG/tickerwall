@@ -17,7 +17,9 @@ import { presentChange, computeChange, windowSpec } from './alignment.js';
 import { CHANNEL_STATUS, RELATION_TYPES, CONDITION_TEXT } from './mechanisms.js';
 
 export const EXPLANATION_SCHEMA_VERSION = 1;
-export const CALCULATION_VERSION = 'calc-v1';
+// calc-v2：证据装配口径变化 —— 事件型渠道最多引用 3 条已分类报道，
+// 价格型渠道不再引用窗口内全部事件。版本号进快照，旧快照按旧口径保留。
+export const CALCULATION_VERSION = 'calc-v2';
 export const LANGUAGE_VERSION = 'template-v1';
 
 /** 单位格式化：pct 保留两位小数、bp 保留一位小数、level 原样 */

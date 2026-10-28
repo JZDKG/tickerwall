@@ -590,12 +590,13 @@ git diff --check
 | C2 条件化沙盘 | `knowledge-base.js`（`SHOCK_CONDITIONS`、`SHOCK_CONDITION_SETS`）、`propagateShock` 支持 `activeEdges`、沙盘卡条件选择器 | `tests/divergence.test.js`「条件化沙盘」 |
 | C3 历史回放（读取路径） | `db/explanations.js`（`readObservationAsOf` / `readEventAsOf` / 固定版本读取） | `tests/db-explanations.test.js` |
 | §10.2 理解测试 | 六个问题与「不许出现的措辞」写成断言（不依赖浏览器，可进 CI） | `tests/understanding.test.js` |
+| 事件冲击分类 | `domain/events/shock.js`（供给/需求词表、资产相关性过滤、保守返回 null）、归档转证据 | `tests/shock-classification.test.js`、`tests/explanations.test.js`「事件证据与快照」 |
 
 ### 14.2 尚未完成
 
 - **C4 地图与生活影响联动**：地图仍只消费事件发生地，尚未把解释路径与地区条件接上（`views/map.js` 目前读事件赛区，不读解释快照）。
 - **C5 真实流量**：基金流量、贸易量、能源运输等数据没有可靠来源，保持不做。
-- **事件冲击分类器**：供给 / 需求渠道已按 `eventEvidence.shockType` 实现并测试，但生产侧还没有把新闻分类到 shockType 的组件，因此线上这两条渠道稳定显示「尚未确认」。这是有意的：缺证据就不给结论。
+- **事件冲击分类器只覆盖规则可判的情形**：`domain/events/shock.js` 用「数量约束词（减产/停产/航道/罢工）」与「需求词（开工率/补库/出行）」两套词表保守判定，两类同时出现或只有价格描述时返回 null（渠道显示「尚未确认」）。仍有局限：反讽、引述他人观点、跨品种同名事件（铜矿罢工）需要人复核，所以分类结果只进证据、不进标题结论。
 - **浏览器端 CI**：理解测试已脚本化（`tests/understanding.test.js`），但真实渲染的端到端走查仍是人工执行 Chromium headless 脚本（验证卡片出现、可展开、切窗口后内容更新、无控制台异常）。
 
 ### 14.3 有意改变的口径（契约测试已记录原因）
@@ -607,3 +608,6 @@ git diff --check
 - `freshness` 进一步只统计**方向性结论**（目标资产 + 给出判定的机制渠道）。历史相关、共同驱动、缺事件未判定的渠道过期时，改列 `meta.backgroundStale`，界面单独提示「背景指标过期」。
 - 冲突判定（`mixed`）只在方向性机制之间比较：计价换算、共同驱动、历史相关不是方向预测，不参与「相反证据」判定。
 - 机制库版本升到 `gold-v3`（新增原油、美债、美元）；旧快照保留 `gold-v1` / `gold-v2` 的版本号，读取时不会被新规则重新解释。
+- 计算版本升到 `calc-v2`：事件型渠道最多引用 3 条已分类报道（其余用 `eventMatchCount` 计数），价格型渠道不再把窗口内全部事件挂到自己身上。
+- 快照指纹纳入事件身份（`eventId#revision:shockType`）：日频数据没变但窗口里出现新报道时，会生成新快照，而不是复用 `events=[]` 的旧快照。
+- 被引用的事件修订在写快照前先落库（`persistReferencedEvents`），满足「不接受不存在的引用」。

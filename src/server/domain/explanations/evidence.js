@@ -111,6 +111,19 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
   }
 
   /**
+   * 价格型但「需要事件才能检验」的机制（例如油价→政策预期）要引用什么事件？
+   *
+   * 只引用**已分类**的冲击事件，最多 3 条：未分类事件只是「有新闻」，
+   * 不能作为这条渠道的依据。条数用 eventMatchCount 如实给出。
+   */
+  const citedEvents = mechanism.needsEventEvidence
+    ? [...events]
+        .filter((e) => e.shockType === 'supply' || e.shockType === 'demand')
+        .sort((a, b) => String(b.at ?? '').localeCompare(String(a.at ?? '')))
+        .slice(0, 3)
+    : [];
+
+  /**
    * 事件型机制（例如「供给受阻推高油价」）没有价格驱动端：
    * 它检验的是「已分类的事件 + 目标方向」是否与机制一致。
    *
@@ -127,7 +140,16 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
           observations: observationsCount,
         })
       : null;
-    const matched = events.filter((e) => !mechanism.shockType || e.shockType === mechanism.shockType);
+    const matchedAll = events.filter((e) => !mechanism.shockType || e.shockType === mechanism.shockType);
+    /**
+     * 只把最近 3 条放进引用，其余用计数表达。
+     *
+     * 一个 7 天窗口里可能有几十条同类型报道：全部塞进证据会让「查看依据」
+     * 变成新闻列表，也会让写库时引用数量失控。计数仍然诚实给出。
+     */
+    const matched = [...matchedAll]
+      .sort((a, b) => String(b.at ?? '').localeCompare(String(a.at ?? '')))
+      .slice(0, 3);
     if (!matched.length) {
       return { ...base, missing, reasons: ['NO_MATCHING_EVENT'], eventRefs: [] };
     }
@@ -137,6 +159,7 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
         missing,
         reasons: ['NO_MATERIAL_TARGET_CHANGE'],
         eventRefs: matched.map((e) => ({ eventId: e.eventId, revision: e.revision })),
+        eventMatchCount: matchedAll.length,
         evidence: [evidenceEntry({ role: 'support', instrumentId: mechanism.to, definition: targetObs?.definition, change: chTo })].filter(
           (e) => e.change,
         ),
@@ -158,6 +181,7 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
         evidenceEntry({ role: ok ? 'support' : 'contrary', instrumentId: mechanism.to, definition: targetObs?.definition, change: chTo }),
       ].filter((e) => e.change),
       eventRefs: matched.map((e) => ({ eventId: e.eventId, revision: e.revision })),
+      eventMatchCount: matchedAll.length,
     };
   }
 
@@ -291,7 +315,16 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
     reasons: consistent ? ['SIGN_MATCH'] : ['SIGN_MISMATCH'],
     missing,
     window: { key: windowKey, start: chFrom.start, end: chFrom.end, observations: aligned.n },
-    eventRefs: events.map((e) => ({ eventId: e.eventId, revision: e.revision })),
+    /**
+     * 价格型渠道原则上不引用事件。
+     *
+     * 原来这里把「窗口内所有事件」都挂到每条渠道上：一条美元计价渠道
+     * 因此声称引用了 90 条新闻，既误导用户，也让写库时的引用校验失败
+     * （那些修订并没有入库）。只有「需要事件才能检验」的渠道才引用，
+     * 且只引用已分类的冲击事件。
+     */
+    eventRefs: citedEvents.map((e) => ({ eventId: e.eventId, revision: e.revision })),
+    eventMatchCount: citedEvents.length,
     evidence: [
       evidenceEntry({
         role: consistent ? 'support' : 'contrary',

@@ -577,7 +577,7 @@ describe('事实只列本次会用到的指标', () => {
   it('无关序列再旧，也不会把 meta 的新鲜度拖成 stale', async () => {
     const m = goldWithRealYield();
     m.set('usdcny', obs('usdcny', levels(22, 7.1, 7.12), { lastObservedAt: '2026-08-01' }));
-    const out = await getExplanationResponse({ asset: 'gold-intl', windowKey: '5d', observations: m });
+    const out = await getExplanationResponse({ asset: 'gold-intl', windowKey: '5d', observations: m, eventEvidence: [] });
     expect(out.status).toBe(200);
     expect(out.body.meta.freshness).toBe('fresh');
   });
@@ -633,7 +633,13 @@ describe('原油：观测一致与证据不足', () => {
   });
 
   it('没有已分类事件 → 供给/需求渠道「尚未确认」并说明缺什么', async () => {
-    const out = await getExplanationResponse({ asset: 'oil', windowKey: '5d', observations: oilObservations() });
+    // 显式注入空事件：不指定时服务会去读归档（生产行为），测试要可复现
+    const out = await getExplanationResponse({
+      asset: 'oil',
+      windowKey: '5d',
+      observations: oilObservations(),
+      eventEvidence: [],
+    });
     const supply = out.body.explanation.hypotheses.find((x) => x.mechanismId === 'M-OIL-SUPPLY-SHOCK');
     expect(supply.status).toBe('untested');
     expect(supply.reasons).toContain('NO_EVENT_EVIDENCE');
@@ -816,7 +822,8 @@ describe('新鲜度只按方向性结论计算', () => {
   it('背景指标（历史相关的原油）过期，黄金解释仍然 fresh，并单列背景过期', async () => {
     const m = goldWithRealYield();
     m.get('oil').lastObservedAt = '2026-08-01';
-    const out = await getExplanationResponse({ asset: 'gold-intl', windowKey: '5d', observations: m });
+    // 空事件：否则归档里的供给/需求报道会让油价渠道变成「方向性」，进而参与新鲜度
+    const out = await getExplanationResponse({ asset: 'gold-intl', windowKey: '5d', observations: m, eventEvidence: [] });
     expect(out.body.meta.freshness).toBe('fresh');
     expect(out.body.meta.backgroundStale).toContain('oil');
   });
@@ -834,5 +841,69 @@ describe('新鲜度只按方向性结论计算', () => {
     m.get('us10y').lastObservedAt = '2026-08-01';
     const out = await getExplanationResponse({ asset: 'gold-intl', windowKey: '5d', observations: m });
     expect(out.body.meta.freshness).toBe('stale');
+  });
+});
+
+/* ================================================================== *
+ * 事件证据进入快照：指纹必须包含事件身份
+ *
+ * 漏掉事件会让「日频没变但窗口里新出现供给报道」复用旧快照，事件渠道永远
+ * 停在「尚未确认」。这里钉住两件事：指纹随事件变化；被引用的事件修订在写库
+ * 前已经落库（引用完整性）。
+ * ================================================================== */
+describe('事件证据与快照', () => {
+  const obsMapOil = () => {
+    const m = new Map();
+    m.set('oil', obs('oil', levels(22, 70, 72)));
+    m.set('dxy', obs('dxy', levels(22, 104, 104.2)));
+    m.set('vix', obs('vix', levels(22, 16, 16.1)));
+    m.set('copper', obs('copper', levels(22, 4.2, 4.1)));
+    m.set('brent', obs('brent', levels(22, 74, 73)));
+    return m;
+  };
+
+  it('同一批观测 + 不同事件 → 不同指纹，产生不同快照', async () => {
+    const a = await getExplanationResponse({ asset: 'oil', windowKey: '5d', observations: obsMapOil(), eventEvidence: [] });
+    const b = await getExplanationResponse({
+      asset: 'oil',
+      windowKey: '5d',
+      observations: obsMapOil(),
+      eventEvidence: [{ eventId: 'evt-9', revision: 1, shockType: 'supply' }],
+    });
+    expect(a.body.explanation.id).not.toBe(b.body.explanation.id);
+    expect(b.body.explanation.hypotheses.find((h) => h.mechanismId === 'M-OIL-SUPPLY-SHOCK').eventRefs).toEqual([
+      { eventId: 'evt-9', revision: 1 },
+    ]);
+  });
+
+  it('被引用的事件修订会先落库，快照写入不再因引用缺失而失败', async () => {
+    await getExplanationResponse({
+      asset: 'oil',
+      windowKey: '5d',
+      observations: obsMapOil(),
+      eventEvidence: [{ eventId: 'evt-db', revision: 2, shockType: 'demand', at: '2026-10-27T10:00:00Z' }],
+    });
+    const { readEventRevision } = await import('../src/server/db/index.js');
+    const row = readEventRevision('evt-db', 2);
+    expect(row).toBeTruthy();
+    expect(row.payload.shockType).toBe('demand');
+  });
+
+  it('价格型渠道不再把所有窗口事件挂到自己身上', () => {
+    const many = Array.from({ length: 20 }, (_, i) => ({ eventId: `e${i}`, revision: 1, shockType: 'supply' }));
+    const h = evaluateMechanism(mechanismById('M-OIL-USD'), obsMapOil(), { windowKey: '5d', eventEvidence: many });
+    expect(h.eventRefs).toEqual([]);
+  });
+
+  it('事件型渠道最多引用 3 条，并给出匹配总数', () => {
+    const many = Array.from({ length: 9 }, (_, i) => ({
+      eventId: `e${i}`,
+      revision: 1,
+      shockType: 'supply',
+      at: `2026-10-2${i % 9}T10:00:00Z`,
+    }));
+    const h = evaluateMechanism(mechanismById('M-OIL-SUPPLY-SHOCK'), obsMapOil(), { windowKey: '5d', eventEvidence: many });
+    expect(h.eventRefs.length).toBe(3);
+    expect(h.eventMatchCount).toBe(9);
   });
 });

@@ -582,3 +582,10 @@
   border-left: 2px solid rgba(224, 168, 60, 0.5);
   padding-left: 6px;
 }
+
+/* 事件型渠道：说明匹配到多少条已分类报道 */
+.explain-events {
+  margin: 4px 0;
+  font-size: 12px;
+  color: var(--muted);
+}

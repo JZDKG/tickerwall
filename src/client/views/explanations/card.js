@@ -149,6 +149,15 @@ export function factorHTML(hypothesis, { open = false, index = 0 } = {}) {
       <div class="explain-sub"><b>适用条件</b>${conds}</div>
       <div class="explain-sub"><b>哪些情况会削弱它</b>${exclusions}</div>
       <div class="explain-sub"><b>查看依据</b>
+        ${
+          hypothesis.eventMatchCount
+            ? `<p class="explain-events">窗口内匹配到 ${hypothesis.eventMatchCount} 条已分类报道${
+                (hypothesis.eventRefs ?? []).length
+                  ? `，最近 ${hypothesis.eventRefs.length} 条计入本渠道`
+                  : ''
+              }。</p>`
+            : ''
+        }
         <table class="explain-evidence">
           <thead><tr><th>指标</th><th>本窗口变化</th><th>观测窗口</th><th>作用</th></tr></thead>
           <tbody>${evidenceRows(hypothesis)}</tbody>
