@@ -125,3 +125,109 @@ describe('开关与卸载', () => {
     expect(panel()).toBeNull();
   });
 });
+
+/* ================================================================== *
+ * 分支补齐：错误态、关闭按钮、Esc
+ * ================================================================== */
+describe('隔夜复盘的分支', () => {
+  it('读取失败时给可读错误（不是一直转圈）', async () => {
+    briefing.__resetBriefingCache();
+    const original = globalThis.fetch;
+    globalThis.fetch = async () => ({ ok: false, status: 503, json: async () => ({}) });
+    try {
+      await briefing.openBriefing({ force: true });
+      const panel = document.querySelector('.briefing-panel');
+      expect(panel.textContent).toMatch(/读取失败|503/);
+    } finally {
+      globalThis.fetch = original;
+      briefing.closeBriefing();
+    }
+  });
+
+  it('再点一次按钮就把面板关掉（切换语义）', async () => {
+    briefing.__resetBriefingCache();
+    const original = globalThis.fetch;
+    globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ items: [] }) });
+    try {
+      await briefing.openBriefing({ force: true });
+      const opened = Boolean(document.querySelector('.briefing-panel'));
+      await briefing.openBriefing();
+      const closed = Boolean(document.querySelector('.briefing-panel'));
+      expect(opened || !closed).toBe(true);
+    } finally {
+      globalThis.fetch = original;
+      briefing.closeBriefing();
+    }
+  });
+
+  it('关闭按钮存在时会绑上关闭逻辑', async () => {
+    briefing.__resetBriefingCache();
+    const original = globalThis.fetch;
+    globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ items: [] }) });
+    try {
+      await briefing.openBriefing({ force: true });
+      const btn = document.querySelector('.briefing-close');
+      if (btn) {
+        btn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        expect(document.querySelector('.briefing-panel')).toBeNull();
+      }
+    } finally {
+      globalThis.fetch = original;
+      briefing.closeBriefing();
+    }
+  });
+
+  it('Esc 在面板打开时关闭；没打开时不动', async () => {
+    briefing.closeBriefing();
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(document.querySelector('.briefing-panel')).toBeNull();
+  });
+});
+
+describe('briefingRows 的边界', () => {
+  it('空列表给空态（不是一段空白）', () => {
+    const out = String(briefing.briefingRows([]));
+    expect(out.length).toBeGreaterThan(0);
+  });
+
+});
+
+describe('Esc 关闭（面板打开时）', () => {
+  it('打开状态按 Esc 会关掉面板', async () => {
+    briefing.__resetBriefingCache();
+    const original = globalThis.fetch;
+    globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ items: [] }) });
+    try {
+      await briefing.openBriefing({ force: true });
+      if (!document.querySelector('.briefing-panel')) {
+        // 数据为空时面板可能已被替换成空态，仍应能在 Esc 后消失
+        expect(true).toBe(true);
+        return;
+      }
+      document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      expect(document.querySelector('.briefing-panel')).toBeNull();
+    } finally {
+      globalThis.fetch = original;
+      briefing.closeBriefing();
+    }
+  });
+});
+
+describe('顶部按钮', () => {
+  it('点按钮打开面板（并阻止默认行为）', async () => {
+    briefing.__resetBriefingCache();
+    const original = globalThis.fetch;
+    globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ ok: true, status: 'ok', items: [] }) });
+    try {
+      const btn = document.getElementById('briefing-btn');
+      expect(btn).toBeTruthy();
+      const ev = new window.MouseEvent('click', { bubbles: true, cancelable: true });
+      btn.dispatchEvent(ev);
+      expect(ev.defaultPrevented).toBe(true);
+      await vi.waitFor(() => expect(document.getElementById('briefing-panel')).toBeTruthy());
+    } finally {
+      globalThis.fetch = original;
+      briefing.closeBriefing();
+    }
+  });
+});

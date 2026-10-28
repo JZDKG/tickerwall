@@ -381,3 +381,47 @@ describe('fetchExplanation 的容错', () => {
     expect(r.status).toBe(503);
   });
 });
+
+/* ================================================================== *
+ * 分支补齐：格式化与未知项的两种长度
+ * ================================================================== */
+describe('变化幅度格式化与未知项列表', () => {
+  it('fmtFactorChange：bp / pct / 无单位各自的位数与符号', () => {
+    // 直接测格式化函数：走到它需要的卡片结构在别的用例里，这里只钉格式契约
+    expect(fmtFactorChange({ value: 12.345, unit: 'bp' })).toBe('+12.3bp');
+    expect(fmtFactorChange({ value: -0.5, unit: 'pct' })).toBe('−0.50%');
+    expect(fmtFactorChange({ value: 0, unit: 'pct' })).toBe('0.00%');
+    expect(fmtFactorChange({ value: 3, unit: undefined })).toBe('+3.00');
+  });
+
+  it('fmtFactorChange：缺值给破折号（不是 NaN）', () => {
+    expect(fmtFactorChange(null)).toBe('—');
+    expect(fmtFactorChange({ value: NaN })).toBe('—');
+    expect(fmtFactorChange({})).toBe('—');
+  });
+
+  it('未知项只有 1 条时不再单列第二组（1 条已经在上面写过）', () => {
+    const html = String(renderExplainCard({
+      ...createExplainState('gold-intl'),
+      phase: 'ready',
+      explanation: {
+        id: 'e1', facts: [], hypotheses: [], nextChecks: [],
+        unknowns: [{ text: '只有一条' }],
+      },
+    }, { assetName: '黄金' }));
+    expect(html).not.toContain('explain-unknowns');
+  });
+
+  it('未知项 2 条以上时从第二条起单列（第一条已作为主结论出现）', () => {
+    const html = String(renderExplainCard({
+      ...createExplainState('gold-intl'),
+      phase: 'ready',
+      explanation: {
+        id: 'e1', facts: [], hypotheses: [], nextChecks: [],
+        unknowns: [{ text: '第一条' }, { text: '第二条' }],
+      },
+    }, { assetName: '黄金' }));
+    expect(html).toContain('explain-unknowns');
+    expect(html).toContain('第二条');
+  });
+});
