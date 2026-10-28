@@ -131,9 +131,10 @@ function renderValue(value) {
  * `html`<button class="btn" onclick=${'alert(1)'}>` —— 直接渲染出
  * `onclick=alert(1)`。
  */
-function quoteStateOf(text) {
+function attributeStateOf(text) {
   let inDouble = false;
   let inSingle = false;
+  let inTag = false;
   for (let i = 0; i < text.length; i += 1) {
     const c = text[i];
     if (inDouble) {
@@ -144,9 +145,13 @@ function quoteStateOf(text) {
       inDouble = true;
     } else if (c === "'") {
       inSingle = true;
+    } else if (c === '<') {
+      inTag = true;
+    } else if (c === '>') {
+      inTag = false;
     }
   }
-  return inDouble || inSingle;
+  return { inTag, inQuote: inDouble || inSingle };
 }
 
 /**
@@ -161,10 +166,14 @@ function quoteStateOf(text) {
 function assertQuotedAttribute(built) {
   const eq = built.lastIndexOf('=');
   if (eq < 0 || !/^\s*$/.test(built.slice(eq + 1))) return;
-  // 引号状态要从模板开头累积看，不能只看紧邻的那一段：
+
+  // 状态要从模板开头累积看，不能只看紧邻的那一段：
   // `<a href="x?a=${1}&b=${2}">` 的第二个插值前后文是 `&b=`，局部看不出
   // 它其实还在 href 的双引号里。
-  if (quoteStateOf(built)) return;
+  const { inTag, inQuote } = attributeStateOf(built);
+  // 不在标签内就不是属性 —— 正文里的等号（`总计 = ${n}`、`1 USD = ${r}`）
+  // 只是文本，放行。这条漏了会造成误杀：正常文案直接抛错。
+  if (!inTag || inQuote) return;
 
   throw new Error(
     `html\`\` 不允许未加引号的属性插值：...${built.slice(-24)}\${…}。` +

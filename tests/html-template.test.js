@@ -132,6 +132,17 @@ describe('未加引号的属性插值被拒绝', () => {
     expect(() => html`<a href=${'x'} class="y">z</a>`).toThrow(/未加引号的属性插值/);
   });
 
+  it('正文里的等号不算属性赋值，不能被误杀', () => {
+    // 属性赋值只可能出现在标签内（< 与 > 之间）。正文里的 = 就是文本，
+    // 早期实现只看「末尾是 = 且不在引号内」，于是 `总计 = ${n}` 直接抛错 ——
+    // 一个正常文案让整个模板崩掉。
+    expect(() => html`<span>总计 = ${100}</span>`).not.toThrow();
+    expect(() => html`<p>1 USD = ${7.1} CNY</p>`).not.toThrow();
+    expect(html`<span>总计 = ${100}</span>`.toString()).toBe('<span>总计 = 100</span>');
+    // 标签闭合之后的等号同样是正文
+    expect(() => html`<b>x</b> = ${1}`).not.toThrow();
+  });
+
   it('被拦下的那一刻不会产生任何输出（不是「转义后放行」）', () => {
     let out = null;
     try {

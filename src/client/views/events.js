@@ -301,7 +301,7 @@ export function ratioBg(ratio) {
 
 export function eventStudyHTML(study, mode = 'auto') {
   if (!study?.ok) {
-    return `<div class="chart-empty">${esc(study?.error ?? '暂无足够历史事件')}</div>`;
+    return html`<div class="chart-empty">${study?.error ?? '暂无足够历史事件'}</div>`;
   }
   const kinds = study.kinds.map((k) => k.kind);
 
@@ -327,6 +327,7 @@ export function eventStudyHTML(study, mode = 'auto') {
     seen.add(r.symbol);
     symbols.push({ id: r.symbol, name: r.name });
   }
+
   const cell = new Map();
   for (const s of symbols) {
     for (const k of kinds) {
@@ -335,40 +336,36 @@ export function eventStudyHTML(study, mode = 'auto') {
     }
   }
 
-  let head = '<tr><th class="corner">标的</th>';
-  for (const k of kinds) {
+  const headCells = kinds.map((k) => {
     const info = study.kinds.find((x) => x.kind === k);
-    head += `<th>${esc(STUDY_KIND_LABEL[k] ?? k)}<em>n=${info?.count ?? 0}</em></th>`;
-  }
-  head += '</tr>';
+    return html`<th>${STUDY_KIND_LABEL[k] ?? k}<em>n=${info?.count ?? 0}</em></th>`;
+  });
+  const head = html`<tr><th class="corner">标的</th>${headCells}</tr>`;
 
-  let body = '';
-  for (const s of symbols) {
-    body += `<tr><th class="row-head">${esc(s.name)}</th>`;
-    for (const k of kinds) {
+  const bodyRows = symbols.map((s) => {
+    const cells = kinds.map((k) => {
       const r = cell.get(`${s.id}|${k}`);
-      if (!r) {
-        body += '<td class="corr na">—</td>';
-        continue;
-      }
+      if (!r) return html`<td class="corr na">—</td>`;
       const sig = r.significant ? '*' : '';
       const lagTag = mode === 'auto' ? `T+${r.lag}` : '';
       const medRatio = r.medianRatio ?? r.ratio;
       const lagLabel = r.lag
         ? '事件后第 1 个交易日'
-        : mode === 'auto' ? '该市场开始消化消息的交易日' : '事件当日';
+        : mode === 'auto'
+          ? '该市场开始消化消息的交易日'
+          : '事件当日';
       const title =
         `${s.name} · ${STUDY_KIND_LABEL[k]}：${lagLabel}` +
         `平均波动 ${r.eventMeanPct.toFixed(2)}%，普通日 ${r.baseMeanPct.toFixed(2)}%，` +
         `倍数 ${r.ratio.toFixed(2)}x（中位数口径 ${medRatio.toFixed(2)}x），` +
         `t=${r.t == null ? '—' : r.t.toFixed(2)}，样本 ${r.eventDays}`;
-      body += `<td class="corr ${Math.abs(r.ratio - 1) > 0.3 ? 'strong' : 'mid'}"
-        style="background:${ratioBg(r.ratio)}" title="${esc(title)}">${r.ratio.toFixed(2)}x${sig}${
-          lagTag ? `<i class="lag-tag">${lagTag}</i>` : ''
-        }</td>`;
-    }
-    body += '</tr>';
-  }
+      return html`<td class="corr ${Math.abs(r.ratio - 1) > 0.3 ? 'strong' : 'mid'}"
+        style="background:${ratioBg(r.ratio)}" title="${title}">${r.ratio.toFixed(2)}x${sig}${
+        lagTag ? html`<i class="lag-tag">${lagTag}</i>` : ''
+      }</td>`;
+    });
+    return html`<tr><th class="row-head">${s.name}</th>${cells}</tr>`;
+  });
 
   const top = [...cell.values()]
     .filter((r) => r.significant && r.ratio > 1)
@@ -376,9 +373,21 @@ export function eventStudyHTML(study, mode = 'auto') {
     .slice(0, 6);
 
   const modeBtn = (val, label, hint) =>
-    `<button type="button" data-lag="${val}" class="${String(mode) === String(val) ? 'on' : ''}" title="${esc(hint)}">${label}</button>`;
+    html`<button type="button" data-lag="${val}" class="${String(mode) === String(val) ? 'on' : ''}" title="${hint}">${label}</button>`;
 
-  return `<div class="study-toolbar">
+  // 说明文案里有 <b> 标签，所以必须用 html`` 包（否则被当文本转义）。
+  // 原来手写的 &gt; 改回字面 >：模板会转义一次，写实体就成了双转义。
+  const hint =
+    mode === 'auto'
+      ? html`智能对齐：事件日按各品种所在市场的交易时段换算，不是拿同一个日历日期套所有标的。FOMC 在美东 14:00 公布（收盘前）→ 美股算当日，北京时间已是次日凌晨 → 上证/沪金也算当日；CPI / 非农在美东 08:30 公布 → 美股算当日，而北京 20:30 已经收盘 → A 股要等到次日。所以对齐之后格内统一标 <b>T+0</b>，含义是「这个市场开始消化这条消息的那一天」，不是「发布那一刻所在的那一天」。`
+      : html`当前强制统一为 <b>T+${mode}</b> 口径，即所有标的共用同一个日历日期。跨市场资产在此口径下会混入「消息发布时该市场尚未开盘 / 已经收盘」的错配，仅作对照参考。`;
+
+  const topChips = top.map(
+    (r) =>
+      html`<span class="study-chip">${r.name} × ${STUDY_KIND_LABEL[r.kind] ?? r.kind} <b>${r.ratio.toFixed(2)}x</b> <em>t=${r.t.toFixed(1)}</em></span>`,
+  );
+
+  return html`<div class="study-toolbar">
     <div class="seg" id="study-lag">
       ${modeBtn('auto', '智能对齐', '事件日已按各品种所在市场的交易时段投影：FOMC 对美股是当日、对上证/沪金是北京次日凌晨；CPI/非农对 A 股要等次日')}
       ${modeBtn('0', 'T+0', '全部按事件当日口径（不区分市场）')}
@@ -386,31 +395,20 @@ export function eventStudyHTML(study, mode = 'auto') {
     </div>
   </div>
   <div class="matrix-wrap">
-    <table class="corr-matrix study-matrix"><thead>${head}</thead><tbody>${body}</tbody></table>
+    <table class="corr-matrix study-matrix"><thead>${head}</thead><tbody>${bodyRows}</tbody></table>
   </div>
   <p class="macro-hint">
-    数字 = 事件日平均绝对波动 ÷ 普通日平均绝对波动（&gt;1 说明这天更动荡），带 <b>*</b> 表示 Welch t 检验 |t|&gt;1.96。
+    数字 = 事件日平均绝对波动 ÷ 普通日平均绝对波动（>1 说明这天更动荡），带 <b>*</b> 表示 Welch t 检验 |t|>1.96。
     悬停看具体数值与中位数口径。<br>
-    ${
-      mode === 'auto'
-        ? '智能对齐：事件日按各品种所在市场的交易时段换算，不是拿同一个日历日期套所有标的。' +
-          'FOMC 在美东 14:00 公布（收盘前）→ 美股算当日，北京时间已是次日凌晨 → 上证/沪金也算当日；' +
-          'CPI / 非农在美东 08:30 公布 → 美股算当日，而北京 20:30 已经收盘 → A 股要等到次日。' +
-          '所以对齐之后格内统一标 <b>T+0</b>，含义是「这个市场开始消化这条消息的那一天」，不是「发布那一刻所在的那一天」。'
-        : `当前强制统一为 <b>T+${mode}</b> 口径，即所有标的共用同一个日历日期。跨市场资产在此口径下会混入「消息发布时该市场尚未开盘 / 已经收盘」的错配，仅作对照参考。`
-    }
+    ${hint}
   </p>
   ${
     top.length
-      ? `<div class="study-top"><span class="study-top-label">统计上最显著：</span>${top
-          .map(
-            (r) =>
-              `<span class="study-chip">${esc(r.name)} × ${esc(STUDY_KIND_LABEL[r.kind] ?? r.kind)} <b>${r.ratio.toFixed(2)}x</b> <em>t=${r.t.toFixed(1)}</em></span>`,
-          )
-          .join('')}</div>`
+      ? html`<div class="study-top"><span class="study-top-label">统计上最显著：</span>${topChips}</div>`
       : ''
   }`;
 }
+
 
 export async function loadEventStudy(force = false) {
   if (!force && studyCacheClient) return studyCacheClient;
