@@ -247,7 +247,8 @@ describe('入口保持零构建', () => {
     expect(httpCode).toContain("path.join(ROOT, 'src', 'client')");
     expect(httpCode).toContain("rel.startsWith('/src/client/')");
     // 入口仍然必须用上静态服务（实现在 http.js，入口负责接线）
-    expect(read(`${ROOT}server.mjs`)).toContain('serveStatic');
+    // E08 后路由与静态映射在 src/server/app.js（入口只做装配）
+    expect(read(`${ROOT}src/server/app.js`)).toContain('serveStatic');
   });
 });
 

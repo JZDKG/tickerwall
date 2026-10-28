@@ -272,10 +272,12 @@ describe('serveStatic 目录回退与 405 顺序', () => {
   });
 
   it('405 在任何分发之前判，不会把 POST /api/* 当成 GET', () => {
-    const code = readFileSync(new URL('../server.mjs', import.meta.url), 'utf8');
+    // 路由表在 app.js（E08）；顺序约束不变：405 必须早于任何业务分支
+    const code = readFileSync(new URL('../src/server/app.js', import.meta.url), 'utf8');
     const i405 = code.indexOf('405');
     const iQuotes = code.indexOf("url.pathname === '/api/quotes'");
     expect(i405).toBeGreaterThan(0);
+    expect(iQuotes).toBeGreaterThan(0);
     expect(i405).toBeLessThan(iQuotes);
   });
 });

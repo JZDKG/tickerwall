@@ -348,17 +348,20 @@ describe('分层：五个服务齐全且拓扑单向', () => {
   });
 
   it('500 响应不把 err.message 发给客户端，但必须在服务端留日志', () => {
-    const code = fs.readFileSync(pathMod.join(REPO, 'server.mjs'), 'utf8');
-    // 对外只能是通用文案
-    expect(code).not.toMatch(/sendJson\(res,\s*500,\s*\{[^}]*error:\s*err\?\.message/);
-    expect(code).toContain('服务器内部错误');
+    const entry = fs.readFileSync(pathMod.join(REPO, 'server.mjs'), 'utf8');
+    const app = fs.readFileSync(pathMod.join(REPO, 'src/server/app.js'), 'utf8');
+    // 对外只能是通用文案（路由在 app.js）
+    expect(app).not.toMatch(/sendJson\(res,\s*500,\s*\{[^}]*error:\s*err\?\.message/);
+    expect(app).toContain('服务器内部错误');
     // 但不能静默——完整错误得进日志，否则线上无从排查
-    expect(code).toMatch(/console\.error\(\s*'\[http\]/);
+    // E08 后日志改成结构化（带 requestId），断言的是「有留痕」这件事本身
+    expect(app).toMatch(/logError\(|console\.error\(/);
+    expect(entry).toContain("logger.error('http.unhandled'");
     // 后台刷新同理：长期失败必须留痕
-    expect(code).toMatch(/console\.error\(\s*'\[bg\]/);
+    expect(entry).toContain("logger.warn('jobs.failed'");
   });
 
-  it('入口 server.mjs 收敛成薄壳（< 200 行），只做路由与静态映射', () => {
+  it('入口 server.mjs 收敛成薄壳（< 200 行），路由与兜底在 app.js', () => {
     const code = fs.readFileSync(pathMod.join(REPO, 'server.mjs'), 'utf8');
     const lines = code.split('\n').length;
     expect(lines).toBeLessThan(200);
@@ -380,14 +383,20 @@ describe('分层：五个服务齐全且拓扑单向', () => {
  * ================================================================== */
 describe('入口的异常兜底结构', () => {
   const code = () => require('node:fs').readFileSync(path.join(REPO, 'server.mjs'), 'utf8');
+  /**
+   * E08 之后路由与异常兜底搬到了 src/server/app.js（入口只剩装配与生命周期）。
+   * 约束不变：同步回调 + 唯一 .catch 接住点 + 服务端留日志。
+   */
+  const appCode = () => require('node:fs').readFileSync(path.join(REPO, 'src/server/app.js'), 'utf8');
 
-  it('createServer 的回调不是 async，异常统一由 handle().catch 接住', () => {
+  it('createServer 的回调不是 async，异常统一由一次 .catch 接住', () => {
     const src = code();
     // 回调必须同步（async 回调里 throw 会变成 unhandledRejection）
     expect(src).not.toMatch(/createServer\(async\s*\(/);
-    expect(src).toMatch(/handle\(req, res\)\.catch\(/);
-    // 处理逻辑在独立的 async 函数里
-    expect(src).toMatch(/async function handle\(req, res\)/);
+    // 入口唯一的分发调用必须带 .catch（E08 后外面多包了一层请求日志）
+    expect(src).toMatch(/(logged|handle)\(req, res\)\.catch\(/);
+    // 处理逻辑在独立的 async 函数里（现在由 app.js 的 createApp 产出）
+    expect(appCode()).toMatch(/return async function handle\(req, res\)/);
   });
 
   it('catch 里区分 headersSent —— 已发头时不能二次 writeHead', () => {

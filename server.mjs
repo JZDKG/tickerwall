@@ -1,14 +1,18 @@
 #!/usr/bin/env node
 /**
- * 市场看板 —— Node 内置模块搭起的后端
+ * 市场看板 —— 入口（只负责装配与生命周期）
  *
- * 作用：把多个公开行情接口聚合成一个 JSON，供前端纵向列表渲染。
- * 为什么要后端：新浪 / 东方财富接口不带 CORS 头，且新浪要求 Referer，浏览器直连会被拦。
+ * 职责边界（方案 §4.2 / E08）：
+ *   · 这里：读配置、装依赖、开始监听、处理信号、干净退出；
+ *   · 不在这里：路由表（src/server/app.js）、请求日志（observability/log.js）、
+ *     业务（services/）、存储（db/）。
  *
  * 启动：node server.mjs   （默认 http://127.0.0.1:8787）
  */
-import { takeForce, sendJson, sendText, serveStatic, guardServerErrors } from './src/server/http.js';
+import http from 'node:http';
+import { sendText, guardServerErrors } from './src/server/http.js';
 import { PORT, HOST, DISABLE_BACKGROUND } from './src/server/config.js';
+import { createApp } from './src/server/app.js';
 import { getEvents, getEventHistory, loadLlmStore } from './src/server/services/events.service.js';
 import {
   CACHE_TTL_MS,
@@ -22,119 +26,41 @@ import {
 import { getDetail } from './src/server/services/detail.service.js';
 import { getMacro } from './src/server/services/macro.service.js';
 import { getCalendar, getEventStudy } from './src/server/services/calendar.service.js';
-import { handleExplanationRoutes } from './src/server/routes.js';
 import { startCollector } from './src/server/jobs/collector.js';
-import { handleSystemRoutes } from './src/server/routes/system.js';
 import { buildDefaultJobs, recoverPendingJobs } from './src/server/jobs/index.js';
-import http from 'node:http';
-import path from 'node:path';
+import { installShutdown } from './src/server/lifecycle.js';
+import { createLogger, withRequestLog } from './src/server/observability/log.js';
 
-
+const logger = createLogger();
 
 /* 不发 Access-Control-Allow-Origin：前端同源，不需要 CORS；一旦为 `*`，
    任何网页都能跨域读本机 API（HOST=0.0.0.0 时更糟）。跨域需求走反向代理。 */
 
+/** 采集调度器实例（启动后才有值；/api/health 读它的状态） */
+let collector = null;
+
+const handle = createApp({
+  getQuotes,
+  buildBriefing,
+  getDetail,
+  getMacro,
+  getEvents,
+  getEventHistory,
+  getEventStudy,
+  getCalendar,
+  ttlMs: CACHE_TTL_MS,
+  jobs: () => collector?.status?.() ?? [],
+});
+
 /**
- * 请求处理。抽成独立函数是为了让入口只负责兜底：
- *
- * `async` 回调里抛出的异常会变成未处理的 Promise 拒绝，Node 20+ 直接让
- * **进程退出**。之前 `new URL` 写在 try 外，一个 `GET //% HTTP/1.1` 就能
- * 打挂看板 —— 只补那一处不够，任何一处漏接的异常都会重演。所以这里是
- * 唯一的接住点：同步与异步异常都落到 .catch。
+ * 请求日志在外层包一层：一次请求恰好一条（含 404 / 500 / 维护端点）。
+ * 放这里而不是路由里：路由有十几个分支，逐个加必漏。
  */
-async function handle(req, res) {
-  // 必须在 try 里：`GET //% HTTP/1.1` 会让 new URL 抛 ERR_INVALID_URL，
-  // 而它在外面会穿过 handler 把整个进程带崩（客户端错误 → 400，不是 500）
-  let url;
-  try {
-    url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
-  } catch {
-    res.writeHead(400, { 'Content-Type': 'text/plain' });
-    return res.end('bad request');
-  }
-  // 405 必须在任何分发之前判：原来它只挡静态资源，于是 POST /api/quotes
-  // 会一路落到 /api/quotes 的 GET 分支被当成正常请求处理
-  //
-  // 例外：维护端点要 POST（它确实会写 —— 生成备份、进入维护窗口）。放行范围
-  // 只到这一个前缀，别的路径仍然只读。
-  const methodAllowed =
-    req.method === 'GET' || req.method === 'HEAD' || (req.method === 'POST' && url.pathname.startsWith('/api/maintenance/'));
-  if (!methodAllowed) {
-    res.writeHead(405, { Allow: 'GET, HEAD' });
-    return res.end();
-  }
-  try {
-    if (url.pathname === '/api/quotes') {
-      const force = takeForce(url);
-      const data = await getQuotes({ force });
-      return sendJson(res, 200, data);
-    }
-    if (url.pathname === '/api/briefing') {
-      return sendJson(res, 200, await buildBriefing());
-    }
-    if (url.pathname.startsWith('/api/detail/')) {
-      const id = url.pathname.slice('/api/detail/'.length);
-      const force = takeForce(url);
-      const detail = await getDetail(id, { force });
-      if (!detail) return sendJson(res, 404, { ok: false, error: `未知标的: ${id}` });
-      return sendJson(res, 200, detail);
-    }
-    if (url.pathname === '/api/macro') {
-      const winRaw = url.searchParams.get('window');
-      const win = winRaw === 'all' ? 0 : Math.max(20, Math.min(5000, Number(winRaw) || 250));
-      const freq = url.searchParams.get('freq') === 'week' ? 'week' : 'day';
-      const force = takeForce(url);
-      const data = await getMacro(win, freq, { force });
-      return sendJson(res, 200, data);
-    }
-    if (url.pathname === '/api/events/history') {
-      // 归档只有「今天 + 昨天」两份，超过 48 小时没有数据可给；
-      // 下限 1 小时，避免 hours=0 走进空窗口
-      const hours = Math.max(1, Math.min(48, Number(url.searchParams.get('hours')) || 24));
-      sendJson(res, 200, await getEventHistory({ hours }));
-      return;
-    }
-    if (url.pathname === '/api/events') {
-      const force = takeForce(url);
-      // 默认 200：接入全球源后事件量从 ~14 条涨到 ~130 条，
-      // 120 会把尾部条目静默截掉，而 total 仍报全量，看起来像丢了新闻。
-      const limit = Math.max(10, Math.min(300, Number(url.searchParams.get('limit')) || 200));
-      const data = await getEvents({ force, limit });
-      return sendJson(res, 200, data);
-    }
-    if (url.pathname === '/api/eventstudy') {
-      const force = takeForce(url);
-      const data = await getEventStudy({ force });
-      return sendJson(res, 200, data);
-    }
-    /* 解释读取与事件版本（方案 §8.1）：实现在 src/server/routes.js，
-       入口只保留一次委派，避免又长回「什么都放在这里」的老样子。 */
-    if (await handleExplanationRoutes(url, res, { takeForce })) return;
-    if (url.pathname === '/api/calendar') {
-      const force = takeForce(url);
-      const data = await getCalendar({ force });
-      return sendJson(res, 200, data);
-    }
-    /* 健康状态与市场时段探针：实现在 routes/system.js */
-    if (
-      handleSystemRoutes(url, res, {
-        ttlMs: CACHE_TTL_MS,
-        jobs: () => collector?.status?.() ?? [],
-        method: req.method,
-      })
-    )
-      return;
-    return serveStatic(res, url.pathname);
-  } catch (err) {
-    // 对外只给通用文案：err.message 常带路径 / 内部 URL，等于把实现细节发给浏览器
-    console.error('[http] 未处理异常', url.pathname, err);
-    return sendJson(res, 500, { ok: false, error: '服务器内部错误' });
-  }
-}
+const logged = withRequestLog({ run: handle, log: logger });
 
 const server = http.createServer((req, res) => {
-  handle(req, res).catch((err) => {
-    console.error('[http] 未处理异常', req.method, req.url, err);
+  logged(req, res).catch((err) => {
+    logger.error('http.unhandled', { method: req.method, url: req.url, error: String(err?.message ?? err) });
     // 头已经发出去就没法再改状态码了，只能断开，别让半截响应吊着
     if (res.headersSent) return res.destroy();
     sendText(res, 500, '服务器内部错误');
@@ -146,33 +72,25 @@ const server = http.createServer((req, res) => {
 function startBackground() {
   // 上次进程退出时卡在 running 的可恢复任务，先放回 pending 再开始调度
   const recovered = recoverPendingJobs();
-  if (recovered) console.log(`[bg] 恢复 ${recovered} 个中断任务`);
+  if (recovered) logger.info('jobs.recovered', { count: recovered });
   const started = startCollector({
     jobs: buildDefaultJobs(),
     everyMs: 15_000,
-    // 不能完全静默：上游长期失败时，没有任何日志就只剩「走势断了」这个现象
-    onError: (jobKey, err) => console.error('[bg] 后台任务失败', jobKey, err?.message ?? err),
+    onError: (jobKey, err) => logger.warn('jobs.failed', { jobId: jobKey, error: String(err?.message ?? err) }),
   });
   collector = started.collector;
   return started;
 }
 
-/** 采集调度器实例（启动后才有值；/api/health 读它的状态） */
-let collector = null;
-
 /* 进程级兜底：这是本地看板，宁可带着错误继续服务，也不要因为一次未处理
-   的拒绝就整站消失。日志必须留，否则只剩「页面打不开」这一个现象。 */
-/* 启动期 / 运行期。兜底只该救「已开始服务之后」的意外：端口被占这类启动期
-   错误是该崩就崩的，吞掉会让启动脚本以为成功。（实现见 http.js） */
+   的拒绝就整站消失。日志必须留，否则只剩「页面打不开」这一个现象。
+   启动期错误（端口被占等）该崩就崩，吞掉会让启动脚本以为成功。 */
 let listening = false;
 guardServerErrors(server, { host: HOST, port: PORT }, () => listening);
 
-process.on('unhandledRejection', (err) => {
-  console.error('[process] 未处理的 Promise 拒绝', err);
-});
+process.on('unhandledRejection', (err) => logger.error('process.unhandledRejection', { error: String(err?.stack ?? err) }));
 process.on('uncaughtException', (err) => {
-  console.error('[process] 未捕获异常', err);
-  // 还没开始服务就炸了，说明是启动问题（配置/依赖/端口），不该假装健康
+  logger.error('process.uncaughtException', { error: String(err?.stack ?? err) });
   if (!listening) process.exit(1);
 });
 
@@ -181,15 +99,20 @@ await loadPersistedHistory();
 await seedHistory();
 await loadLlmStore();
 
+const shutdown = installShutdown({ server, stopBackground: () => collector?.stop?.(), log: logger });
+
 server.listen(PORT, HOST, () => {
   // 用实际监听地址：PORT=0 时打印配置值「:0」是错的。LISTENING 那行给程序
   // 消费（集成测试据此拿端口），改中文文案不该让测试挂。
   const a = server.address();
   const port = a && typeof a === 'object' ? a.port : PORT;
   listening = true;
+  logger.info('server.listening', { host: HOST, port, background: !DISABLE_BACKGROUND });
   console.log(`市场看板已启动 → http://${HOST}:${port}`);
   console.log(`LISTENING ${port}`);
   if (DISABLE_BACKGROUND) return console.log('后台抓取已禁用');
   console.log(`刷新间隔 ${CACHE_TTL_MS}ms，历史点上限 ${HISTORY_LIMIT}`);
   startBackground();
 });
+
+export { server, shutdown };

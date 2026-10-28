@@ -194,7 +194,9 @@ describe('维护备份端点', () => {
   it('入口只在 /api/maintenance/ 前缀放行 POST，其它路径仍然 405', async () => {
     const { readFileSync } = await import('node:fs');
     const { fileURLToPath: toPath } = await import('node:url');
-    const src = readFileSync(toPath(new URL('../server.mjs', import.meta.url)), 'utf8');
-    expect(src).toContain("url.pathname.startsWith('/api/maintenance/')");
+    // 405 守卫与放行前缀在 app.js（入口不再持有路由表）
+    const src = readFileSync(toPath(new URL('../src/server/app.js', import.meta.url)), 'utf8');
+    expect(src).toContain("url.pathname.startsWith(WRITE_PATHS)");
+    expect(src).toContain("WRITE_PATHS = '/api/maintenance/'");
   });
 });
