@@ -27,22 +27,21 @@ export function weekdayCN(dateStr) {
 export function calendarBlockHTML(cal) {
   const upcoming = (cal?.upcoming ?? []).slice(0, 8);
   if (!upcoming.length) {
-    return '<div class="chart-empty">暂无日历数据</div>';
+    return html`<div class="chart-empty">暂无日历数据</div>`.toString();
   }
   const today = cal.today;
-  return `<div class="cal-list">${upcoming
-    .map((e) => {
-      const isToday = e.date === today;
-      const days = Math.round((new Date(`${e.date}T00:00:00+08:00`) - new Date(`${today}T00:00:00+08:00`)) / 86400000);
-      const when = isToday ? '今天' : days === 1 ? '明天' : `${days} 天后`;
-      return `<div class="cal-item${isToday ? ' today' : ''}">
+  const items = upcoming.map((e) => {
+    const isToday = e.date === today;
+    const days = Math.round((new Date(`${e.date}T00:00:00+08:00`) - new Date(`${today}T00:00:00+08:00`)) / 86400000);
+    const when = isToday ? '今天' : days === 1 ? '明天' : `${days} 天后`;
+    return html`<div class="cal-item${isToday ? ' today' : ''}">
         <span class="cal-date"><b>${e.date.slice(5)}</b><em>${weekdayCN(e.date)}</em></span>
-        <span class="cal-kind k-${e.kind}">${esc(KIND_LABEL[e.kind] ?? e.kind)}</span>
-        <span class="cal-title">${esc(e.title)}</span>
-        <span class="cal-time">${esc(e.time)}<em>${esc(when)}</em></span>
+        <span class="cal-kind k-${e.kind}">${KIND_LABEL[e.kind] ?? e.kind}</span>
+        <span class="cal-title">${e.title}</span>
+        <span class="cal-time">${e.time}<em>${when}</em></span>
       </div>`;
-    })
-    .join('')}</div>`;
+  });
+  return html`<div class="cal-list">${items}</div>`.toString();
 }
 
 export function eventItemHTML(ev) {
