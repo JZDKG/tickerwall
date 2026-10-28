@@ -16,7 +16,6 @@ import {
   gradeFreshness,
   humanAge,
 } from '../domain/market-hours.js';
-import { createHistoryRing } from '../domain/history-ring.js';
 import { MOVE_SUSPECT_PCT } from '../domain/instruments.js';
 import {
   getDb,
@@ -108,6 +107,12 @@ export {
   findInstrument,
 };
 
+import { HISTORY_LIMIT, ring, pushHistory } from '../db/quotes-storage.js';
+
+// 走势存储已下沉到 db/quotes-storage.js；转发保持导出面不变
+// （server.mjs 启动时调 loadPersistedHistory、测试里 resetRuntimeState 都从这取）
+export { HISTORY_LIMIT, ring, pushHistory };
+
 import { DATA_DIR } from '../paths.js';
 import path from 'node:path';
 import fsp from 'node:fs/promises';
@@ -121,7 +126,6 @@ export const DAILY_CACHE_DIR = path.join(DATA_DIR, 'daily');
 
 export const CACHE_TTL_MS = Number(process.env.CACHE_TTL_MS || 15000);
 export const FETCH_TIMEOUT_MS = DEFAULT_FETCH_TIMEOUT_MS;
-export const HISTORY_LIMIT = 240;
 
 /**
  * 日线落盘缓存。
@@ -163,13 +167,6 @@ export function dailyCacheFile(id) {
  * 走势历史（内存环形缓冲 + 落盘，重启后走势不断档）
  * ------------------------------------------------------------------ */
 
-// 分时环形缓冲：结构与两条写入护栏都在 domain/history-ring.js，这里只持唯一实例
-export const ring = createHistoryRing({ limit: HISTORY_LIMIT });
-
-/** 兼容层：保留原函数名与签名，调用点一行未改 */
-export function pushHistory(id, price, t = Date.now(), decimals = 2, meta = {}) {
-  return ring.push(id, price, t, decimals, meta);
-}
 export const lastGood = new Map(); // id -> 最近一次成功快照
 
 
