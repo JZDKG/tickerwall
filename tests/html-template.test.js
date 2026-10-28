@@ -271,7 +271,15 @@ describe('棘轮：innerHTML 里的裸插值', () => {
    */
   const MIGRATED = new Set();
 
-  /** 全站基线。这个数字只允许变小，不许变大。 */
+  /**
+   * 全站基线。这个数字只允许变小，不许变大。
+   *
+   * 统计口径的局限（必须说清，否则数字看着精确其实不是）：
+   * 只数 `innerHTML = \`…\`` 这种**直接赋值**的模板。像 calendarBlockHTML
+   * 原先那种 `return \`…\`` 的模板不在计数里 —— 所以要配合「已迁移文件
+   * 必须为 0」来守，两者合起来才有意义。195 是 `innerHTML` 这一类当前
+   * 的实测值（detail 82 / macro 45 / events 33 / map 28 / 其余 7）。
+   */
   const BASELINE = 195;
 
   function bareInterpolations(code) {
