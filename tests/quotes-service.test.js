@@ -513,6 +513,26 @@ describe('seedFrom / seedPoints / seedHistory', () => {
   });
 });
 
+describe('离线模式：关掉后台就不补种（方案 E02）', () => {
+  it('DISABLE_BACKGROUND=1 时 seedHistory 一个点都不抓', async () => {
+    const inst = { id: 'seed-offline', seed: { kind: 'binance', symbol: 'BTCUSDT', note: '参考形态' } };
+    const restore = withInst(inst);
+    const prev = process.env.DISABLE_BACKGROUND;
+    process.env.DISABLE_BACKGROUND = '1';
+    const before = fetchRaw.mock.calls.length;
+    try {
+      await seedHistory();
+      // 补种会打外网；离线模式下必须一次都不打，也不能写进环形缓冲
+      expect(fetchRaw.mock.calls.length).toBe(before);
+      expect(ring.get('seed-offline')).toBeUndefined();
+    } finally {
+      if (prev === undefined) delete process.env.DISABLE_BACKGROUND;
+      else process.env.DISABLE_BACKGROUND = prev;
+      restore();
+    }
+  });
+});
+
 /* ------------------------------ 持久化 ------------------------------ */
 
 describe('历史持久化与 SQLite 迁移', () => {

@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { loadFixtures, makeReplayFetcher } from '../src/server/providers/replay.js';
+import { loadFixtures, makeReplayFetcher, requestKey, canonicalUrl, headerSignature } from '../src/server/providers/replay.js';
 
 const REPO = fileURLToPath(new URL('..', import.meta.url));
 
@@ -102,15 +102,41 @@ describe('上游回放：fetcher 行为', () => {
     expect(fetcher.stats.recorded).toBe(1);
   });
 
-  it('POST 的键含 body 长度，避免同名不同体互相覆盖', async () => {
+  it('POST 的键含 body 摘要，避免同名不同体互相覆盖', async () => {
     const f = path.join(dir, 'fx2.jsonl');
+    // 同长度、不同内容：旧实现（按长度）会把两者撞成一个键
     writeFixture(f, [
-      { key: 'POST https://a.test/p #4', url: 'https://a.test/p', status: 200, b64: b64('short') },
-      { key: 'POST https://a.test/p #20', url: 'https://a.test/p', status: 200, b64: b64('longer body here') },
+      { key: requestKey('POST', 'https://a.test/p', 'aaaa'), url: 'https://a.test/p', status: 200, b64: b64('short') },
+      { key: requestKey('POST', 'https://a.test/p', 'bbbb'), url: 'https://a.test/p', status: 200, b64: b64('other') },
     ]);
     const fetcher = makeReplayFetcher({ replay: f });
-    expect(await (await fetcher('https://a.test/p', { method: 'POST', body: 'abcd' })).text()).toBe('short');
-    expect(await (await fetcher('https://a.test/p', { method: 'POST', body: 'x'.repeat(20) })).text()).toBe('longer body here');
+    expect(await (await fetcher('https://a.test/p', { method: 'POST', body: 'aaaa' })).text()).toBe('short');
+    expect(await (await fetcher('https://a.test/p', { method: 'POST', body: 'bbbb' })).text()).toBe('other');
+  });
+
+  it('查询串顺序不影响键（同一组参数只算一个请求）', () => {
+    expect(canonicalUrl('https://a.test/x?b=2&a=1')).toBe(canonicalUrl('https://a.test/x?a=1&b=2'));
+    expect(requestKey('GET', 'https://A.TEST/x#frag')).toBe('GET https://a.test/x');
+  });
+
+  it('凭据头只记「有没有」，绝不把值写进键', () => {
+    const key = requestKey('GET', 'https://a.test/x', null, { Authorization: 'Bearer SUPER-SECRET' });
+    expect(key).toContain('a:present');
+    expect(key).not.toContain('SUPER-SECRET');
+    // cookie 同理
+    expect(requestKey('GET', 'https://a.test/x', null, { cookie: 'sid=abc' })).not.toContain('abc');
+  });
+
+  it('语义头（referer / user-agent）进摘要：换 UA 就是另一个请求', () => {
+    const a = requestKey('GET', 'https://a.test/x', null, { 'user-agent': 'A' });
+    const b = requestKey('GET', 'https://a.test/x', null, { 'user-agent': 'B' });
+    expect(a).not.toBe(b);
+    expect(a).toMatch(/ h:[0-9a-f]{12}$/);
+    expect(headerSignature(null)).toEqual({ digest: '', credential: false });
+  });
+
+  it('回放文件不存在时立刻失败，而不是变成一个空回放', () => {
+    expect(() => makeReplayFetcher({ replay: path.join(dir, 'missing.jsonl') })).toThrow(/回放文件不存在/);
   });
 });
 

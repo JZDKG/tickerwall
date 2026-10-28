@@ -1,36 +1,56 @@
-name: CI
+# CI：方案 E03 的第一批门禁（基础检查 → 离线测试 → 构建一致性）
+#
+# 设计取舍：
+#   · 只用 GitHub 托管 runner，不连真网络数据源 —— 上游断连不该阻塞代码提交；
+#     真实来源探活属于单独的手动/定时作业（见 docs 方案 §6.3）。
+#   · 测试进程统一 `DISABLE_BACKGROUND=1` + 临时数据目录，避免 CI 里偷偷抓外网。
+#   · 构建用 `verify:build` 而不是 `build`：它比对文件集合与摘要，能抓出
+#     「改了源码忘了重新构建」「旧产物残留」这两类问题。
+name: ci
 
 on:
   push:
+    branches: [main]
   pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['24.21.0']
+    env:
+      DISABLE_BACKGROUND: '1'
+      TZ: Asia/Shanghai
     steps:
       - uses: actions/checkout@v4
 
+      - name: 读取 .nvmrc
+        id: nvmrc
+        run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: ${{ steps.nvmrc.outputs.version }}
           cache: npm
 
-      - run: npm ci
+      - name: 环境预检
+        run: node tools/doctor.mjs
 
-      # 语法闸门：先挡住明显的解析错误，比等测试报错快
-      - name: 语法检查
-        run: |
-          node --check server.mjs
-          find src tests -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: 安装依赖
+        run: npm ci
 
-      # 1069 项测试 + 分层覆盖率门槛（vite.config.js 里的 thresholds：
-      # 全局基线只许升不许降，核心层 ≥95%）
-      - name: 测试与覆盖率
+      - name: 单元与集成测试
+        run: npm test
+
+      - name: 覆盖率门禁
         run: npm run test:cov
 
-      # 裸插值棘轮 = 0；raw() 白名单；SafeHtml 契约；main.js 副作用引入。
-      # 这些都在 tests/html-template.test.js 里，随上面的 vitest 跑，不重复。
-      #
-      # 单独一步只是为了让失败时日志里一眼看到「是模板防线挂了」
-      - name: 模板防线（单独列出，失败时更醒目）
-        run: npx vitest run tests/html-template.test.js
+      - name: 构建一致性
+        run: npm run verify:build

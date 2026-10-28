@@ -13,12 +13,96 @@
  * ================================================================== */
 
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 
-/** 按方法 + URL 归一化键；body 参与哈希以避免同名不同体 */
-function keyOf(method, url, body) {
-  const m = String(method ?? 'GET').toUpperCase();
-  return body == null ? `${m} ${url}` : `${m} ${url} #${String(body).length}`;
+/**
+ * 键的三段：`METHOD 规范化URL [b:body摘要] [h:语义头摘要] [a:present]`
+ *
+ * 为什么不是「body 长度」：长度相同的不同请求体会撞同一个键，回放时把 A 的
+ * 响应当成 B 的响应喂回去 —— 这种错不会抛异常，只会让结论悄悄错掉。
+ *
+ * 为什么不把整个 header 都算进去：`cookie`、`authorization` 这类凭据绝不能进
+ * 夹具（会随仓库流出）。所以只把**影响响应内容**的头（accept / content-type /
+ * referer / user-agent / x-requested-with）折成摘要，凭据只记「有没有」。
+ */
+
+/** 参与语义摘要的请求头（小写）。加新头前先确认它真的会改变响应内容。 */
+const SEMANTIC_HEADERS = ['accept', 'content-type', 'referer', 'user-agent', 'x-requested-with'];
+/** 只记存在性、绝不记值的凭据头 */
+const CREDENTIAL_HEADERS = ['authorization', 'cookie', 'x-api-key'];
+
+function sha(s, len = 16) {
+  return createHash('sha256').update(s).digest('hex').slice(0, len);
 }
+
+/**
+ * URL 规范化：去掉 fragment、统一大小写、排序查询串。
+ * 不排序的话，同一组参数换个顺序就会变成两次不同请求 —— 回放文件里全是重复样本。
+ */
+export function canonicalUrl(url) {
+  const raw = String(url ?? '');
+  try {
+    const u = new URL(raw);
+    u.hash = '';
+    u.protocol = u.protocol.toLowerCase();
+    u.hostname = u.hostname.toLowerCase();
+    const pairs = [...u.searchParams.entries()].sort((a, b) => (a[0] === b[0] ? (a[1] < b[1] ? -1 : 1) : a[0] < b[0] ? -1 : 1));
+    const qs = new URLSearchParams(pairs).toString();
+    return `${u.origin}${u.pathname}${qs ? `?${qs}` : ''}`;
+  } catch {
+    // 不是合法 URL（测试里的相对路径等）就原样用，别把键搞炸
+    return raw;
+  }
+}
+
+/** 请求体摘要：字符串、Buffer、URLSearchParams、普通对象都归一成同一串再哈希 */
+function bodyDigest(body) {
+  if (body == null || body === '') return '';
+  let text;
+  if (typeof body === 'string') text = body;
+  else if (Buffer.isBuffer(body)) text = body.toString('base64');
+  else if (body instanceof URLSearchParams) text = body.toString();
+  else if (body instanceof ArrayBuffer) text = Buffer.from(body).toString('base64');
+  else if (ArrayBuffer.isView(body)) text = Buffer.from(body.buffer, body.byteOffset, body.byteLength).toString('base64');
+  else {
+    try {
+      text = JSON.stringify(body);
+    } catch {
+      text = String(body);
+    }
+  }
+  return sha(text);
+}
+
+/** 语义头摘要 + 凭据存在性 */
+export function headerSignature(headers) {
+  if (!headers) return { digest: '', credential: false };
+  const h = headers instanceof Map ? Object.fromEntries(headers) : headers;
+  const low = {};
+  for (const [k, v] of Object.entries(h ?? {})) low[String(k).toLowerCase()] = String(v);
+  const parts = SEMANTIC_HEADERS.filter((k) => low[k] != null && low[k] !== '').map((k) => `${k}=${low[k]}`);
+  return {
+    digest: parts.length ? sha(parts.join('\n'), 12) : '',
+    credential: CREDENTIAL_HEADERS.some((k) => low[k] != null && low[k] !== ''),
+  };
+}
+
+/**
+ * 请求键。无 body、无语义头的 GET 仍是一句 `GET url` —— 夹具保持可读，
+ * 老录制文件不用重写。
+ */
+export function requestKey(method, url, body, headers) {
+  const m = String(method ?? 'GET').toUpperCase();
+  const parts = [`${m} ${canonicalUrl(url)}`];
+  const b = bodyDigest(body);
+  if (b) parts.push(`b:${b}`);
+  const { digest, credential } = headerSignature(headers);
+  if (digest) parts.push(`h:${digest}`);
+  if (credential) parts.push('a:present');
+  return parts.join(' ');
+}
+
+const keyOf = requestKey;
 
 /** 读 JSONL 录制文件 → Map<key, { status, b64 }> */
 export function loadFixtures(file) {
@@ -55,12 +139,21 @@ function makeResponse({ status, b64 }) {
  * @param {Function} [opts.fallback] 录制模式下的真实 fetch
  */
 export function makeReplayFetcher({ replay, record, fallback }) {
+  /**
+   * 指定了回放文件却读不到 → 立刻失败。
+   *
+   * 静默变成空 Map 的后果是：跑起来一切正常，直到第一个请求才报「缺响应」，
+   * 而那时你已经在看一份看起来跑通的报告了。
+   */
+  if (replay && !existsSync(replay)) {
+    throw new Error(`回放文件不存在：${replay}`);
+  }
   const fixtures = loadFixtures(replay);
   const real = fallback ?? ((...args) => fetch(...args));
   const stats = { hit: 0, miss: 0, recorded: 0 };
 
   const fetcher = async (url, opts = {}) => {
-    const key = keyOf(opts.method, url, opts.body);
+    const key = requestKey(opts.method, url, opts.body, opts.headers);
 
     if (replay) {
       const hit = fixtures.get(key);
@@ -78,7 +171,15 @@ export function makeReplayFetcher({ replay, record, fallback }) {
     if (record) {
       appendFileSync(
         record,
-        `${JSON.stringify({ key, method: opts.method ?? 'GET', url, status: res.status, b64: buf.toString('base64') })}\n`,
+        `${JSON.stringify({
+          key,
+          method: opts.method ?? 'GET',
+          url: canonicalUrl(url),
+          bodyDigest: bodyDigest(opts.body) || null,
+          headerDigest: headerSignature(opts.headers).digest || null,
+          status: res.status,
+          b64: buf.toString('base64'),
+        })}\n`,
         'utf8',
       );
       stats.recorded += 1;

@@ -345,3 +345,34 @@ SQLite 提供 Online Backup API，也支持 `VACUUM INTO`。后续在线备份�
 - [全球地图方案](worldmap-situation-room-plan.md)：地图继续消费同一份标准数据和解释，不独立再建采集与归因链路。
 
 本轮交付为工程方案。审查中已有统计和服务相关的 92 项测试通过；干净环境 CI、浏览器回归、发布演练和恢复演练是上述实施任务的验收项，不能用这 92 项测试替代。
+
+## 13 实施状态（滚动更新）
+
+> 本节按实际代码与命令输出填写，不按计划意图填写。每条「已完成」都要能指到文件或命令。
+> 更新规则：交付一项、跑一次 `npm test` / `npm run test:cov` / `npm run verify:build`，再改这里。
+
+### 13.1 E01–E08
+
+| 编号 | 状态 | 已交付 | 验收证据 | 剩余 |
+| --- | --- | --- | --- | --- |
+| E01 Node、配置与 doctor | **已完成** | [`.nvmrc`](../.nvmrc) 固定 24.21.0；`engines` 同步 `>=24`；[`tools/doctor.mjs`](../tools/doctor.mjs) 六项预检（版本 / node:sqlite / 配置区间 / 数据目录可写 / 静态产物 / 运行时依赖），`--json` 给 CI；[`config.js`](../src/server/config.js) 在 import 时做版本守卫（失败 exit 78 并给 nvm 指引）；[`启动看板.command`](../启动看板.command) 先跑 doctor，只放行 0 与 2 | `node tools/doctor.mjs` → 7 ok / 0 warn / 0 error；`.nvmrc` 与 `engines` 一致由 doctor 断言 | 无（多平台验证留给 CI 矩阵） |
+| E02 离线夹具、隔离启动、请求键 | **进行中** | ① 回放键改为「方法 + 规范化 URL + body 摘要 + 语义头摘要 + 凭据存在性」，凭据值永不入键（[`replay.js`](../src/server/providers/replay.js)），补齐 6 条单测；② 契约快照从 `/tmp` 迁到 [`tests/fixtures/golden/`](../tests/fixtures/golden/)，缺文件直接失败（不再 `describe.skip`）；③ HTTP 隔离断言改为**内容摘要**比对，干净 checkout 也成立；④ `DISABLE_BACKGROUND=1` 时 `seedHistory()` 不联网（原来在 `listen()` 前补种） | `tests/services.test.js`（29）、`tests/golden-contract.test.js`（12）、`tests/http-integration.test.js`（17）、`tests/quotes-service.test.js`（40） | 固定时钟与临时数据目录尚未覆盖全部测试；子进程环境变量白名单只做到「不遗传模型凭据」这一条 |
+| E03 CI、vendor 核对、发布包冒烟 | **进行中** | [`tools/verify-build.mjs`](../tools/verify-build.mjs)：两个独立临时目录各构建一次，比对文件集合与 sha256，再与 `public/vendor/` 逐文件比；[`.github/workflows/ci.yml`](../.github/workflows/ci.yml)：doctor → `npm ci` → `npm test` → `test:cov` → `verify:build` | `npm run verify:build` → 2 个文件 / 1115.6 KB，两次构建摘要一致且与入库产物一致 | 发布包（白名单收集 + 新目录启动冒烟）未做 |
+| E04 数据契约与来源注册表 | 未开始 | — | — | JSON Schema（Observation / DataQuality / 解释 API）、来源注册表、契约测试 |
+| E05 迁移、导入、flush、备份恢复 | 未开始 | — | — | `schema_migrations`、旧 JSONL 导入清单、`flush`/`closeDb`、`tools/backup.mjs`、`tools/restore.mjs` |
+| E06 调度、请求合并、质量状态 | 未开始 | — | — | 除报价外的同键合并、按来源频率调度、`collection_jobs` 可恢复任务 |
+| E07 客户端请求层与浏览器测试 | 未开始 | — | — | `src/client/shared/api.js`、`query-cache.js`、视图迁移、Playwright 四条路径 |
+| E08 日志、健康、退出、单容器 | 未开始 | — | — | 结构化日志、就绪/数据健康分离、SIGTERM 排空、Dockerfile |
+
+### 13.2 覆盖率推进（目标 95%）
+
+2026-10-29 实测（`npm run test:cov`）：**全站 73.08% statements / 64.89% branches / 73.26% functions / 73.64% lines**。
+
+| 范围 | 实测 | 门槛 | 说明 |
+| --- | --- | --- | --- |
+| 全站 | 73.08 / 64.89 / 73.26 / 73.64 | 73 / 64 / 73 / 73 | 目标 95，按目录分批抬 |
+| `src/server/**` | 92.94 / 80.53 / 93.58 / 94.65 | 92 / 80 / 93 / 94 | 解释服务、`jobs/index`、`providers/index`、`stats/index` 是主要缺口 |
+| `src/client/shared/**` | 98.9 / 98.6 / 100 / 100 | 97 / 97 / 99 / 99 | 已达 95 |
+| `src/client/views/**` | 51.7 / 48.1 / 52.3 / 51.0 | 50 / 46 / 50 / 49 | 距 95 最远，需要按视图逐个补「渲染 + 交互」测试 |
+
+推进顺序：先把 `src/server/**` 抬回 96/86/96/98（补 5 个缺口模块），再攻 `views/**`（DOM 渲染 + 交互断言，不收「跑通不断言」的面子测试）。

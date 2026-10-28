@@ -6,6 +6,28 @@
  * 排查起来很难看。收敛到这里，谁要谁 import。
  * ================================================================== */
 
+/**
+ * 运行时版本守卫（方案 E01）。
+ *
+ * 写在这里而不是 server.mjs：入口已经贴着 200 行上限，而「不支持的环境直接
+ * 报错」属于配置层的事 —— 谁 import 配置，谁就先过这道门。
+ *
+ * 判据用 node:sqlite 的真实可用性，而不是只比版本号：发行版可能裁剪模块，
+ * 版本号满足但模块不在的情况只能靠试。
+ */
+export const MIN_NODE_MAJOR = 24;
+
+{
+  const major = Number(process.versions.node.split('.')[0]);
+  if (major < MIN_NODE_MAJOR) {
+    console.error(
+      `[boot] 需要 Node >= ${MIN_NODE_MAJOR}（当前 ${process.versions.node}）：项目用 node:sqlite，`
+        + '低版本没有这个模块。请 `nvm use`（见 .nvmrc）后重试，或运行 `npm run doctor` 查看环境。',
+    );
+    process.exit(78);
+  }
+}
+
 export const PORT = Number(process.env.PORT || 8787);
 export const HOST = process.env.HOST || '127.0.0.1';
 

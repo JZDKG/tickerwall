@@ -21,7 +21,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawn } from 'node:child_process';
 import net from 'node:net';
-import { mkdtempSync, rmSync, statSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -95,15 +96,25 @@ afterAll(async () => {
 
 describe('测试隔离', () => {
   it('不碰用户真实的 data/kanban.db', async () => {
+    /**
+     * 方案 E02：不能依赖「真实库的 mtime 没变」当隔离证据 —— 干净 checkout 里
+     * 这个文件根本不存在（statSync 会抛），而它存在时 mtime 也不是可靠判据
+     * （只读打开同样可能刷新 atime/mtime 精度）。
+     *
+     * 改成两条确定的事实：
+     *   1. 仓库 data/kanban.db 的**内容摘要**没变（不存在就断言仍然不存在）；
+     *   2. 子进程用的是临时目录里的库（下一条用例反证）。
+     */
     const realDb = path.join(REPO, 'data', 'kanban.db');
-    const before = statSync(realDb).mtimeMs;
-    // 打几个会初始化存储的端点
+    const digestOf = (f) => {
+      if (!existsSync(f)) return null;
+      return createHash('sha256').update(readFileSync(f)).digest('hex');
+    };
+    const before = digestOf(realDb);
     await fetch(`${base}/api/health`);
     await fetch(`${base}/api/_market`);
     await new Promise((r) => setTimeout(r, 200));
-    const after = statSync(realDb).mtimeMs;
-    // 允许相等（没被写过）；一旦被子进程写过，mtime 必然变
-    expect(after).toBe(before);
+    expect(digestOf(realDb)).toBe(before);
   });
 
   it('临时数据目录里确实生成了库文件', () => {

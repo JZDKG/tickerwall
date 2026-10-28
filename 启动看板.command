@@ -34,6 +34,17 @@ if [ ! -d node_modules ] && needs_runtime_deps; then
   fi
 fi
 
+# 环境预检（方案 E01）：版本 / node:sqlite / 配置 / 数据目录 / 静态产物
+node tools/doctor.mjs >/tmp/market-kanban-doctor.log 2>&1
+doctor_code=$?
+# 0 = 全过，2 = 只有警告（可以继续），其余 = 有 error
+if [ "${doctor_code}" -ne 0 ] && [ "${doctor_code}" -ne 2 ]; then
+  echo "环境预检未通过（exit ${doctor_code}）："
+  cat /tmp/market-kanban-doctor.log
+  read -r -p "按回车键关闭…" _
+  exit 1
+fi
+
 if curl -s -m 1 -o /dev/null "${URL}api/health"; then
   echo "看板已在运行，直接打开页面。"
 else

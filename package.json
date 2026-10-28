@@ -23,10 +23,13 @@
     "lab": "node tools/layout-lab.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:cov": "vitest run --coverage"
+    "test:cov": "vitest run --coverage",
+    "doctor": "node tools/doctor.mjs",
+    "verify:build": "node tools/verify-build.mjs"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=24.0.0",
+    "npm": ">=10"
   },
   "dependencies": {},
   "devDependencies": {

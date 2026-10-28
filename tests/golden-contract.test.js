@@ -6,23 +6,32 @@
  * 后者是拆服务时最典型的伤害：服务照常起、页面照常渲染，只是某几个
  * 标的/字段默默变空。
  *
- * 快照缺失时整组跳过（在干净的 checkout 里没有 /tmp 基线是正常的）。
+ * 快照来自仓库内 `tests/fixtures/golden/`（见该目录 README），不是 /tmp：
+ * 缺文件直接失败 —— 静默跳过会让「本机通过」被误当成「干净 checkout 通过」。
  * ================================================================== */
 
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 
-const DIR = process.env.GOLDEN_DIR || '/tmp/golden-baseline';
+const DIR = process.env.GOLDEN_DIR || new URL('./fixtures/golden', import.meta.url).pathname;
 
 const load = (name) => {
   const f = `${DIR}/${name}.json`;
-  return existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : null;
+  if (!existsSync(f)) {
+    throw new Error(`缺少冻结快照 ${f}（契约测试不允许静默跳过，见 tests/fixtures/golden/README.md）`);
+  }
+  return JSON.parse(readFileSync(f, 'utf8'));
 };
 
-const hasGolden = existsSync(`${DIR}/quotes.json`);
-const maybe = hasGolden ? describe : describe.skip;
+describe('端点契约：冻结快照本身可用', () => {
+  it('tests/fixtures/golden 下有 quotes.json，且带录制时间', () => {
+    const data = load('quotes');
+    expect(Array.isArray(data.items)).toBe(true);
+    expect(Number.isFinite(Date.parse(data.generatedAt))).toBe(true);
+  });
+});
 
-maybe('端点契约：/api/quotes', () => {
+describe('端点契约：/api/quotes', () => {
   const data = load('quotes');
 
   it('23 个标的全部 ok，且没有 ReferenceError 的痕迹', () => {
@@ -57,7 +66,7 @@ maybe('端点契约：/api/quotes', () => {
   });
 });
 
-maybe('端点契约：/api/detail/*', () => {
+describe('端点契约：/api/detail/*', () => {
   for (const name of ['detail-btc', 'detail-gold-cn']) {
     it(`${name}：日线、分时、统计都在，且多源错误里没有 ReferenceError`, () => {
       const d = load(name);
@@ -74,7 +83,7 @@ maybe('端点契约：/api/detail/*', () => {
   }
 });
 
-maybe('端点契约：/api/macro', () => {
+describe('端点契约：/api/macro', () => {
   const data = load('macro');
 
   it('13 个品种全部 ok（漏 import 会让某个品种静默失败）', () => {
@@ -91,7 +100,7 @@ maybe('端点契约：/api/macro', () => {
   });
 });
 
-maybe('端点契约：/api/calendar 与 /api/eventstudy', () => {
+describe('端点契约：/api/calendar 与 /api/eventstudy', () => {
   it('日历：FOMC 与 BLS 两类事件都在，且没有源级错误', () => {
     const c = load('calendar');
     expect(c.events.length).toBeGreaterThan(10);
@@ -115,7 +124,7 @@ maybe('端点契约：/api/calendar 与 /api/eventstudy', () => {
   });
 });
 
-maybe('端点契约：/api/briefing', () => {
+describe('端点契约：/api/briefing', () => {
   it('隔夜复盘有真实基准与条目（不是 collecting 兜底）', () => {
     const b = load('briefing');
     expect(b.ok).toBe(true);

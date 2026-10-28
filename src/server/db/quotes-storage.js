@@ -118,6 +118,14 @@ export async function seedFrom(s) {
 }
 
 export async function seedHistory() {
+  /**
+   * 离线模式（DISABLE_BACKGROUND=1）不补种。
+   *
+   * 补种会打外网，而它原来在 `listen()` **之前**被调用 —— 也就是说，即使关掉
+   * 后台任务，进程仍然会先联网抓一轮才开门。集成测试与断网环境都要求
+   * 「关掉后台 = 不联网」，所以这道门必须在这里，而不是入口那次调用上。
+   */
+  if (process.env.DISABLE_BACKGROUND === '1') return;
   const targets = INSTRUMENTS.filter((i) => i.seed && !ring.has(i.id));
   await Promise.all(
     targets.map(async (inst) => {
