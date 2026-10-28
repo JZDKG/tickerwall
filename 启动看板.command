@@ -8,13 +8,13 @@ PORT="${PORT:-8787}"
 URL="http://127.0.0.1:${PORT}/"
 
 if ! command -v node >/dev/null 2>&1; then
-  echo "找不到 node，请先安装 Node.js 20 或更高版本。"
+  echo "找不到 node，请先安装 Node.js 24 或更高版本（见 .nvmrc）。"
   read -r -p "按回车键关闭…" _
   exit 1
 fi
 
-# 运行时依赖检查：package.json 的 dependencies 非空、但 node_modules 不在时先装。
-# 现在一个运行时依赖都没有，所以这段平时不会触发；将来加了依赖也不用改说明文档。
+# 运行时依赖：必须先于 doctor 执行 —— doctor 会因为「声明了依赖但没装」直接判
+# 环境不合格，顺序颠倒的结果是「新机器永远装不上」。
 needs_runtime_deps() {
   node -e 'const p=require("./package.json");process.exit(Object.keys(p.dependencies||{}).length?0:1)' >/dev/null 2>&1
 }
@@ -34,7 +34,7 @@ if [ ! -d node_modules ] && needs_runtime_deps; then
   fi
 fi
 
-# 环境预检（方案 E01）：版本 / node:sqlite / 配置 / 数据目录 / 静态产物
+# 环境预检（方案 E01）：版本 / node:sqlite / 配置 / 数据目录 / 静态产物 / 运行时依赖
 node tools/doctor.mjs >/tmp/market-kanban-doctor.log 2>&1
 doctor_code=$?
 # 0 = 全过，2 = 只有警告（可以继续），其余 = 有 error

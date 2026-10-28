@@ -6,9 +6,10 @@
  * ================================================================== */
 
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { buildHealth, checkReadiness } from '../src/server/observability/health.js';
 import { handleSystemRoutes } from '../src/server/routes/system.js';
@@ -122,5 +123,37 @@ describe('调试端点开启时（debug=true）', () => {
     expect(res.body.local).toBeNull();
     // 「不知道开没开」和「确定没开」是两件事，未注册的市场只能是前者
     expect(res.body.open).toBeNull();
+  });
+});
+
+/* ================================================================== *
+ * 启动脚本与 doctor 的顺序契约（真实踩到的坑）
+ *
+ * doctor 把「声明了运行时依赖但没装」判为 error；如果启动脚本先跑 doctor
+ * 再装依赖，新机器会永远卡在「环境预检未通过」——这个顺序必须钉住。
+ * ================================================================== */
+describe('启动脚本：依赖安装必须先于 doctor', () => {
+  // 用 fileURLToPath 解码中文文件名（URL.pathname 会给百分号编码）
+  const script = () => readFileSync(fileURLToPath(new URL('../启动看板.command', import.meta.url)), 'utf8');
+
+  it('npm ci 出现在 doctor 之前', () => {
+    const text = script();
+    const installAt = text.indexOf('npm ci --omit=dev');
+    const doctorAt = text.indexOf('node tools/doctor.mjs');
+    expect(installAt).toBeGreaterThan(-1);
+    expect(doctorAt).toBeGreaterThan(-1);
+    expect(installAt).toBeLessThan(doctorAt);
+  });
+
+  it('提示的 Node 大版本与 .nvmrc 一致（不是过期的 20）', () => {
+    const text = script();
+    const nvmrc = readFileSync(fileURLToPath(new URL('../.nvmrc', import.meta.url)), 'utf8').trim();
+    const major = nvmrc.split('.')[0];
+    expect(text).toContain(`Node.js ${major}`);
+    expect(text).not.toContain('Node.js 20');
+  });
+
+  it('doctor 的警告（exit 2）不会拦住启动', () => {
+    expect(script()).toMatch(/-ne 0.+\n?.*-ne 2/);
   });
 });
