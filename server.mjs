@@ -7,9 +7,8 @@
  *
  * 启动：node server.mjs   （默认 http://127.0.0.1:8787）
  */
-import { MARKET_PROFILES, localClock, isMarketOpen } from './src/server/domain/market-hours.js';
 import { takeForce, sendJson, sendText, serveStatic, guardServerErrors } from './src/server/http.js';
-import { PORT, HOST, DEBUG_API, DISABLE_BACKGROUND } from './src/server/config.js';
+import { PORT, HOST, DISABLE_BACKGROUND } from './src/server/config.js';
 import { getEvents, getEventHistory, loadLlmStore } from './src/server/services/events.service.js';
 import {
   CACHE_TTL_MS,
@@ -25,6 +24,7 @@ import { getMacro } from './src/server/services/macro.service.js';
 import { getCalendar, getEventStudy } from './src/server/services/calendar.service.js';
 import { handleExplanationRoutes } from './src/server/routes.js';
 import { startCollector } from './src/server/jobs/collector.js';
+import { handleSystemRoutes } from './src/server/routes/system.js';
 import { buildDefaultJobs } from './src/server/jobs/index.js';
 import http from 'node:http';
 import path from 'node:path';
@@ -110,26 +110,8 @@ async function handle(req, res) {
       const data = await getCalendar({ force });
       return sendJson(res, 200, data);
     }
-    // 调度状态也在这里暴露：没有它，只能靠「页面像不像在动」判断后台还活着
-    if (url.pathname === '/api/health') {
-      return sendJson(res, 200, { ok: true, uptime: Math.round(process.uptime()), ttlMs: CACHE_TTL_MS, jobs: collector?.status?.() ?? [] });
-    }
-    // 只读自检：给时区/交易时段判断留一个可断言的入口。
-    // isMarketOpen 是模块内函数，外部调不到，改时段逻辑时没法验证对错。
-    if (url.pathname === '/api/_market') {
-      // 调试端点默认关闭（见 config.js）：它会把内部市场配置整份吐出来
-      if (!DEBUG_API) return sendJson(res, 404, { ok: false, error: 'not found' });
-      const m = url.searchParams.get('m') || 'us-index';
-      const t = new Date(url.searchParams.get('t') ?? Date.now());
-      const p = MARKET_PROFILES[m];
-      return sendJson(res, 200, {
-        m,
-        t: t.toISOString(),
-        tz: p?.tz ?? null,
-        local: p ? localClock(p.tz ?? 'Asia/Shanghai', t) : null,
-        open: isMarketOpen(p, t),
-      });
-    }
+    /* 健康状态与市场时段探针：实现在 routes/system.js */
+    if (handleSystemRoutes(url, res, { ttlMs: CACHE_TTL_MS, jobs: () => collector?.status?.() ?? [] })) return;
     return serveStatic(res, url.pathname);
   } catch (err) {
     // 对外只给通用文案：err.message 常带路径 / 内部 URL，等于把实现细节发给浏览器

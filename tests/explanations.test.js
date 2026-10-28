@@ -538,13 +538,76 @@ describe('persistReferencedObservations：只写被引用的观测点', () => {
       generatedAt: AS_OF,
       id: 'exp-persist',
     });
-    const written = persistReferencedObservations(built, m, { knownAt: AS_OF });
+    const { written } = persistReferencedObservations(built, m, { knownAt: AS_OF });
     const refs = new Set();
     for (const f of built.facts) for (const id of f.observationIds) refs.add(id);
     for (const h of built.hypotheses) for (const e of h.evidence) for (const id of e.observationIds) refs.add(id);
     expect(written).toBe(refs.size);
     expect(written).toBeGreaterThan(0);
     expect(written).toBeLessThan(m.size * 22);
+  });
+});
+
+describe('观测写入前的契约校验（E04）', () => {
+  /** 直接喂一条被引用的坏观测：不经过 buildExplanation，避免对齐阶段先把它过滤掉 */
+  const badMap = () =>
+    new Map([
+      [
+        'gold-intl',
+        {
+          series: { dates: ['2026-10-20'], values: ['not-a-number'] },
+          definition: { unit: '美元/盎司', valueDomain: 'positive' },
+          quality: null,
+          source: 'test',
+        },
+      ],
+    ]);
+
+  const refs = () => ({
+    id: 'exp-contract',
+    assetId: 'gold-intl',
+    facts: [{ code: 'TARGET_CHANGE', instrumentId: 'gold-intl', observationIds: ['gold-intl@2026-10-20'] }],
+    hypotheses: [],
+  });
+
+  it('值不是有限数的观测被拒绝入库，并给出字段路径', () => {
+    const r = persistReferencedObservations(refs(), badMap(), { knownAt: AS_OF });
+    expect(r.rejected).toHaveLength(1);
+    expect(r.rejected[0].instrumentId).toBe('gold-intl');
+    expect(r.rejected[0].errors.join(' ')).toMatch(/value/);
+    // 被拒的那条不会悄悄变成 0 写进库
+    expect(r.written).toBe(0);
+  });
+
+  it('合法观测照常写入，没有拒绝记录', () => {
+    const ok = new Map([
+      [
+        'gold-intl',
+        {
+          series: { dates: ['2026-10-20'], values: [4123.45] },
+          definition: { unit: '美元/盎司', valueDomain: 'positive' },
+          quality: null,
+          source: 'test',
+        },
+      ],
+    ]);
+    const r = persistReferencedObservations(refs(), ok, { knownAt: AS_OF });
+    expect(r.rejected).toEqual([]);
+    expect(r.written).toBe(1);
+  });
+
+  it('没有被引用的观测不写库（只落解释真正用到的那些）', () => {
+    const m = badMap();
+    m.set('oil', {
+      series: { dates: ['2026-10-20'], values: [78.1] },
+      definition: { unit: '美元/桶', valueDomain: 'positive' },
+      quality: null,
+      source: 'test',
+    });
+    const r = persistReferencedObservations(refs(), m, { knownAt: AS_OF });
+    // oil 没被这份解释引用，既不算写入也不算拒绝
+    expect(r.rejected).toHaveLength(1);
+    expect(r.written).toBe(0);
   });
 });
 

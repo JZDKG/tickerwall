@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://tickerwall.local/contracts/data-quality.schema.json",
+  "title": "DataQuality",
+  "description": "单个指标的观测质量。status 只说明「是否在更新周期内」，不说明数值对不对；reasons 是机器可读原因，reasonText 是给人看的中文。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["instrumentId", "status", "ageDays", "toleranceDays", "reasons"],
+  "properties": {
+    "instrumentId": { "type": ["string", "null"] },
+    "status": { "enum": ["fresh", "stale", "missing"] },
+    "ageDays": { "type": ["number", "null"], "minimum": 0 },
+    "toleranceDays": { "type": ["number", "null"], "minimum": 0 },
+    "reasons": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "reasonText": { "type": "array", "items": { "type": "string" } },
+    "fellBack": { "type": "boolean" },
+    "contract": {
+      "type": "object",
+      "description": "契约校验结果。ok=false 的观测不进统计，但仍保留在列表里（不静默丢弃）。",
+      "required": ["ok"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "errors": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

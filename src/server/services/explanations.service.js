@@ -21,6 +21,7 @@ import { createHash } from 'node:crypto';
 import { MACRO_UNIVERSE, fetchMacroSeries } from './macro.service.js';
 import { readArchiveRowsForSpan } from '../db/event-archive.js';
 import { writeEventRevision } from '../db/explanations.js';
+import { validateObservation } from '../contracts/index.js';
 import { toEventEvidence } from '../domain/events/shock.js';
 import { readDailyCache, writeDailyCache } from '../db/index.js';
 import {
@@ -364,6 +365,7 @@ export function persistReferencedEvents(explanation, events, { knownAt } = {}) {
 }
 
 export function persistReferencedObservations(explanation, observations, { knownAt } = {}) {
+  const rejected = [];
   const wanted = new Set();
   for (const f of explanation.facts ?? []) for (const id of f.observationIds ?? []) wanted.add(id);
   for (const h of explanation.hypotheses ?? []) {
@@ -376,7 +378,7 @@ export function persistReferencedObservations(explanation, observations, { known
       const id = observationIdOf(instrumentId, date);
       if (!wanted.has(id)) continue;
       const idx = dates.indexOf(date);
-      records.push({
+      const record = {
         id,
         logicalKey: id,
         instrumentId,
@@ -390,10 +392,22 @@ export function persistReferencedObservations(explanation, observations, { known
         revision: 1,
         quality: obs.quality ?? null,
         sourceRef: obs.source ?? null,
-      });
+      };
+      /**
+       * 契约校验（方案 E04 / §4.3）：不通过的观测**不进库**，但也不静默蒸发。
+       * 这里把它记成一条带 contract 结论的拒绝，调用方据此在 meta 里报
+       * 「有 N 条观测没通过校验」，而不是让数字少一截却没人知道。
+       */
+      const { ok, errors } = validateObservation(record);
+      if (!ok) {
+        rejected.push({ id, instrumentId, observedAt: date, errors });
+        continue;
+      }
+      records.push(record);
     }
   }
-  return writeObservationRevisions(records);
+  const written = writeObservationRevisions(records);
+  return { written, rejected };
 }
 
 /**
@@ -626,8 +640,17 @@ export async function getExplanationResponse({
     fingerprint,
   });
 
+  let invalidObservations = 0;
   try {
-    persistReferencedObservations(explanation, observations, { knownAt: generatedAt });
+    const obsResult = persistReferencedObservations(explanation, observations, { knownAt: generatedAt });
+    invalidObservations = obsResult?.rejected?.length ?? 0;
+    if (invalidObservations) {
+      // 不通过契约校验的观测不进库，但必须留下痕迹（方案 E04：不许静默丢数据）
+      console.warn(
+        `[explanations] ${invalidObservations} 条观测未通过契约校验：`,
+        obsResult.rejected.slice(0, 3).map((r) => `${r.instrumentId}@${r.observedAt} ${r.errors[0]}`).join('; '),
+      );
+    }
     // 事件引用必须先落库，否则 writeExplanation 的引用校验会拒绝这次快照
     persistReferencedEvents(explanation, eventsResolved, { knownAt: generatedAt });
     writeExplanation({ explanation });
@@ -646,9 +669,11 @@ export async function getExplanationResponse({
   }
 
   explanationCache.set(cacheKey, { at: Date.now(), explanation, observations });
+  const meta = metaFor(explanation, observations);
+  if (invalidObservations) meta.invalidObservations = invalidObservations;
   return {
     status: 200,
-    body: { schemaVersion: EXPLANATION_SCHEMA_VERSION, explanation, meta: metaFor(explanation, observations) },
+    body: { schemaVersion: EXPLANATION_SCHEMA_VERSION, explanation, meta },
   };
 }
 

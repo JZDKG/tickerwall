@@ -31,7 +31,10 @@
     "node": ">=24.0.0",
     "npm": ">=10"
   },
-  "dependencies": {},
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1"
+  },
   "devDependencies": {
     "@antv/x6": "^3.1.8",
     "@dagrejs/dagre": "^3.1.3",

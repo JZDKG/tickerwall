@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://tickerwall.local/contracts/explanation-envelope.schema.json",
+  "title": "ExplanationEnvelope",
+  "description": "解释接口的统一外壳。contentStatus 说「内容够不够」，meta.freshness 说「数据新不新」——两者必须独立，不能互相顶替。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "meta"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "minimum": 1 },
+    "explanation": {
+      "type": ["object", "null"],
+      "required": ["id", "assetId", "summary", "contentStatus", "facts", "hypotheses"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "assetId": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string", "minLength": 1 },
+        "contentStatus": { "enum": ["ready", "partial", "insufficient"] },
+        "facts": { "type": "array" },
+        "hypotheses": { "type": "array" }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "required": ["freshness"],
+      "properties": {
+        "freshness": { "enum": ["fresh", "stale", "unavailable", null] },
+        "contentStatus": { "type": ["string", "null"] },
+        "refreshStatus": { "enum": ["idle", "pending", "failed", null] },
+        "backgroundStale": { "type": "array", "items": { "type": "string" } },
+        "retryAfterMs": { "type": ["number", "null"] }
+      }
+    }
+  }
+}
