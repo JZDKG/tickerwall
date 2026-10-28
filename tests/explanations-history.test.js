@@ -189,3 +189,80 @@ describe('状态机', () => {
     expect(next.phase).toBe('ready');
   });
 });
+
+/* ================================================================== *
+ * 分支补齐：取单版快照的三条失败路径
+ * ================================================================== */
+describe('loadExplanationVersion 的容错', () => {
+  it('没有 fetch 的环境给 503', async () => {
+    const r = await loadExplanationVersion('exp_1', { fetchImpl: null });
+    expect(r.status).toBe(503);
+  });
+
+  it('响应不是 JSON 时 body 为空对象（不抛）', async () => {
+    const r = await loadExplanationVersion('exp_1', {
+      fetchImpl: async () => ({
+        status: 200,
+        json: async () => {
+          throw new Error('not json');
+        },
+      }),
+    });
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({});
+  });
+
+  it('fetch 抛错时给 503 与可读原因', async () => {
+    const r = await loadExplanationVersion('exp_1', {
+      fetchImpl: async () => {
+        throw new Error('offline');
+      },
+    });
+    expect(r.status).toBe(503);
+    expect(r.body.error).toContain('offline');
+  });
+
+  it('版本号里有特殊字符时被编码（不能拼出坏 URL）', async () => {
+    let seen = null;
+    await loadExplanationVersion('exp/1?a=b', {
+      fetchImpl: async (url) => {
+        seen = String(url);
+        return { status: 200, json: async () => ({}) };
+      },
+    });
+    expect(seen).toContain('exp%2F1%3Fa%3Db');
+  });
+});
+
+/* ================================================================== *
+ * 分支补齐：回放横幅与历史列表的边界
+ * ================================================================== */
+describe('replayBannerHTML / historyListHTML 的边界', () => {
+  it('横幅在没有水位信息时不写一个空括号', () => {
+    const html = String(replayBannerHTML({ id: 'exp_1', versions: {} }));
+    expect(html).not.toContain('（）');
+    expect(html).not.toContain('机制 ）');
+  });
+
+  it('横幅带机制版本时写出来（哪一版口径产的，用户要能看见）', () => {
+    const html = String(replayBannerHTML({ id: 'exp_1', versions: { mechanisms: 'gold-v3' } }));
+    expect(html).toContain('gold-v3');
+  });
+
+  it('历史列表只有一版时整块不渲染（一个版本没有「此前」）', () => {
+    expect(String(historyListHTML({ items: [{ id: 'a' }] }))).toBe('');
+    expect(String(historyListHTML({ items: [] }))).toBe('');
+    expect(String(historyListHTML({}))).toBe('');
+  });
+
+  it('历史列表跳过没有 id 的脏数据（不让一个坏条目毁掉整块）', () => {
+    const html = String(historyListHTML({ items: [{ id: 'a' }, { id: 'b' }, { nope: 1 }] }));
+    expect(html).toContain('a');
+    expect(html).toContain('b');
+  });
+
+  it('没有 contentStatus 的条目显示破折号', () => {
+    const html = String(historyListHTML({ items: [{ id: 'a' }, { id: 'b', contentStatus: 'ready' }] }));
+    expect(html).toContain('—');
+  });
+});

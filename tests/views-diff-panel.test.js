@@ -203,3 +203,151 @@ describe('解释卡里的入口', () => {
     expect((await fetchExplanationDiff(null, { fetchImpl: okFetch })).status).toBe(400);
   });
 });
+
+/* ================================================================== *
+ * 分支补齐：每个「有/无」都要两边都走过
+ *
+ * 这一组是分支覆盖，不是行覆盖 —— 上面那些用例已经跑过每一行，
+ * 但条件只走了 true 那一侧。
+ * ================================================================== */
+describe('分支：可选字段的有与无', () => {
+  const base = (over = {}) => {
+    const { diff, ...rest } = over;
+    return { ...PAYLOAD, ...rest, diff: { ...DIFF, ...(diff ?? {}) } };
+  };
+
+  it('没有 summary 时不渲染摘要行（不输出空 <p>）', () => {
+    const el = mount(diffPanelHTML(base({ summary: null })));
+    expect(el.querySelector('.dfd-summary')).toBeNull();
+  });
+
+  it('没有 contentStatusChanged 时不渲染状态行', () => {
+    const el = mount(diffPanelHTML(base()));
+    expect(el.querySelector('.dfd-status')).toBeNull();
+  });
+
+  it('只有假设变化、没有事实变化时，只有一组', () => {
+    const el = mount(diffPanelHTML(base({ diff: { facts: [], counts: { hypothesesChanged: 1, factsChanged: 0 } } })));
+    expect(el.querySelectorAll('.dfd-group')).toHaveLength(1);
+    expect(el.textContent).toContain('假设判定');
+  });
+
+  it('只有事实变化、没有假设变化时，只有一组', () => {
+    const el = mount(diffPanelHTML(base({ diff: { hypotheses: [], counts: { hypothesesChanged: 0, factsChanged: 1 } } })));
+    const groups = [...el.querySelectorAll('.dfd-group h4')].map((h) => h.textContent);
+    expect(groups).toEqual(['数据事实']);
+  });
+
+  it('没有 gapMs 时不渲染「相隔多久」（不知道就别写）', () => {
+    const el = mount(diffPanelHTML(base({ gapMs: null })));
+    expect(el.querySelector('.dfd-foot')).toBeNull();
+  });
+
+  it('contentStatus 某一侧为 null 时显示破折号', () => {
+    const el = mount(diffPanelHTML(base({ diff: { contentStatusChanged: { from: null, to: 'ready' } } })));
+    const line = el.querySelector('.dfd-status').textContent;
+    expect(line).toContain('—');
+    expect(line).toContain('ready');
+    expect(line).not.toContain('null');
+  });
+
+  it('没有变化但口径变了：仍然要显示口径说明', () => {
+    const el = mount(diffPanelHTML(base({
+      diff: {
+        hasChanges: false,
+        hypotheses: [],
+        facts: [],
+        rulesChanged: [{ field: 'mechanisms', from: 'gold-v3', to: 'gold-v4' }],
+        rulesChangedFlag: true,
+      },
+    })));
+    expect(el.querySelector('.dfd-rules')).toBeTruthy();
+    expect(el.textContent).toContain('没有变化');
+  });
+
+  it('只有一条假设变化时也渲染证据条数（0 → 0 也给）', () => {
+    const el = mount(hypothesisChangeHTML({
+      kind: 'statusChanged', key: 'k', label: 'L', statusBefore: 'mixed', statusAfter: 'consistent',
+      labelBefore: '参差', labelAfter: '一致', evidenceCountBefore: 0, evidenceCountAfter: 0,
+    }));
+    expect(el.textContent).toContain('证据 0 → 0 条');
+  });
+
+  it('假设变化缺证据条数时不渲染那一行（不给假数据）', () => {
+    const el = mount(hypothesisChangeHTML({ kind: 'added', key: 'k', label: 'L', statusAfter: 'untested' }));
+    expect(el.querySelector('.dfd-evidence')).toBeNull();
+  });
+});
+
+describe('分支：兜底文案的反面（不传字段也要有话说）', () => {
+  it('factChangeHTML：缺 label 与 key 时名字为空串，不输出 undefined', () => {
+    const el = mount(factChangeHTML({ kind: 'added' }));
+    expect(el.textContent).not.toContain('undefined');
+    expect(el.querySelector('.dfd-name').textContent).toBe('');
+  });
+
+  it('factChangeHTML：未知 kind 原样显示（不显示「变化」以外的假标签）', () => {
+    const el = mount(factChangeHTML({ kind: 'weird', label: 'X', before: 1, after: 2 }));
+    expect(el.textContent).toContain('weird');
+  });
+
+  it('diff 为空但没有 error 时给默认文案', () => {
+    const el = mount(diffPanelHTML({ status: 'ok', diff: null }));
+    expect(el.textContent).toContain('变化记录暂时不可用');
+  });
+
+  it('payload 整个缺 diff 且 status 未知：仍然渲染一个面板（不白屏）', () => {
+    const el = mount(diffPanelHTML({}));
+    expect(el.querySelector('.dfd-panel')).toBeTruthy();
+  });
+});
+
+describe('分支：两侧都缺时的破折号', () => {
+  it('假设变化两侧状态都没给：显示「—」而不是空', () => {
+    const el = mount(hypothesisChangeHTML({ kind: 'removed', key: 'k', label: 'L' }));
+    expect(el.querySelector('.dfd-change').textContent).toContain('—');
+  });
+
+  it('只有一侧状态时另一侧仍是破折号', () => {
+    const el = mount(hypothesisChangeHTML({ kind: 'added', key: 'k', label: 'L', statusAfter: 'untested' }));
+    const text = el.querySelector('.dfd-change').textContent;
+    expect(text).toContain('—');
+    expect(text).toContain('untested');
+  });
+
+  it('hypotheses / facts 缺失时按空数组处理（不抛）', () => {
+    const el = mount(diffPanelHTML({ ...PAYLOAD, diff: { hasChanges: true } }));
+    expect(el.querySelector('.dfd-panel')).toBeTruthy();
+  });
+
+  it('contentStatusChanged 两侧都有时都写出来', () => {
+    const el = mount(diffPanelHTML({ ...PAYLOAD, diff: { ...DIFF, contentStatusChanged: { from: 'ready', to: 'partial' } } }));
+    const line = el.querySelector('.dfd-status').textContent;
+    expect(line).toContain('ready');
+    expect(line).toContain('partial');
+  });
+});
+
+describe('分支：整行构造器收到 null', () => {
+  it('hypothesisChangeHTML(null) 不抛，且不输出 undefined', () => {
+    const el = mount(`<div>${hypothesisChangeHTML(null)}</div>`);
+    expect(el.textContent).not.toContain('undefined');
+    expect(el.querySelector('.dfd-row')).toBeTruthy();
+  });
+
+  it('factChangeHTML(null) 不抛，且不输出 NaN', () => {
+    const el = mount(`<div>${factChangeHTML(null)}</div>`);
+    expect(el.textContent).not.toContain('NaN');
+    expect(el.textContent).not.toContain('undefined');
+  });
+
+  it('diffPanelHTML(undefined) 与 (null) 都给同一句兜底文案', () => {
+    expect(mount(diffPanelHTML(undefined)).textContent).toContain('拿不到');
+    expect(mount(diffPanelHTML(null)).textContent).toContain('拿不到');
+  });
+
+  it('payload 没有 status 但有 diff：照常渲染（字段缺失不该挡住内容）', () => {
+    const el = mount(diffPanelHTML({ diff: DIFF }));
+    expect(el.querySelector('[data-state="changed"]')).toBeTruthy();
+  });
+});
