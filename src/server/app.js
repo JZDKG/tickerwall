@@ -146,6 +146,10 @@ export function createApp(deps) {
         const scenario = url.searchParams.get('scenario') || 'fuel-cost';
         return sendJson(res, 200, await deps.getLifePath({ scenario }));
       }
+      /** 今天重点三件 + 下一件关键发布（产品 §3 事件中心顶部） */
+      if (url.pathname === '/api/today-focus') {
+        return sendJson(res, 200, await deps.getTodayFocus({}));
+      }
       // 解释读取与事件版本（方案 §8.1）：实现在 routes.js，这里只委派一次
       if (await handleExplanationRoutes(url, res, { takeForce })) return;
       if (url.pathname === '/api/calendar') {
