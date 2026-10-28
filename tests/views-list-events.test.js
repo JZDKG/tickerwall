@@ -388,7 +388,8 @@ describe('events.renderEvents：加载态、过滤与覆盖行', () => {
     const text = eventsEl.textContent;
     expect(text).toContain('2/3 个源可用');
     expect(text).toContain('失败 挂了');
-    expect(text).toContain('AI 复核 2/3');
+    // 文案迁移（方案 §4.4）：AI 复核 → AI 辅助分类，不背书原文真实性
+    expect(text).toContain('AI 辅助分类 2/3');
     expect(text).toContain('…'); // pending
   });
 

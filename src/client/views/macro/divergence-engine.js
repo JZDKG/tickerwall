@@ -7,9 +7,16 @@
  * 口径（与 docs/macro-transmission-design.md 第四节一致，经用户拍板收紧）：
  *   TREND_DIVERGE_ABS    = 0.35  |ρ20| ≥ 0.35 且与理论反号，并要求 ρ60 也同向反号（持续性确认）
  *   TREND_DIVERGE_STRONG = 0.45  |ρ20| ≥ 0.45（|t| > 2.13, p < 0.05）单窗即可判强背离
- *   TREND_ALIGN_ABS      = 0.25  与理论同号且 |ρ| ≥ 0.25 → 逻辑兑现
+ *   TREND_ALIGN_ABS      = 0.25  与理论同号且 |ρ| ≥ 0.25 → 走势与该机制一致
  * 0.28 的旧阈值被证伪：E08（油→金）实测 ρ20 = −0.34、ρ60 = −0.11，纯属单月随机游走，
  * 抬到 0.35 + 60 期二次确认后正好滤掉。
+ *
+ * 2026-10-28 两处修正（docs/economic-explainer-product-and-architecture-plan.md §2 / §4.4）：
+ *   1. 「当期」比较改成**共同日期配对**：原来 lastA / lastB 各自取最后一条非空值，
+ *      于是「黄金最新周二、美元最新周一」会被判成当期同涨同跌。现在取最后一个
+ *      双方都有观测的位置，并把该日期一起返回；错位时标记 unaligned，界面必须显示日期。
+ *   2. 文案去掉因果与频率暗示：逻辑兑现 → 走势与机制一致；罕见同涨 → 同窗口同涨
+ *      （未计算历史频率就不说「罕见」）；短期/中期 → 直接渠道/间接渠道。
  * ================================================================== */
 
 import { MACRO_TRANSMISSION_EDGES, CORE_EDGES } from './knowledge-base.js';
@@ -120,8 +127,35 @@ export function fmtChg(v, kind) {
  * 背离检测
  * ------------------------------------------------------------------ */
 
+/**
+ * 最后一个「双方都有观测」的位置。
+ *
+ * 这是「当期」比较的唯一合法入口：单边取最新值会把不同日期当成同一天。
+ * 返回 -1 表示没有任何共同观测。
+ */
+export function lastCommonIndex(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b)) return -1;
+  const n = Math.min(a.length, b.length);
+  for (let i = n - 1; i >= 0; i -= 1) {
+    const x = a[i];
+    const y = b[i];
+    if (x != null && y != null && Number.isFinite(x) && Number.isFinite(y)) return i;
+  }
+  return -1;
+}
+
+/** 最后一个非空值的下标（用于判断「谁更新」） */
+function lastValidIndex(arr) {
+  if (!Array.isArray(arr)) return -1;
+  for (let i = arr.length - 1; i >= 0; i -= 1) {
+    if (arr[i] != null && Number.isFinite(arr[i])) return i;
+  }
+  return -1;
+}
+
 export function evaluateEdgeReality(edge, macroData) {
   const changes = macroData?.recent?.changes ?? {};
+  const dates = macroData?.recent?.dates ?? [];
   const a = changes[edge.from];
   const b = changes[edge.to];
   const empty = {
@@ -133,18 +167,46 @@ export function evaluateEdgeReality(edge, macroData) {
     roll60: null,
     longCorr: null,
     n: 0,
+    asOf: null,
+    unaligned: false,
   };
   if (!Array.isArray(a) || !Array.isArray(b)) return empty;
   if (a.length < MIN_SAMPLES || b.length < MIN_SAMPLES) return empty;
 
-  const lastA = findLastValid(a);
-  const lastB = findLastValid(b);
+  // 共同日期配对：只用「双方同一天都有观测」的那一对做当期比较
+  const idx = lastCommonIndex(a, b);
+  if (idx < 0) {
+    // 一条共同观测都没有：连「当期」都不存在，直接报数据不足
+    return {
+      ...empty,
+      roll20: lastRollingCorr(a, b, 20),
+      roll60: lastRollingCorr(a, b, 60),
+      longCorr: getMatrixCorr(macroData.matrix, edge.from, edge.to),
+      reason: 'NO_COMMON_DATES',
+    };
+  }
+  const lastA = idx >= 0 ? a[idx] : null;
+  const lastB = idx >= 0 ? b[idx] : null;
+  const asOf = idx >= 0 ? (dates[idx] ?? null) : null;
+  const idxA = lastValidIndex(a);
+  const idxB = lastValidIndex(b);
+  // 任意一端的观测比共同日期更新 → 当期比较发生在更早的日期，界面必须标出来
+  const unaligned = idx >= 0 && (idxA > idx || idxB > idx);
+
   const stdA = calcStd(a.slice(-60));
   const stdB = calcStd(b.slice(-60));
   const roll20 = lastRollingCorr(a, b, 20);
   const roll60 = lastRollingCorr(a, b, 60);
   const longCorr = getMatrixCorr(macroData.matrix, edge.from, edge.to);
-  const n = Math.max(a.length, b.length);
+  // 有效配对数：真正参与相关计算的样本，不是数组长度
+  const n = (() => {
+    const m = Math.min(a.length, b.length);
+    let k = 0;
+    for (let i = 0; i < m; i += 1) {
+      if (a[i] != null && b[i] != null && Number.isFinite(a[i]) && Number.isFinite(b[i])) k += 1;
+    }
+    return k;
+  })();
 
   const bigMove =
     lastA != null && lastB != null && stdA != null && stdB != null &&
@@ -161,10 +223,14 @@ export function evaluateEdgeReality(edge, macroData) {
     (Math.abs(roll20) >= TREND_DIVERGE_STRONG || (Math.abs(roll20) >= TREND_DIVERGE_ABS && opp60));
 
   if (dayDiverged || trendDiverged) {
-    let badge = '⚡ 逻辑背离';
-    if (edge.sign === -1 && lastA > 0 && lastB > 0) badge = '⚡ 罕见同涨';
-    else if (edge.sign === -1 && lastA < 0 && lastB < 0) badge = '⚡ 罕见同跌';
-    return { status: 'diverged', badge, lastA, lastB, roll20, roll60, longCorr, n, dayDiverged, trendDiverged, bigMove };
+    // 文案只描述观测：不说「罕见」（没有算历史频率），也不说「因果被打破」
+    let badge = '⚡ 观测方向不同';
+    if (edge.sign === -1 && lastA > 0 && lastB > 0) badge = '⚡ 同窗口同涨';
+    else if (edge.sign === -1 && lastA < 0 && lastB < 0) badge = '⚡ 同窗口同跌';
+    return {
+      status: 'diverged', badge, lastA, lastB, roll20, roll60, longCorr, n,
+      dayDiverged, trendDiverged, bigMove, asOf, unaligned,
+    };
   }
 
   const aligned =
@@ -173,8 +239,8 @@ export function evaluateEdgeReality(edge, macroData) {
 
   return {
     status: aligned ? 'aligned' : 'neutral',
-    badge: aligned ? '✓ 逻辑兑现' : '○ 常态波动',
-    lastA, lastB, roll20, roll60, longCorr, n, dayDiverged, trendDiverged, bigMove,
+    badge: aligned ? '✓ 走势与机制一致' : '○ 未见明显偏离',
+    lastA, lastB, roll20, roll60, longCorr, n, dayDiverged, trendDiverged, bigMove, asOf, unaligned,
   };
 }
 
@@ -206,6 +272,9 @@ export function pickAlert(edges, reality) {
  *
  * 方向 = 冲击方向 × 沿路边符号连乘。同一个标的通过两条方向相反的路径被击中时
  * 标 conflict（多空交织）—— 这比单一路径的「利多/利空」信息量高得多。
+ *
+ * 两跳遍历只说明**路径结构**，不产生幅度、概率或先后时间。所以这里输出的
+ * hop 数不能再被翻译成「短期/中期」：那需要时间模型，而本项目没有。
  * ------------------------------------------------------------------ */
 export function propagateShock(sourceId, dir, maxHop = 2) {
   const paths = [];

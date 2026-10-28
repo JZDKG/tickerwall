@@ -16,18 +16,40 @@
  * ================================================================== */
 
 /**
+ * 赛区的语义类别（方案 §3.5 / A5）。
+ *
+ * 「地理分区」「经济组织」「交易地」是三件不同的事，不能共用一个标签：
+ *   · eu 是**地理**欧洲，包含俄罗斯、瑞士、挪威、波兰等非欧元区国家；
+ *   · asia 是**地理**亚太其他地区，包含澳大利亚、印度等，不是「东南亚」；
+ *   · 欧元区（eurozone）、欧盟（EU）是经济组织；上期所、CME 是交易地。
+ * 把地理赛区叫成「欧元区」会让「俄罗斯属于欧元区」这种明显错误看起来合理。
+ */
+export const REGION_SEMANTICS = {
+  kind: 'geographic',
+  geographic: true,
+  /** 经济组织不是赛区，界面要单独表达（目前只在文案里出现，不参与分区） */
+  economicOrganizations: ['欧元区（eurozone）', '欧盟（EU）', '东盟（ASEAN）', 'OPEC+'],
+  /** 交易地同样不是赛区：同一地区可以有多个交易所、不同交易时段 */
+  tradingVenuesNote: '交易地（交易所 / 交易时段）与事件发生地分开计算，不能互相代替',
+};
+
+/**
  * 赛区锚点（经纬度）。
  * `global` 没有地理起点 —— 付费用事件不该凭空钉在格陵兰外海，
  * 所以地图上不为它画锚点，只在播报台标注「全球」，靶点城市照常高亮。
+ *
+ * 标签用**地理**口径（2026-10-28 A5）：
+ *   eu   = 欧洲（含非欧元区国家）
+ *   asia = 亚太（含澳大利亚、印度等，不等于东南亚）
  */
 export const REGION_ANCHORS = {
   us: { lon: -98, lat: 39, label: '北美' },
   cn: { lon: 105, lat: 34, label: '中国' },
-  eu: { lon: 10, lat: 50, label: '欧元区' },
+  eu: { lon: 10, lat: 50, label: '欧洲' },
   uk: { lon: -3, lat: 55, label: '英国' },
   jp: { lon: 138, lat: 36.5, label: '日本' },
   me: { lon: 45, lat: 29, label: '中东' },
-  asia: { lon: 106, lat: 14, label: '东南亚' },
+  asia: { lon: 106, lat: 14, label: '亚太' },
   latam: { lon: -60, lat: -15, label: '拉美' },
   africa: { lon: 20, lat: 5, label: '非洲' },
   global: { lon: -30, lat: 62, label: '全球', noAnchor: true },
@@ -52,7 +74,7 @@ export const COUNTRY_META = {
   156: { cn: '中国', region: 'cn', lexicon: '中国' },
   // 香港/澳门在 110m 底图里没有独立多边形，由城市节点（hkg）承担
 
-  // ---- 欧元区（含词表收录的俄罗斯）----
+  // ---- 欧洲（地理口径；含词表收录的俄罗斯、瑞士、挪威等非欧元区国家）----
   276: { cn: '德国', region: 'eu', lexicon: '德国' },
   250: { cn: '法国', region: 'eu', lexicon: '法国' },
   380: { cn: '意大利', region: 'eu', lexicon: '意大利' },
@@ -96,7 +118,7 @@ export const COUNTRY_META = {
   512: { cn: '阿曼', region: 'me', lexicon: '阿曼' },
   275: { cn: '巴勒斯坦', region: 'me', lexicon: '加沙' },
 
-  // ---- 亚太（词表把 Australia 也算进 asia）----
+  // ---- 亚太（地理口径；词表把 Australia / India 也算进 asia，不等于东南亚）----
   410: { cn: '韩国', region: 'asia', lexicon: '韩国' },
   356: { cn: '印度', region: 'asia', lexicon: '印度' },
   704: { cn: '越南', region: 'asia', lexicon: '越南' },

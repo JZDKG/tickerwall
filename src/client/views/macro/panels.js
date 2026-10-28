@@ -29,6 +29,7 @@ import {
   DIV,
   esc,
   signChar,
+  relationTypeOf,
 } from './knowledge-base.js';
 import {
   findLastValid,
@@ -48,6 +49,22 @@ import {
 export function pctCls(v) {
   if (v == null) return '';
   return v > 0 ? 'up' : v < 0 ? 'down' : '';
+}
+
+/**
+ * 冲击方向的措辞（方案 §3.6 / §4.4）。
+ *
+ * 对利率节点不能说「利多 10Y」：收益率上行意味着债券价格下跌，两句话
+ * 方向相反。这里按指标类型给不同措辞，界面上不存在一个笼统的「利多/利空」。
+ */
+export function directionLabel(kind, dir) {
+  if (kind === 'rate') return dir > 0 ? '收益率上行压力' : '收益率下行压力';
+  return dir > 0 ? '可能偏强' : '可能偏弱';
+}
+
+/** 一句话说明这个数字是什么口径，避免把相关当因果 */
+export function corrCaption(n) {
+  return `同期观测与历史相关（有效配对 ${n} 期）`;
 }
 
 export function corrTone(c) {
@@ -75,6 +92,7 @@ export function noEdgeCard(data, a, b) {
   const roll = lastRollingCorr(data.recent?.changes?.[a], data.recent?.changes?.[b], 20);
   const ca = findLastValid(data.recent?.changes?.[a]);
   const cb = findLastValid(data.recent?.changes?.[b]);
+  const asOf = data.recent?.dates?.[data.recent.dates.length - 1] ?? null;
   const row = (k, v, cls = '') => `<div class="mg-kv ${cls}"><span>${esc(k)}</span><b>${v}</b></div>`;
   return `<div class="mg-card-head">
       <span class="mg-addr">${esc(B?.short ?? b)}</span>
@@ -86,6 +104,7 @@ export function noEdgeCard(data, a, b) {
     <div class="mg-sect"><i class="dot"></i><h4>实测相关性</h4>
       ${row(`${A?.short ?? a} 最新`, `<span class="${pctCls(ca)}">${esc(fmtChg(ca, A?.kind))}</span>`)}
       ${row(`${B?.short ?? b} 最新`, `<span class="${pctCls(cb)}">${esc(fmtChg(cb, B?.kind))}</span>`)}
+      ${row('当期比较日期', `${esc(asOf ?? '—')}`)}
       ${row('250 期相关系数', `<span class="${corrTone(long)}">${long == null ? '—' : (long >= 0 ? '+' : '') + long.toFixed(2)}</span>`)}
       ${row('60 期滚动', `<span class="${corrTone(roll60)}">${roll60 == null ? '—' : (roll60 >= 0 ? '+' : '') + roll60.toFixed(2)}</span>`)}
       ${row('20 期滚动', `<span class="${corrTone(roll)}">${roll == null ? '—' : (roll >= 0 ? '+' : '') + roll.toFixed(2)}</span>`)}
@@ -114,6 +133,13 @@ export function edgeCard(data, edge, reality, state) {
 
   const row = (k, v, cls = '') => `<div class="mg-kv ${cls}"><span>${esc(k)}</span><b>${v}</b></div>`;
 
+  const rel = relationTypeOf(edge);
+  // 日期错位必须显式说出来：共同日期可能是更早的那一天
+  const asOfNote = r?.unaligned
+    ? `<div class="mg-kv warn"><span>当期比较日期</span><b>${esc(r.asOf ?? '—')}（有一侧最新观测更晚，未参与比较）</b></div>`
+    : r?.asOf
+      ? `<div class="mg-kv"><span>当期比较日期</span><b>${esc(r.asOf)}</b></div>`
+      : '';
   const rollTxt = r?.roll20 == null ? '—' : `${r.roll20 >= 0 ? '+' : ''}${r.roll20.toFixed(2)}`;
   const roll60Txt = r?.roll60 == null ? '—' : `${r.roll60 >= 0 ? '+' : ''}${r.roll60.toFixed(2)}`;
   const longTxt = r?.longCorr == null ? '—' : `${r.longCorr >= 0 ? '+' : ''}${r.longCorr.toFixed(2)}`;
@@ -132,23 +158,24 @@ export function edgeCard(data, edge, reality, state) {
       <span class="mg-addr">${esc(A?.short ?? edge.from)}</span>
       <span class="mg-badge ${tone}">${esc(r?.badge ?? '')}</span>
     </div>
-    <p class="mg-lead"><b>${esc(edge.label)}</b>　${esc(edge.id)}　权重 ${edge.weight}/3</p>
+    <p class="mg-lead"><b>${esc(edge.label)}</b>　${esc(edge.id)}　关系类型：${esc(rel.label)}　（${esc(rel.plain)}）</p>
 
     <div class="mg-sect"><i class="dot"></i><h4>核心机理</h4>
       <p>${esc(edge.mechanism)}</p>
     </div>
 
-    <div class="mg-sect"><i class="dot"></i><h4>实盘数据验证</h4>
-      ${row(`${A?.short ?? edge.from} 最新（${A?.lastDate ?? '—'}）`, `<span class="${pctCls(r?.lastA)}">${esc(fmtChg(r?.lastA, A?.kind))}</span>`)}
-      ${row(`${B?.short ?? edge.to} 最新（${B?.lastDate ?? '—'}）`, `<span class="${pctCls(r?.lastB)}">${esc(fmtChg(r?.lastB, B?.kind))}</span>`)}
+    <div class="mg-sect"><i class="dot"></i><h4>${esc(corrCaption(r?.n ?? 0))}</h4>
+      ${asOfNote}
+      ${row(`${A?.short ?? edge.from} 本窗口`, `<span class="${pctCls(r?.lastA)}">${esc(fmtChg(r?.lastA, A?.kind))}</span>`)}
+      ${row(`${B?.short ?? edge.to} 本窗口`, `<span class="${pctCls(r?.lastB)}">${esc(fmtChg(r?.lastB, B?.kind))}</span>`)}
       ${row('250 期相关系数', `<span class="${corrTone(r?.longCorr)}">${longTxt}</span>`)}
       ${row('60 期滚动', `<span class="${corrTone(r?.roll60)}">${roll60Txt}</span>`)}
       ${row('20 期滚动', `<span class="${corrTone(r?.roll20)}">${rollTxt}</span> ${rollFit}`)}
-      ${row('理论方向', `<span class="${edge.sign > 0 ? 'up' : 'cold'}">${arrow} ${edge.sign > 0 ? '同向联动' : '反向压制'}</span>`)}
-      ${row('样本', `${r?.n ?? 0} 期`)}
+      ${row('机制方向', `<span class="${edge.sign > 0 ? 'up' : 'cold'}">${arrow} ${edge.sign > 0 ? '同向联动' : '反向压制'}</span>`)}
+      ${row('有效配对', `${r?.n ?? 0} 期`)}
     </div>
 
-    <div class="mg-sect"><i class="dot warn"></i><h4>何时失效（背离条件）</h4>
+    <div class="mg-sect"><i class="dot warn"></i><h4>哪些情况会削弱这条机制</h4>
       <p>${esc(edge.divergence)}</p>
     </div>
 
@@ -190,18 +217,18 @@ export function mindCardPanel(data, focusId, reality) {
 }
 
 /* ------------------------------------------------------------------ *
- * 5. 沙盘卡：一阶 / 二阶传播 + 多空交织拆解
+ * 5. 沙盘卡：直接 / 间接渠道传播 + 相反渠道拆解
  * ------------------------------------------------------------------ */
 
 export function sandboxPanel(data, state) {
   const shock = state.shock;
   if (!shock) {
-    return `<div class="mg-card-empty">选一个变量当震源，再点「模拟大涨 ↑」或「模拟大跌 ↓」。一阶、二阶会逐层点亮，两条路径方向打架的标的会标成琥珀色「多空交织」。</div>`;
+    return `<div class="mg-card-empty">选一个变量当震源，再点「模拟大涨 ↑」或「模拟大跌 ↓」。直接与间接渠道会逐层点亮；两条路径方向相反的标的会标成琥珀色「方向未定」。这里只展示路径结构，不推断幅度与时间。</div>`;
   }
   const src = data.universe.find((u) => u.id === shock.id);
   const prop = propagateShock(shock.id, shock.dir);
 
-  // 优先解剖「多空交织」的标的，否则挑被击中路径最多的
+  // 优先解剖「方向未定」的标的，否则挑被击中路径最多的
   const rows = [...prop.entries()].sort(
     (a, b) => Number(b[1].conflict) - Number(a[1].conflict) || b[1].paths.length - a[1].paths.length,
   );
@@ -214,39 +241,43 @@ export function sandboxPanel(data, state) {
   };
 
   const conflictBlock = target && target[1].conflict
-    ? `<div class="mg-sect"><i class="dot warn"></i><h4>⚡ 多空交织拆解：${esc(nameOf(target[0]))}</h4>
+    ? `<div class="mg-sect"><i class="dot warn"></i><h4>⚡ 相反渠道拆解：${esc(nameOf(target[0]))}</h4>
         <ul class="mg-path-list">${target[1].paths
           .filter((p) => p.hop <= 2)
           .map((p) => {
             const e = EDGE_BY_ID.get(p.edges);
             const hopCls = p.dir > 0 ? 'up' : 'cold';
+            const kind = data.universe.find((u) => u.id === target[0])?.kind;
             return `<li class="mg-path">
-              <span class="mg-path-hop">${p.hop === 1 ? '一阶' : '二阶'}</span>
+              <span class="mg-path-hop">${p.hop === 1 ? '直接' : '间接'}</span>
               <span class="mg-path-chain">${chainHTML(p)}</span>
-              <span class="mg-path-sign ${hopCls}">${e ? `${signChar(e.sign)} ${esc(e.label)}` : ''} ⇒ ${p.dir > 0 ? '利多 ↑' : '利空 ↓'}</span>
+              <span class="mg-path-sign ${hopCls}">${e ? `${signChar(e.sign)} ${esc(e.label)}` : ''} ⇒ ${directionLabel(kind, p.dir)}</span>
             </li>`;
           })
           .join('')}</ul>
-        <p class="mg-conclusion">同一个标的通过两条方向相反的路径被击中：短期通常交易<b>一阶</b>逻辑，中期若二阶链条兑现则反向。<b>看到琥珀色就该知道「方向还没定」，而不是「一定涨/跌」。</b></p>
+        <p class="mg-conclusion">同一个标的通过两条方向相反的渠道被影响。<b>这里只说明路径结构，不给幅度、概率或先后时间</b>；看到琥珀色说明「方向还没定」，而不是「一定涨/跌」。</p>
       </div>`
     : '';
 
   const summary = `<div class="mg-sect"><i class="dot"></i><h4>冲击结果</h4>
       <div class="mg-hopbins">
-        <span class="bin up"><b>${[...prop.values()].filter((p) => !p.conflict && p.dirs.has(1)).length}</b>利多</span>
-        <span class="bin cold"><b>${[...prop.values()].filter((p) => !p.conflict && p.dirs.has(-1)).length}</b>利空</span>
-        <span class="bin mix"><b>${[...prop.values()].filter((p) => p.conflict).length}</b>多空交织</span>
+        <span class="bin up"><b>${[...prop.values()].filter((p) => !p.conflict && p.dirs.has(1)).length}</b>正向渠道</span>
+        <span class="bin cold"><b>${[...prop.values()].filter((p) => !p.conflict && p.dirs.has(-1)).length}</b>反向渠道</span>
+        <span class="bin mix"><b>${[...prop.values()].filter((p) => p.conflict).length}</b>方向未定</span>
       </div>
+      <p class="mg-foot-note">计数是路径结构的统计，不是概率或幅度。</p>
     </div>
-    <div class="mg-sect"><i class="dot"></i><h4>一阶命中（${[...prop.entries()].filter(([, p]) => p.hop === 1).length}）</h4>
+    <div class="mg-sect"><i class="dot"></i><h4>直接渠道（${[...prop.entries()].filter(([, p]) => p.hop === 1).length}）</h4>
       <ul class="mg-mini-list">${[...prop.entries()]
         .filter(([, p]) => p.hop === 1)
         .map(([id, p]) => {
           const e = EDGE_BY_ID.get(p.paths.find((x) => x.hop === 1)?.edges);
+          const kind = data.universe.find((u) => u.id === id)?.kind;
+          const dir = p.dirs.has(1) ? 1 : -1;
           return `<li class="mg-mini"><span class="mg-mini-dir ${p.dirs.has(1) ? 'pos' : 'neg'}">${p.dirs.has(1) ? '+▶' : '−▶'}</span>
             <span class="mg-mini-name">${esc(nameOf(id))}</span>
             <span class="mg-mini-tag">${esc(e?.label ?? '')}</span>
-            <span class="mg-mini-roll ${p.dirs.has(1) ? 'up' : 'cold'}">${p.dirs.has(1) ? '利多' : '利空'}</span></li>`;
+            <span class="mg-mini-roll ${p.dirs.has(1) ? 'up' : 'cold'}">${directionLabel(kind, dir)}</span></li>`;
         })
         .join('')}</ul>
     </div>`;
@@ -255,7 +286,7 @@ export function sandboxPanel(data, state) {
       <span class="mg-addr big">${esc(src?.name ?? shock.id)}</span>
       <span class="mg-arrowsign ${shock.dir > 0 ? 'pos' : 'neg'}">${shock.dir > 0 ? '假设大涨 ↑' : '假设大跌 ↓'}</span>
     </div>
-    <p class="mg-lead">沿 ${CORE_EDGES.length} 条主干边做两跳传播，方向 = 冲击方向 × 边符号连乘。</p>
+    <p class="mg-lead">这是<b>假设情景</b>：沿 ${CORE_EDGES.length} 条主干边做两跳传播，方向 = 冲击方向 × 边符号连乘。不推断幅度、概率与先后时间。</p>
     ${summary}
     ${conflictBlock}`;
 }
@@ -296,10 +327,10 @@ export function playbookPanel(pb, data, reality) {
 
 export function graphSubtitle(mode) {
   return mode === 'compass'
-    ? '四象限生态位 · 光点方向＝因果方向 · 胶囊＝4 字机理'
+    ? '四象限生态位 · 箭头＝机制假设的方向 · 胶囊＝4 字机理'
     : mode === 'mindmap'
-      ? '上游驱动 → 焦点 → 下游传导，零交叉'
-      : '选震源 → 一阶 / 二阶逐层点亮 → 自动拆解多空交织';
+      ? '上游机制 → 焦点 → 下游传导，零交叉'
+      : '选震源 → 直接 / 间接渠道逐层点亮 → 自动拆解相反渠道';
 }
 
 export function divergenceCount(reality) {
@@ -319,11 +350,12 @@ export function alertBannerHTML(data, reality) {
   const B = data.universe.find((u) => u.id === alert.e.to);
   return `<button type="button" class="mg-alert" data-alert="${esc(alert.e.id)}">
       <span class="mg-alert-ico">⚡</span>
-      <span class="mg-alert-text">实时背离：<b>${esc(A?.name ?? alert.e.from)} ↔ ${esc(B?.name ?? alert.e.to)}</b>
+      <span class="mg-alert-text">观测与机制不同：<b>${esc(A?.name ?? alert.e.from)} ↔ ${esc(B?.name ?? alert.e.to)}</b>
         ${esc(alert.r.badge.replace('⚡ ', ''))}，近 20 期滚动相关 ${
           alert.r.roll20 == null ? '样本不足' : `${alert.r.roll20 >= 0 ? '+' : ''}${alert.r.roll20.toFixed(2)}`
         }
-        （理论 ${signChar(alert.e.sign)}），可能是「${esc(alert.e.divergence.split('：')[0])}」逻辑压过了「${esc(alert.e.label)}」</span>
+        （机制方向 ${signChar(alert.e.sign)}）。另一种可能的机制是「${esc(alert.e.divergence.split('：')[0])}」；
+        这只表示观测方向与机制不同，不表示因果已被证实</span>
       <span class="mg-alert-go">查看</span>
     </button>`;
 }
@@ -356,8 +388,9 @@ export function legendHTML(mode) {
   return `<div class="mg-legend">
           ${legendSwatch(`lg-a-${seq}`, POS, '', '正向推升')}
           ${legendSwatch(`lg-b-${seq}`, NEG, '6 4', '负向压制')}
-          ${legendSwatch(`lg-c-${seq}`, DIV, '2 4', '实盘背离')}
-          <span class="lg note">光点流向 = 因 → 果　·　${graphSubtitle(mode)}</span>
+          ${legendSwatch(`lg-c-${seq}`, DIV, '2 4', '观测方向不同')}
+          <span class="lg noarrow">⇄ 共同驱动 / 历史相关（无箭头＝不表达单向因果）</span>
+          <span class="lg note">箭头方向 = 机制假设的作用方向，不是已证实的因果　·　${graphSubtitle(mode)}</span>
         </div>`;
 }
 

@@ -256,7 +256,9 @@ describe('panels：机理卡 / 焦点卡 / 沙盘卡 / 骨架', () => {
     expect(panels.sandboxPanel(DATA, {})).toContain('mg-card-empty');
     const sandbox = panels.sandboxPanel(DATA, { shock: { id: 'dxy', dir: 1 } });
     expect(sandbox).toContain('冲击结果');
-    expect(sandbox).toContain('利多');
+    // 2026-10-28 文案迁移：沙盘不再输出「利多/利空」这种单向断言
+    expect(sandbox).toContain('正向渠道');
+    expect(sandbox).toContain('反向渠道');
   });
 
   it('playbookPanel：剧本步骤与失效条件', () => {
@@ -270,7 +272,7 @@ describe('panels：机理卡 / 焦点卡 / 沙盘卡 / 骨架', () => {
   it('副标题 / 背离计数 / 图例 / 头部工具条', () => {
     expect(panels.graphSubtitle('compass')).toContain('四象限');
     expect(panels.graphSubtitle('mindmap')).toContain('零交叉');
-    expect(panels.graphSubtitle('sandbox')).toContain('一阶');
+    expect(panels.graphSubtitle('sandbox')).toContain('直接 / 间接');
     expect(panels.divergenceCount(new Map([['a', { status: 'diverged' }], ['b', { status: 'ok' }]]))).toBe(1);
 
     const legend = panels.legendHTML('compass');
@@ -306,7 +308,9 @@ describe('panels：机理卡 / 焦点卡 / 沙盘卡 / 骨架', () => {
     ]);
     const banner = panels.alertBannerHTML(DATA, reality);
     expect(banner).toContain('mg-alert');
-    expect(banner).toContain('实时背离');
+    expect(banner).toContain('观测与机制不同');
+    // 横幅不得把观测差异说成因果已被打破
+    expect(banner).not.toContain('压过了');
 
     expect(panels.inspectorHTML(DATA, { graphMode: 'compass' }, REALITY)).toContain('mg-card');
     expect(panels.inspectorHTML(DATA, { graphMode: 'mindmap', graphFocus: 'oil' }, REALITY)).toContain('焦点');
@@ -346,8 +350,10 @@ describe('flow-nodes：端口、徽章、卡片', () => {
     ]);
     const sandbox = { graphMode: 'sandbox', shock: { id: 'dxy', dir: 1 } };
     expect(nodes.chipFor('dxy', { state: sandbox, prop, reality: REALITY })).toMatchObject({ text: '假设大涨 ↑', tone: 'src' });
-    expect(nodes.chipFor('oil', { state: sandbox, prop, reality: REALITY })).toMatchObject({ text: '多空交织', tone: 'mix' });
-    expect(nodes.chipFor('sp500', { state: sandbox, prop, reality: REALITY }).text).toContain('二阶利多');
+    expect(nodes.chipFor('oil', { state: sandbox, prop, reality: REALITY })).toMatchObject({ text: '方向未定', tone: 'mix' });
+    // 文案迁移：二阶利多 → 间接渠道 + 方向措辞（不再暗示时间顺序）
+    expect(nodes.chipFor('sp500', { state: sandbox, prop, reality: REALITY }).text).toContain('间接');
+    expect(nodes.chipFor('sp500', { state: sandbox, prop, reality: REALITY }).text).not.toContain('利多');
     expect(nodes.chipFor('gold-intl', { state: sandbox, prop, reality: REALITY })).toBeNull();
 
     // 只有簇内锚点（E16/E18）才在「全部关系」下挂徽章

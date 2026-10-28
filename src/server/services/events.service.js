@@ -37,6 +37,8 @@ import {
 export { readDshLlmConfig };
 
 import { archiveEvents, readArchiveRowsForSpan } from '../db/event-archive.js';
+import { filterSymbolsByEvidence, normalizeLlmRow, LLM_ROW_STATE } from '../domain/events/normalize.js';
+import { clusterEvents, similarity } from '../domain/events/cluster.js';
 
 // 归档已下沉到 db/event-archive.js；转发保住对外契约
 // （server.mjs 启动后调 archiveEvents，测试直接断言它）
@@ -85,10 +87,16 @@ function classify(title, body) {
     }
   }
 
+  // 标的标签必须有实体证据（方案 §7.2）：
+  // 关键词表把「债市」映射到 us10y，会让「中国国债期货」挂上美国国债标签。
+  // 这里按标题 + 正文里的实体词校验，缺证据就丢掉并记原因 —— 不猜。
+  const evidence = filterSymbolsByEvidence([...symbols], `${cTitle} ${cBody}`);
+
   const impact = anyWordHit(cTitle, IMPACT_WORDS) || anyWordHit(cBody, IMPACT_WORDS);
   return {
     topics,
-    symbols: [...symbols],
+    symbols: evidence.kept,
+    symbolReasons: evidence.dropped,
     mainWeight,
     mainInTitle,
     impact,
@@ -191,8 +199,9 @@ const LLM_SYSTEM = `你是金融市场的新闻分类器。输入是一批编号
 - level: high / mid / low
 - symbols: 受影响的标的，取值必须来自 [${LLM_SYMBOLS.join(',')}]
 - region: 事件发生地，取值必须来自 [${LLM_REGIONS.join(',')}]
-  · us=美国/北美 · cn=中国 · eu=欧元区 · uk=英国 · jp=日本 · me=中东
-  · asia=其他亚洲 · latam=拉美 · africa=非洲 · global=全球性/无明确地点
+  · us=美国/北美 · cn=中国 · eu=欧洲（地理口径，含非欧元区国家） · uk=英国 · jp=日本 · me=中东
+  · asia=亚太其他地区（含澳大利亚、印度，不等于东南亚） · latam=拉美 · africa=非洲 · global=全球性/无明确地点
+  · 这些是**事件发生地**，不是资产交易地，也不是经济组织（欧元区 / 欧盟 / 东盟）
 
 判断标准：
 - high：央行货币政策、通胀/就业数据、重大地缘冲突、能源供给中断、监管重大变化
@@ -328,17 +337,38 @@ async function llmClassifyBatch(batch) {
     if (!Number.isInteger(idx) || idx < 0 || idx >= batch.length) continue;
     const ev = batch[idx];
 
-    const topics = (Array.isArray(row.topics) ? row.topics : [])
-      .map(normalizeTopicLabel)
-      .filter(Boolean)
-      // 「无关」不是可筛选主题，遇到就只保留等级判断
-      .filter((t) => t.key !== 'unrelated');
-    const symbols = [...new Set((Array.isArray(row.symbols) ? row.symbols : []).map(normalizeSymbolToken).filter(Boolean))];
-    const level = ['high', 'mid', 'low'].includes(row.level) ? row.level : 'low';
-    const region = LLM_REGIONS.includes(row.region) ? row.region : null;
-
-    if (!topics.length && level !== 'low') continue; // 判不出主题又说不重要，就不覆盖关键词结果
-    llmCache.set(ev.id, { topics, symbols, level, region, at: now });
+    /**
+     * 四态规范化（方案 §7.2）：
+     *   classified → 校验后使用
+     *   irrelevant → 允许清除关键词产生的旧标签（这是原来做不到的）
+     *   uncertain  → 保留未知，不升级成「有影响」
+     *   invalid    → 明确失败，走规则回退并记录
+     */
+    const normalized = normalizeLlmRow(row, {
+      normalizeTopic: normalizeTopicLabel,
+      normalizeSymbol: normalizeSymbolToken,
+      regions: LLM_REGIONS,
+    });
+    if (normalized.state === LLM_ROW_STATE.invalid) {
+      llmStats.invalidRows = (llmStats.invalidRows ?? 0) + 1;
+      continue;
+    }
+    // 成功但明确无关：仍然入库（topics=[] + state），下一轮可以据此清掉旧标签
+    const symbolsKept = filterSymbolsByEvidence(normalized.symbols, `${ev.title ?? ''} ${ev.body ?? ''}`, {
+      // 模型给的是「影响候选」，不是「已核实的影响」：只拦实体冲突
+      requireMention: false,
+    });
+    llmCache.set(ev.id, {
+      state: normalized.state,
+      topics: normalized.topics,
+      // 实体证据不足的标的（例如「中国国债」被标成 us10y）在这里被拦掉
+      symbols: symbolsKept.kept,
+      symbolReasons: symbolsKept.dropped,
+      level: normalized.level,
+      region: normalized.region,
+      reason: normalized.reason ?? null,
+      at: now,
+    });
     hitCount += 1;
   }
   llmStats.classified += hitCount;
@@ -385,22 +415,66 @@ function kickLlmClassify(items) {
   })();
 }
 
-/** 把 LLM 结果盖到关键词结果上 */
+/**
+ * 把 LLM 结果盖到关键词结果上。
+ *
+ * 关键变化：**成功且明确无关的结果可以清除旧标签**。
+ * 原来只有 `if (hit.topics.length)` 才覆盖，于是「这条其实无关」永远无法
+ * 撤销关键词误判，一条被错标成「美债」的稿子会一直留着那个标签。
+ */
 function applyLlmResults(items) {
   let applied = 0;
   for (const it of items) {
     const hit = llmCache.get(it.id);
     if (!hit) continue;
     if (Date.now() - hit.at > LLM_CACHE_TTL_MS) continue;
+
+    if (hit.state === 'irrelevant') {
+      // 无关：清空主题与标的，等级降到 low，并留下可筛选的状态
+      it.topics = [];
+      it.symbols = [];
+      it.level = 'low';
+      it.llmState = 'irrelevant';
+      it.llm = true;
+      applied += 1;
+      continue;
+    }
+    if (hit.state === 'uncertain') {
+      // 说不清：保留未知状态，不把关键词结果升级成「已确认有影响」
+      it.llmState = 'unknown';
+      it.llmReason = hit.reason ?? null;
+      continue;
+    }
+    // classified：只在有内容时覆盖，但允许「LLM 只给了标的」这种半覆盖
     if (hit.topics.length) it.topics = hit.topics;
     if (hit.symbols.length) it.symbols = hit.symbols;
+    else if (hit.symbolReasons?.length) it.symbols = [];
     if (hit.region) it.region = hit.region;
     it.level = hit.level;
+    it.llmState = 'classified';
     it.llm = true;
     applied += 1;
   }
   return applied;
 }
+
+/**
+ * 曝光给客户端的聚合视图：同一事件一张卡。
+ * 只做分组，不改原始条目 —— 展开后仍能看到每个来源与发布时间。
+ */
+export function clusterForClient(items, opts = {}) {
+  return clusterEvents(items, opts).map((c) => ({
+    eventId: c.eventId,
+    revision: c.revision,
+    articleCount: c.articleCount,
+    independentPublisherCount: c.independentPublisherCount,
+    primary: c.primary?.id ?? null,
+    articleIds: c.items.map((x) => x.id),
+    sources: c.sources,
+  }));
+}
+
+export { similarity };
 
 /* ------------------------------------------------------------------ *
  * 全球源

@@ -623,9 +623,11 @@ export function renderMacro() {
                }">风险端 ${ra.risk == null ? '—' : `${ra.risk >= 0 ? '+' : ''}${ra.risk.toFixed(2)}σ`} · 避险端 ${
                  ra.hedge == null ? '—' : `${ra.hedge >= 0 ? '+' : ''}${ra.hedge.toFixed(2)}σ`
                }${ra.aligned === false ? ' · 跨日错位' : ''}</span>
-               <span class="risk-note" title="VRP = VIX − 标普 500 的 20 日实现年化波动率。溢价被压缩说明保护性期权便宜、市场自满；溢价飙升说明在抢买保护。">${
+               <span class="risk-note" title="隐含波动率减实现波动率（VIX − 标普 500 的 20 日实现年化波动率）。这是「隐含减实现」的波动率差，不是精确分解出来的方差风险溢价；RV 固定用日线算，切日/周不会变。">${
                  data.vrp
-                   ? `VRP ${data.vrp.vrp >= 0 ? '+' : ''}${data.vrp.vrp.toFixed(2)} · VIX ${data.vrp.vix.toFixed(2)} − RV20 ${data.vrp.rv20.toFixed(2)}`
+                   ? `隐含−实现 ${data.vrp.vrp >= 0 ? '+' : ''}${data.vrp.vrp.toFixed(2)} · VIX ${data.vrp.vix.toFixed(2)} − RV20 ${data.vrp.rv20.toFixed(2)}${
+                       data.vrp.asOf ? `（RV 截至 ${data.vrp.asOf}）` : ''
+                     }`
                    : ''
                }</span>`
             : ''
@@ -661,7 +663,7 @@ export function renderMacro() {
     </section>
 
     <section class="d-block">
-      <h3>谁在影响谁 <span class="h3-note">滞后相关明显强于同期相关才计入 · <b>*</b> 表示通过 BH 校正（约 1700 个滞后组合一起校正）· 单位=${data.freq === 'week' ? '周' : '交易日'}</span></h3>
+      <h3>历史领先滞后关系 <span class="h3-note">滞后相关明显强于同期相关才计入（<b>统计结果，不是因果</b>）· <b>*</b> 表示通过 BH 校正（约 1700 个滞后组合一起校正）· 单位=${data.freq === 'week' ? '周' : '交易日'}</span></h3>
       ${macroLeadLagHTML(data)}
     </section>
 
@@ -684,7 +686,7 @@ export function renderMacro() {
     </section>
 
     <footer class="d-foot">
-      <span>收益率口径：对数收益率（美债10年期用百分点差）· 相关性按两两共同${data.freq === 'week' ? '周' : '交易日'}计算</span>
+      <span>收益率口径：对数收益率（美债10年期用百分点差，展示换算为 bp）· 相关性按两两共同${data.freq === 'week' ? '周' : '交易日'}计算 · 相关不等于因果</span>
       <span>生成于 ${clockText(new Date(data.generatedAt))}</span>
     </footer>
   `.toString();

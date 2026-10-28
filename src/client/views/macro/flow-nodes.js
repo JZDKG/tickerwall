@@ -81,9 +81,14 @@ export function chipFor(nodeId, ctx) {
       return { text: state.shock.dir > 0 ? '假设大涨 ↑' : '假设大跌 ↓', tone: 'src' };
     }
     if (p) {
-      if (p.conflict) return { text: '多空交织', tone: 'mix' };
+      // 2026-10-28 文案迁移：一阶/二阶 暗示先后时间（本项目没有时间模型），
+      // 所以换成直接/间接渠道；利率节点也不能说「利多」，收益率上行对债券价格是利空。
       const up = p.dirs.has(1);
-      return { text: `${p.hop === 1 ? '一阶' : '二阶'}${up ? '利多 ↑' : '利空 ↓'}`, tone: up ? 'src' : 'cold' };
+      const kind = ctx.data?.universe?.find((x) => x.id === nodeId)?.kind;
+      if (p.conflict) return { text: '方向未定', tone: 'mix' };
+      const dirText =
+        kind === 'rate' ? (up ? '收益率上行压力' : '收益率下行压力') : up ? '可能偏强' : '可能偏弱';
+      return { text: `${p.hop === 1 ? '直接' : '间接'}·${dirText}`, tone: up ? 'src' : 'cold' };
     }
     return null;
   }

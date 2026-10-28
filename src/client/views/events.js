@@ -1,5 +1,5 @@
 /* ================================================================== *
- * events.js —— #/events：事件流 + 财经日历 + 事件研究（含 AI 复核轮询）。
+ * events.js —— #/events：事件流 + 财经日历 + 事件研究（含 AI 辅助分类轮询）。
  *
  * 来源：public/app.js（原 3655 行单体）L2374-2753，整段搬运，逻辑未改写。
  * ================================================================== */
@@ -132,7 +132,7 @@ export function renderEvents(opts = {}) {
       <div class="macro-status">
         ${
           data.llm?.enabled
-            ? html`<span class="llm-pill" title="关键词打底 + LLM 语义复核；${data.llm.pending ? '正在分类新的条目' : '已完成当前批次'}">AI 复核 ${data.llm.applied}/${data.total}${data.llm.pending ? ' …' : ''}</span>`
+            ? html`<span class="llm-pill" title="关键词打底 + LLM 语义辅助分类。这个标签表示「已按语义归过类」，不代表原文事实或资产影响已被核实；${data.llm.pending ? '正在分类新的条目' : '已完成当前批次'}">AI 辅助分类 ${data.llm.applied}/${data.total}${data.llm.pending ? ' …' : ''}</span>`
             : ''
         }
         <span class="risk-note">${data.generatedAt ? clockText(new Date(data.generatedAt)) : ''} 更新</span>
@@ -425,7 +425,7 @@ export async function loadEventStudy(force = false) {
 /* ------------------------------------------------------------------ *
  * 生命周期（由 router 调用）
  *
- * 注意 llmRetry：它是「等 AI 复核结果」的一次性定时器，挂在 store.events 上
+ * 注意 llmRetry：它是「等 AI 辅助分类结果」的一次性定时器，挂在 store.events 上
  * （store.events.llmRetry）。原来的 stopEventsTimer() 只 clearInterval(eventsTimer)，
  * 漏了这一个 —— 离开事件页后它仍会触发一次重绘，把已经清空的容器写回内容。
  * ------------------------------------------------------------------ */

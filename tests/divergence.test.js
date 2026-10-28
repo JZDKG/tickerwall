@@ -26,6 +26,7 @@ import {
   evaluateAll,
   findEdge,
   findLastValid,
+  lastCommonIndex,
   calcStd,
   lastRollingCorr,
   fmtChg,
@@ -192,14 +193,15 @@ describe('趋势背离：0.35 / 0.45 两条线', () => {
     expect(r.status).toBe('neutral');
   });
 
-  it('逻辑兑现：同号且 |ρ20| ≥ 0.25', () => {
+  it('走势与机制一致：同号且 |ρ20| ≥ 0.25', () => {
     const { a, b } = synth([{ len: 40, rho: 0.45 }, { len: 20, rho: 0.4 }]);
     const edge = mkEdge(1);
     const r = evaluateEdgeReality(edge, mkData(a, b));
 
     expect(r.roll20).toBeGreaterThanOrEqual(TREND_ALIGN_ABS);
     expect(r.status).toBe('aligned');
-    expect(r.badge).toBe('✓ 逻辑兑现');
+    // 2026-10-28 文案迁移：只表达观测一致性，不再说「兑现」（暗示因果被证实）
+    expect(r.badge).toBe('✓ 走势与机制一致');
   });
 
   it('同号但太弱（0.2）仍然 neutral，不冒充兑现', () => {
@@ -207,7 +209,85 @@ describe('趋势背离：0.35 / 0.45 两条线', () => {
     const r = evaluateEdgeReality(mkEdge(1), mkData(a, b));
     expect(Math.abs(r.roll20)).toBeLessThan(TREND_ALIGN_ABS);
     expect(r.status).toBe('neutral');
-    expect(r.badge).toBe('○ 常态波动');
+    expect(r.badge).toBe('○ 未见明显偏离');
+  });
+});
+
+/* ================================================================== *
+ * 共同日期配对（方案 §2 第 1 条 / §10.1 第一行）
+ *
+ * 旧实现分别取双方「最后一条非空值」。只要两个市场的最后交易日不同
+ * （跨时区、休市、数据晚到），就会把不同日期的变化当成当期同涨同跌。
+ * 这一组用例钉住新口径：只用双方都有的那一天，并把这个日期一起返回。
+ * ================================================================== */
+describe('共同日期配对：错位的「最新值」不能当成当期', () => {
+  /** 60 期平稳序列，末尾按数组下标各自加空值，模拟「一方还没更新」 */
+  function padded(a, b, { tailA = 0, tailB = 0 } = {}) {
+    const aa = a.concat(Array.from({ length: tailA }, () => null));
+    const bb = b.concat(Array.from({ length: tailB }, () => null));
+    const len = Math.max(aa.length, bb.length);
+    return {
+      a: aa.concat(Array.from({ length: len - aa.length }, () => null)),
+      b: bb.concat(Array.from({ length: len - bb.length }, () => null)),
+    };
+  }
+
+  it('A 最新为周二、B 最新为周一 → 用共同日期，并标 unaligned', () => {
+    const base = synth([{ len: 60, rho: 0.5 }]);
+    // A 多一个交易时段（周日历还没更新）：A 长度 61 且末值有数，B 末值为空
+    const a = base.a.concat([0.001]);
+    const b = base.b.concat([null]);
+    const data = mkData(a, b);
+    const r = evaluateEdgeReality(mkEdge(1), data);
+
+    const commonIdx = lastCommonIndex(a, b);
+    expect(commonIdx).toBe(59);
+    expect(r.lastA).toBe(a[commonIdx]);
+    expect(r.lastB).toBe(b[commonIdx]);
+    // 显示的日期必须是共同日期，不能是 A 的更晚日期
+    expect(r.asOf).toBe(`d${commonIdx}`);
+    expect(r.unaligned).toBe(true);
+  });
+
+  it('两端最新值方向相反但共同日期方向相同 → 判定以共同日期为准', () => {
+    const base = synth([{ len: 60, rho: 0.05 }]);
+    const a = base.a.slice();
+    const b = base.b.slice();
+    // 共同日期那天：两端都是 +0.9σ（同向异动）
+    const stdA = calcStd(a.slice(-60));
+    const stdB = calcStd(b.slice(-60));
+    a[a.length - 1] = stdA * 0.9;
+    b[b.length - 1] = stdB * 0.9;
+    // 再给 A 补一个「更新的反向值」—— 旧实现会拿它和 B 的旧值配对
+    const data = mkData(a.concat([-stdA * 3]), b);
+    const r = evaluateEdgeReality(mkEdge(-1), data);
+
+    expect(r.asOf).toBe(`d${a.length - 1}`);
+    expect(r.lastA).toBeCloseTo(stdA * 0.9, 12);
+    expect(r.unaligned).toBe(true);
+    expect(r.bigMove).toBe(true);
+    // 共同日期上两端同涨 + 负相关边 → 同窗口同涨（而不是被 A 的新值带成异向）
+    expect(r.badge).toBe('⚡ 同窗口同涨');
+  });
+
+  it('没有共同观测时不给当期判定，只报数据不足', () => {
+    const a = Array.from({ length: 60 }, (_, i) => Math.sin(i / 5));
+    const b = Array.from({ length: 60 }, () => null);
+    const r = evaluateEdgeReality(mkEdge(1), mkData(a, b));
+    expect(r.status).toBe('neutral');
+    expect(r.badge).toBe('○ 数据不足');
+  });
+
+  it('n 报的是有效配对数，不是数组长度', () => {
+    const base = synth([{ len: 60, rho: 0.4 }]);
+    const { a, b } = padded(base.a, base.b, { tailA: 2, tailB: 1 });
+    const r = evaluateEdgeReality(mkEdge(1), mkData(a, b));
+    let expected = 0;
+    for (let i = 0; i < Math.min(a.length, b.length); i += 1) {
+      if (a[i] != null && b[i] != null) expected += 1;
+    }
+    expect(r.n).toBe(expected);
+    expect(r.n).toBeLessThan(a.length);
   });
 });
 
@@ -221,7 +301,7 @@ describe('单期异动分支（dayDiverged）', () => {
     return { a, b };
   }
 
-  it('两端同向剧烈异动 + 负相关边 → 罕见同涨', () => {
+  it('两端同向剧烈异动 + 负相关边 → 同窗口同涨（不再用「罕见」）', () => {
     const base = synth([{ len: 60, rho: 0.05 }]);
     const std = calcStd(base.a.slice(-60));
     const { a, b } = withShock(base, std * 2, std * 2);
@@ -230,17 +310,18 @@ describe('单期异动分支（dayDiverged）', () => {
     expect(r.bigMove).toBe(true);
     expect(r.dayDiverged).toBe(true);
     expect(r.status).toBe('diverged');
-    expect(r.badge).toBe('⚡ 罕见同涨');
+    // 未计算历史频率就不能说「罕见」，只描述这个窗口里的事实
+    expect(r.badge).toBe('⚡ 同窗口同涨');
   });
 
-  it('两端同向剧烈下跌 + 负相关边 → 罕见同跌', () => {
+  it('两端同向剧烈下跌 + 负相关边 → 同窗口同跌', () => {
     const base = synth([{ len: 60, rho: 0.05 }]);
     const std = calcStd(base.a.slice(-60));
     const { a, b } = withShock(base, -std * 2, -std * 2);
     const r = evaluateEdgeReality(mkEdge(-1), mkData(a, b));
 
     expect(r.dayDiverged).toBe(true);
-    expect(r.badge).toBe('⚡ 罕见同跌');
+    expect(r.badge).toBe('⚡ 同窗口同跌');
   });
 
   it('只有一端异动不算 dayDiverged（异动要求两端同时）', () => {
@@ -285,7 +366,7 @@ describe('真实载荷快照回归（2026-10 抓的 /api/macro）', () => {
     expect(r.roll20).toBeGreaterThanOrEqual(TREND_DIVERGE_STRONG);
     expect(r.roll60).toBeLessThan(0); // 60 期与 20 期反号 —— 正是单窗分支存在的理由
     expect(r.status).toBe('diverged');
-    expect(r.badge).toBe('⚡ 逻辑背离');
+    expect(r.badge).toBe('⚡ 观测方向不同');
   });
 
   it('E15（VIX → 黄金，正相关边）：ρ20 −0.41 / ρ60 −0.51 → 持续确认分支命中', () => {

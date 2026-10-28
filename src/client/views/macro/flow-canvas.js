@@ -27,6 +27,7 @@ import {
   TONE_DASH,
   esc,
   edgeTone,
+  relationTypeOf,
 } from './knowledge-base.js';
 import { cardHTML, buildPorts, outPortId, inPortId, PORT_MARKUP } from './flow-nodes.js';
 import { html } from '../../shared/format.js';
@@ -545,7 +546,10 @@ export class MacroFlowCanvas {
       const r = this.reality?.get(e.id);
       const tone = edgeTone(e, r);
       const color = TONE_COLOR[tone] ?? TONE_COLOR.pos;
-      const dash = TONE_DASH[tone];
+      // 线型同时表达两件事：关系类型（机制 / 共同驱动 / 历史相关）与实盘状态。
+      // 共同驱动与历史相关**不画箭头** —— 它们不是单向因果，箭头会把用户带偏。
+      const rel = relationTypeOf(e);
+      const dash = rel.dash ?? TONE_DASH[tone];
       const dim = this.isDimEdge(e);
       const hot = this.hotEdgeIds.has(e.id) || this.pairEdge?.id === e.id;
       const sw = 1 + (e.weight ?? 1) * 0.42;
@@ -560,7 +564,7 @@ export class MacroFlowCanvas {
         zIndex: hot ? 8 : 4,
         router,
         connector: style.connector,
-        data: { edgeId: e.id, from: e.from, to: e.to, weight: e.weight, dim, tone },
+        data: { edgeId: e.id, from: e.from, to: e.to, weight: e.weight, dim, tone, relationType: e.relationType ?? 'mechanism' },
         markup: [
           { tagName: 'path', selector: 'hit' },
           { tagName: 'path', selector: 'line' },
@@ -578,14 +582,17 @@ export class MacroFlowCanvas {
             strokeDasharray: dash,
             strokeLinecap: 'round',
             opacity: dim ? 0.14 : this.baseOpacity({ weight: e.weight }),
-            targetMarker: { name: 'block', args: { size: 6.5, offset: 1, fill: color, stroke: color } },
+            targetMarker: rel.arrow
+              ? { name: 'block', args: { size: 6.5, offset: 1, fill: color, stroke: color } }
+              : null,
           },
         },
       });
       void base;
 
-      // 流光叠加边：见文件头注释（X6 只给 selector=line 的那个 path 写 d）
-      if (!dim) {
+      // 流光叠加边：见文件头注释（X6 只给 selector=line 的那个 path 写 d）。
+      // 共同驱动 / 历史相关没有方向，流光会把「共同被推动」误读成「一个推一个」。
+      if (!dim && rel.arrow) {
         this.graph.addEdge({
           id: `flow-${e.id}`,
           source: { cell: e.from, port: outPortId(e.id) },
@@ -630,7 +637,10 @@ export class MacroFlowCanvas {
    * 做成节点后：字号不随画布缩放抖、可以垂直于路径微调、也能跟着拖拽重新贴线。
    * ------------------------------------------------------------------ */
   pillHTML(e, tone, hot) {
-    const text = `${e.sign > 0 ? '+' : '−'} ${e.label}`;
+    const rel = relationTypeOf(e);
+    // 非因果关系不写 +/−：符号会暗示「同向推升 / 反向压制」
+    const mark = rel.arrow ? (e.sign > 0 ? '+' : '−') : '⇄';
+    const text = `${mark} ${e.label}`;
     return {
       text,
       w: Math.round(textWidth(text, 9.5) + 16),

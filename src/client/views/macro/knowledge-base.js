@@ -21,6 +21,25 @@ export const DIV = '#f59e0b'; // 背离：琥珀
 export const TONE_COLOR = { pos: POS, neg: NEG, div: DIV };
 export const TONE_DASH = { pos: null, neg: '6 4', div: '2 4' };
 
+/**
+ * 关系类型（方案 §3.3 / §4.4）。
+ *
+ * 箭头只表达「有依据的机制方向」。共同驱动与历史相关不是单向因果，
+ * 所以它们不画箭头、改用点线，并且在图例与机理卡里用文字说明 ——
+ * 颜色必须有等价的文字/线型，不能只靠颜色区分含义。
+ */
+export const RELATION_TYPES = {
+  mechanism: { label: '机制假设', arrow: true, dash: null, plain: '一条有机制依据的传导渠道，方向有条件' },
+  'valuation-conversion': { label: '计价换算', arrow: true, dash: null, plain: '同一个标的换币种/单位后的定价关系' },
+  'co-driver': { label: '共同驱动', arrow: false, dash: '2 5', plain: '两者被同一个上游推动，不是单向因果' },
+  'historical-correlation': { label: '历史相关', arrow: false, dash: '1 6', plain: '统计上同向或反向，不指定方向也不给原因' },
+};
+
+/** 取边的关系类型（未标注的按机制假设处理） */
+export function relationTypeOf(edge) {
+  return RELATION_TYPES[edge?.relationType ?? 'mechanism'] ?? RELATION_TYPES.mechanism;
+}
+
 /* ------------------------------------------------------------------ *
  * 1. 生态位 / 层级
  *
@@ -174,16 +193,19 @@ export const MACRO_TRANSMISSION_EDGES = [
   },
   {
     id: 'E16', from: 'gold-intl', to: 'gold-cn', sign: 1, weight: 3, label: '内外盘折算', cluster: true,
+    relationType: 'valuation-conversion',
     mechanism: '沪金由伦敦金通过「÷ 31.1035 × 美元兑人民币汇率」传导定价，长周期周频相关性在 +0.72 以上。',
     divergence: '人民币汇率大幅波动 / 境内外溢价：人民币单日大幅波动，或国内春节购金旺季、进口配额收紧时，内外盘出现明显价差偏离。',
   },
   {
-    id: 'E17', from: 'sp500', to: 'ndx100', sign: 1, weight: 3, label: '美股共振',
-    mechanism: '纳指 100 权重股（科技七巨头）同时占标普 500 近三成权重，两者同受美国宏观与企业盈利驱动（相关性 > +0.92）。',
+    id: 'E17', from: 'sp500', to: 'ndx100', sign: 1, weight: 3, label: '权重重叠',
+    relationType: 'co-driver',
+    mechanism: '纳指 100 的权重股（科技七巨头）同时占标普 500 近三成权重，两者被同一批美国宏观与企业盈利因素推动。这是共同驱动与成分重叠，不是「标普推动了纳指」。',
     divergence: '风格高低切换（价值 vs 成长）：利率急升引发科技股杀估值、资金轮动去能源 / 金融 / 道指时，纳指显著弱于标普。',
   },
   {
     id: 'E18', from: 'oil', to: 'brent', sign: 1, weight: 3, label: '全球原油双锚', cluster: true,
+    relationType: 'valuation-conversion',
     mechanism: '同受全球原油供需与 OPEC+ 政策驱动（相关性 > +0.92）。WTI 偏重美国内陆供需，布伦特偏重欧洲与中东海运。',
     divergence: '美湾库欣交割库拥堵 / 地缘航运割裂：地缘冲突封锁红海或霍尔木兹海峡时，布伦特溢价会显著扩大。',
   },
@@ -229,25 +251,25 @@ export const MACRO_PLAYBOOKS = [
     breaks: [],
     steps: [
       ['地缘减产或供给危机引爆油价', '原油 ↑'],
-      ['通胀预期抬头，抗通胀买盘进场', '黄金 ↑（一阶）'],
+      ['通胀预期抬头，抗通胀买盘进场', '黄金 ↑（直接渠道）'],
       ['顽固通胀倒逼利率走高', '10Y ↑'],
       ['高估值科技股与消费股承压', '纳指 ↓ / 标普 ↓'],
     ],
-    note: '黄金先跟涨、股市后挨打 —— 一阶交易通胀，二阶交易紧缩，节奏差是关键。',
+    note: '黄金受两条相反渠道影响：通胀补偿让它受益，利率上行让它承压。这里只列出渠道，不推断先后时间。',
   },
   {
     id: 'geo-crisis',
     name: '③ 地缘危机',
-    sub: '黄金美元罕见同涨',
+    sub: '黄金与美元同向',
     edges: ['E14', 'E15', 'E09'],
     breaks: ['E01', 'E02'],
     steps: [
       ['战乱或重大地缘冲突爆发', '标普 ↓ → VIX ↑'],
       ['避险资金涌入黄金', '黄金 ↑'],
       ['同时抢购原油防断供、抢美元要流动性', '原油 ↑ / 美元 ↑'],
-      ['平时「美元涨→黄金跌」的跷跷板被打破', '美元 ↑ 与 黄金 ↑ 同涨'],
+      ['平时「美元涨→黄金跌」的压制渠道这次没有占上风', '美元 ↑ 与 黄金 ↑ 同向'],
     ],
-    note: '这条剧本的意义在于：它专门用来解释背离。看到 E01 / E02 变琥珀色，就该切到这个剧本。',
+    note: '这条剧本的意义在于：它专门用来解释「观测方向与机制不同」。看到 E01 / E02 变琥珀色，就该切到这个剧本看看有没有相反渠道。',
   },
   {
     id: 'recession',
