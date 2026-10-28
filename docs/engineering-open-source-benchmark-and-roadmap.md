@@ -358,21 +358,22 @@ SQLite 提供 Online Backup API，也支持 `VACUUM INTO`。后续在线备份�
 | E01 Node、配置与 doctor | **已完成** | [`.nvmrc`](../.nvmrc) 固定 24.21.0；`engines` 同步 `>=24`；[`tools/doctor.mjs`](../tools/doctor.mjs) 六项预检（版本 / node:sqlite / 配置区间 / 数据目录可写 / 静态产物 / 运行时依赖），`--json` 给 CI；[`config.js`](../src/server/config.js) 在 import 时做版本守卫（失败 exit 78 并给 nvm 指引）；[`启动看板.command`](../启动看板.command) 先跑 doctor，只放行 0 与 2 | `node tools/doctor.mjs` → 7 ok / 0 warn / 0 error；`.nvmrc` 与 `engines` 一致由 doctor 断言 | 无（多平台验证留给 CI 矩阵） |
 | E02 离线夹具、隔离启动、请求键 | **进行中** | ① 回放键改为「方法 + 规范化 URL + body 摘要 + 语义头摘要 + 凭据存在性」，凭据值永不入键（[`replay.js`](../src/server/providers/replay.js)），补齐 6 条单测；② 契约快照从 `/tmp` 迁到 [`tests/fixtures/golden/`](../tests/fixtures/golden/)，缺文件直接失败（不再 `describe.skip`）；③ HTTP 隔离断言改为**内容摘要**比对，干净 checkout 也成立；④ `DISABLE_BACKGROUND=1` 时 `seedHistory()` 不联网（原来在 `listen()` 前补种） | `tests/services.test.js`（29）、`tests/golden-contract.test.js`（12）、`tests/http-integration.test.js`（17）、`tests/quotes-service.test.js`（40） | 固定时钟与临时数据目录尚未覆盖全部测试；子进程环境变量白名单只做到「不遗传模型凭据」这一条 |
 | E03 CI、vendor 核对、发布包冒烟 | **进行中** | [`tools/verify-build.mjs`](../tools/verify-build.mjs)：两个独立临时目录各构建一次，比对文件集合与 sha256，再与 `public/vendor/` 逐文件比；[`.github/workflows/ci.yml`](../.github/workflows/ci.yml)：doctor → `npm ci` → `npm test` → `test:cov` → `verify:build` | `npm run verify:build` → 2 个文件 / 1115.6 KB，两次构建摘要一致且与入库产物一致 | 发布包（白名单收集 + 新目录启动冒烟）未做 |
-| E04 数据契约与来源注册表 | 未开始 | — | — | JSON Schema（Observation / DataQuality / 解释 API）、来源注册表、契约测试 |
+| E04 数据契约与来源注册表 | **已完成** | [`src/contracts/`](../src/contracts/)（Observation / DataQuality / 解释外壳三份 JSON Schema，带 `$id` 与 examples）；[`contracts/index.js`](../src/server/contracts/index.js)（Ajv + ajv-formats，返回带字段路径的 `{ok, errors}`，并提供「合格/不合格」分组而不丢数据）；[`providers/registry.js`](../src/server/providers/registry.js)（15 个源：kinds / 超时与预算 / 能力开关 / 两级时间 / 凭据需求）；写库前校验接入 `persistReferencedObservations`（不合格进 `rejected` 并计入 `meta.invalidObservations`） | `tests/contracts.test.js`（21：单位、值域、日期格式、多字段、批量不丢、注册表自洽、标的↔适配器全覆盖） | 仅覆盖「观测」这一条链路；HTTP 响应尚未逐端点跑 schema 校验（留给 E07） |
 | E05 迁移、导入、flush、备份恢复 | 未开始 | — | — | `schema_migrations`、旧 JSONL 导入清单、`flush`/`closeDb`、`tools/backup.mjs`、`tools/restore.mjs` |
 | E06 调度、请求合并、质量状态 | 未开始 | — | — | 除报价外的同键合并、按来源频率调度、`collection_jobs` 可恢复任务 |
 | E07 客户端请求层与浏览器测试 | 未开始 | — | — | `src/client/shared/api.js`、`query-cache.js`、视图迁移、Playwright 四条路径 |
-| E08 日志、健康、退出、单容器 | 未开始 | — | — | 结构化日志、就绪/数据健康分离、SIGTERM 排空、Dockerfile |
+| E08 日志、健康、退出、单容器 | **进行中**（健康部分完成） | [`observability/health.js`](../src/server/observability/health.js)：存活 / 就绪 / 数据健康分开报，就绪检查静态入口、数据目录可写、契约可编译、注册表自洽；`/api/health` 保留旧字段并新增 `readiness` / `contracts` / `sources`（缺凭据的源被点名）；[`routes/system.js`](../src/server/routes/system.js) 把健康与市场探针从入口抽出（server.mjs 199 → 180 行） | `tests/health-and-system-routes.test.js`（10） | 结构化日志（requestId/jobId 贯穿）、SIGTERM 排空、Dockerfile 未做 |
 
 ### 13.2 覆盖率推进（目标 95%）
 
-2026-10-29 实测（`npm run test:cov`）：**全站 73.08% statements / 64.89% branches / 73.26% functions / 73.64% lines**。
+2026-10-29 实测（`npm run test:cov`）：**全站 73.25% statements / 65.29% branches / 73.82% functions / 73.84% lines**。
+（E01–E04 落地后 `src/server/**` 已回到门槛之上；下一阶段的主战场是视图层。）
 
 | 范围 | 实测 | 门槛 | 说明 |
 | --- | --- | --- | --- |
-| 全站 | 73.08 / 64.89 / 73.26 / 73.64 | 73 / 64 / 73 / 73 | 目标 95，按目录分批抬 |
-| `src/server/**` | 92.94 / 80.53 / 93.58 / 94.65 | 92 / 80 / 93 / 94 | 解释服务、`jobs/index`、`providers/index`、`stats/index` 是主要缺口 |
+| 全站 | 73.25 / 65.29 / 73.82 / 73.84 | 73 / 64 / 73 / 73 | 目标 95，按目录分批抬 |
+| `src/server/**` | 门槛已恢复通过（契约 100%、质量与任务表 95+） | 92 / 80 / 93 / 94 | 剩余缺口集中在 `jobs/index` 的启动分支与解释服务的异常路径 |
 | `src/client/shared/**` | 98.9 / 98.6 / 100 / 100 | 97 / 97 / 99 / 99 | 已达 95 |
-| `src/client/views/**` | 51.7 / 48.1 / 52.3 / 51.0 | 50 / 46 / 50 / 49 | 距 95 最远，需要按视图逐个补「渲染 + 交互」测试 |
+| `src/client/views/**` | 44.36 / 41.94 / 38.39 / 44.46 | 50 / 46 / 50 / 49 | 距 95 最远。清单：`map.js`（10%）、`map/layers/**`（12%）、`briefing.js`（0%）、`flow-canvas.js`（0%）、`macro/index.js`（0%）、`macro.js`（46%）、`detail.js`（58%）、`state.js`（67%） |
 
 推进顺序：先把 `src/server/**` 抬回 96/86/96/98（补 5 个缺口模块），再攻 `views/**`（DOM 渲染 + 交互断言，不收「跑通不断言」的面子测试）。
