@@ -1127,9 +1127,20 @@ export function renderDetail(data) {
         return;
       }
       slot.innerHTML = '<p class="cmp-loading">正在对照三组数据…</p>';
-      const data = await loadGoldComparison({ windowKey: '5d' });
-      slot.innerHTML = comparisonCardHTML(data);
-      slot.dataset.loaded = data?.decomposition ? '1' : '0';
+      /**
+       * 取数失败必须收尾：否则插槽会永远停在「正在对照三组数据…」，
+       * 读者以为一直在加载。失败时给可重试的说明并把 loaded 置 0。
+       */
+      try {
+        const data = await loadGoldComparison({ windowKey: '5d' });
+        slot.innerHTML = comparisonCardHTML(data);
+        slot.dataset.loaded = data?.decomposition ? '1' : '0';
+      } catch (err) {
+        slot.innerHTML = html`<p class="chart-empty chart-empty-err">对照数据暂时取不到${
+          err?.message ? `：${String(err.message)}` : ''
+        }。再点一次可以重试。</p>`.toString();
+        slot.dataset.loaded = '0';
+      }
     });
   });
 

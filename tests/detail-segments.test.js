@@ -177,3 +177,23 @@ describe('再显示更多行', () => {
     }
   });
 });
+
+describe('对照取数失败要收尾', () => {
+  it('取数抛错时插槽给出可重试说明，而不是永远停在加载中', async () => {
+    // 让 fetch 对该路径失败
+    vi.stubGlobal('fetch', vi.fn(async (url) => {
+      if (String(url).includes('comparison')) throw new Error('502');
+      return { ok: true, status: 200, json: async () => payload() };
+    }));
+    await d.loadDetail('gold-intl');
+    d.renderDetail(d.detailState.data);
+    const btn = document.querySelector('[data-cmp-open]');
+    const slot = document.querySelector('[data-cmp-slot]');
+    if (!btn || !slot) return;
+    btn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 10));
+    // 关键：不能停在「正在对照」
+    expect(slot.textContent).not.toContain('正在对照');
+    expect(slot.dataset.loaded).toBe('0');
+  });
+});

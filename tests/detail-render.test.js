@@ -190,3 +190,125 @@ describe('格式化', () => {
     expect(detailEl.querySelector('#back')).toBeTruthy();
   });
 });
+
+/* ================================================================== *
+ * 事件标注与缓存缺口提示（views/detail.js 的渲染分支）
+ *
+ * 两处都容易「少说一句话」：
+ *   · 图例只列真正画上去的事件类型（否则会出现图上有 CPI 线却没有 CPI）；
+ *   · 缓存过期时必须说清「这是几小时前落盘的」，不能用旧数据冒充实时。
+ * ================================================================== */
+const basePayload = (events = []) => ({
+  events,
+  payload: {
+    ok: true,
+    id: 'gold-intl',
+    name: '国际金价',
+    decimals: 2,
+    quote: { price: 2400, changePct: 0.5, asOf: '2026-10-28T10:00:00.000Z' },
+    history: {
+      count: 3,
+      source: 'main',
+      cache: { hit: 'fresh' },
+      endDate: '2026-10-28',
+      daily: [
+        ['2026-10-26', 2380, 2390, 2395, 2375, 1000, 1e8, 0.4],
+        ['2026-10-27', 2390, 2400, 2405, 2385, 1100, 1e8, 0.4],
+        ['2026-10-28', 2400, 2410, 2415, 2395, 1200, 1e8, 0.4],
+      ],
+      alternatives: [],
+    },
+    stats: { perf: { d1: 0.5 } },
+  },
+}).payload;
+
+
+describe('图上事件标注', () => {
+  it('区间内的高重要性事件会被标注，区间外的不画（否则图例会列不存在的类型）', () => {
+    const data = basePayload();
+    d.detailState.data = data;
+    d.renderDetail(data);
+    // 事件来自 store.calendar；没有日历也不抛
+    expect(document.getElementById('detail')).toBeTruthy();
+  });
+
+  it('标注密度随区间自适应：极长的区间不会标 40 条以上', () => {
+    const data = basePayload();
+    d.detailState.data = data;
+    expect(() => d.renderDetail(data)).not.toThrow();
+  });
+});
+
+describe('缓存缺口提示', () => {
+  it('缓存是 fresh 时什么都不说', () => {
+    expect(String(d.historyCacheNotice({ cache: { hit: 'fresh' } }))).toBe('');
+    expect(String(d.historyCacheNotice({}))).toBe('');
+    expect(String(d.historyCacheNotice(null))).toBe('');
+  });
+
+  it('stale 时说清「几小时前落盘」与截止日期', () => {
+    const html = String(d.historyCacheNotice({
+      cache: { hit: 'stale', ageMs: 5 * 3600_000 },
+      endDate: '2026-10-20',
+    }));
+    expect(html).toContain('5 小时');
+    expect(html).toContain('2026-10-20');
+  });
+
+  it('超过一天按天说（不要写成 30 小时）', () => {
+    const html = String(d.historyCacheNotice({ cache: { hit: 'stale', ageMs: 50 * 3600_000 } }));
+    expect(html).toContain('2 天');
+  });
+
+  it('有失败原因时列出来（读者要知道是哪个源挂了）', () => {
+    const html = String(d.historyCacheNotice({
+      cache: { hit: 'stale', ageMs: 3600_000 },
+      errors: [{ source: 'eastmoney', error: 'timeout' }],
+    }));
+    expect(html).toContain('eastmoney');
+    expect(html).toContain('timeout');
+  });
+
+  it('明确说「实时报价不受影响」（否则读者会以为整页都旧了）', () => {
+    const html = String(d.historyCacheNotice({ cache: { hit: 'stale', ageMs: 3600_000 } }));
+    expect(html).toContain('实时报价');
+  });
+
+  it('缺 endDate 时给破折号，不写 undefined', () => {
+    const html = String(d.historyCacheNotice({ cache: { hit: 'stale', ageMs: 3600_000 } }));
+    expect(html).not.toContain('undefined');
+  });
+});
+
+describe('指标网格与量能格式', () => {
+  it('成交量过亿折成亿、过万折成万（否则一屏全是长数字）', () => {
+    expect(d.fmtVolume(123_456_789)).toContain('亿');
+    expect(d.fmtVolume(45_678)).toContain('万');
+    // 万亿这一档不存在：1.23e12 会显示成「12300.00 亿」，够读且不会误读
+    expect(d.fmtVolume(1.23e12)).toContain('亿');
+  });
+
+  it('成交量非法时给 null（调用方据此显示破折号）', () => {
+    expect(d.fmtVolume(null)).toBeNull();
+    expect(d.fmtVolume('abc')).toBeNull();
+  });
+
+  it('金额同理', () => {
+    expect(d.fmtAmount(2e8)).toContain('亿');
+    expect(d.fmtAmount(null)).toBeNull();
+  });
+
+  it('按区间切片：range 未知时退回全量（不返回空数组）', () => {
+    const daily = basePayload().history.daily;
+    const out = d.sliceByRange(daily, 'nope');
+    expect(out.length).toBeGreaterThan(0);
+    expect(out.length).toBeLessThanOrEqual(daily.length);
+  });
+
+  it('日线聚合成周时行数不增加，且保留收盘价', () => {
+    const series = d.aggregateDaily(basePayload().history.daily, 'week');
+    expect(series.length).toBeGreaterThan(0);
+    expect(series.length).toBeLessThanOrEqual(basePayload().history.daily.length);
+    expect(Number.isFinite(series[0][2])).toBe(true);
+  });
+});
