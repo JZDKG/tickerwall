@@ -1259,8 +1259,12 @@ export function repaintExplainCard() {
   const host = typeof document !== 'undefined' ? document.getElementById('d-explain') : null;
   if (!host || !explainState) return;
   const data = detailState?.data;
-  host.innerHTML = html`${renderExplainCard(explainState, { assetName: data?.name })}
-      <div class="d-followups" id="d-followups">${rawFollowups(explainState)}</div>`.toString();
+  /**
+   * 解释卡本身是 HTML 字符串：必须用 raw() 包，否则会被 html`` 转义成文本
+   * （真实浏览器里曾整张卡显示成一串 `&lt;section…`）。
+   * 追问块返回的是 SafeHtml，可以直接嵌。
+   */
+  host.innerHTML = html`${raw(String(renderExplainCard(explainState, { assetName: data?.name })))}<div class="d-followups" id="d-followups">${rawFollowups(explainState)}</div>`.toString();
   bindExplain();
 }
 

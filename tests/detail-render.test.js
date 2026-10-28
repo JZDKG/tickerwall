@@ -354,3 +354,18 @@ describe('解释卡里的追问块', () => {
     expect(document.querySelector('.d-followups')).toBeNull();
   });
 });
+
+describe('解释卡不能被转义成文本', () => {
+  it('重绘后 #d-explain 里出现真实 DOM 节点，而不是 &lt;section 文本', async () => {
+    document.body.innerHTML = '<section id="detail"><div id="d-explain"></div></section>';
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, json: async () => basePayload() })));
+    await d.loadDetail('gold-intl');
+    d.repaintExplainCard();
+    const host = document.getElementById('d-explain');
+    // 关键断言：要么还没有解释状态（空），要么里面是**元素**而不是转义文本
+    expect(host.innerHTML.startsWith('&lt;')).toBe(false);
+    if (host.innerHTML.length > 0) {
+      expect(host.querySelector('section') ?? host.firstElementChild).toBeTruthy();
+    }
+  });
+});

@@ -85,6 +85,48 @@ jsdom 单测结构上就抓不到 —— 必须开真浏览器。**
 
 > 这个缺口要说清楚：**jsdom 覆盖 ≠ 真实浏览器行为**。本轮前面的三个 bug 就是证据。
 
+## 四之四、第五轮真实浏览器自检：一个已修 + 一个未修
+
+用 Node 内置 WebSocket 直连 CDP（`--remote-debugging-port=9333`）驱动真实 Chrome，
+逐页读取真实 DOM 与网络耗时。
+
+### 已修：解释卡整块被转义成文本（**我自己引入的回归**）
+
+`#d-explain` 的 innerHTML 是一串 `&lt;section class="d-block explain-card"…`。
+原因：第 58 轮把 `host.innerHTML = renderExplainCard(...)` 改成了
+`html\`${renderExplainCard(...)}…\`` —— 裸字符串被自动转义。
+`detail.js` 本来就在 `raw()` 白名单里，已改为 `raw(String(renderExplainCard(...)))`。
+修后复测：`#d-explain` 里是真实 `<section>` 节点。
+
+**这是本轮最有价值的一条**：一个为了「安全」做的改动，把一个一直正常的功能
+整块变成了不可读文本，而 38 条 jsdom 测试全绿。
+
+### 未修（记录在案）：详情页解释卡停在 `data-phase="loading"`
+
+复现：`/` 加载后 `location.hash = '#/d/gold-intl'`，等 14 秒。
+
+| 观测 | 值 |
+| --- | --- |
+| `/api/explanations?asset=gold-intl&window=session` | 200，15.9 KB，2 ms，6 条机制 |
+| 浏览器里该请求 | 成功（Performance 条目可见），且出现 **两次** |
+| `#d-explain` 的 `data-phase` | 一直 `loading` |
+| 页面异常 | 0 |
+
+接口与网络都正常，所以是**写回状态的路径**没走通（`hydrateExplanation` 的
+序号保护、或 `applyResponse` 之后的 `repaintExplainCard` 被后续重绘覆盖）。
+我做过一次基于「序号被 double-invoke 撞掉」的修改，但新加的用例立刻证明
+那个假设不成立（第二次调用返回 null 的原因不是序号），已**回滚**，不留猜测性改动。
+
+下一步该做的：在 `hydrateExplanation` 里临时打点（seq、phase、写入前后的
+`#d-explain` 长度），定位是「没写回」还是「写回后被覆盖」。
+
+### 顺带确认的正常项
+
+| 页面 | 结果 |
+| --- | --- |
+| 首页 `#home-brief` | `hidden=false`，3 个块 |
+| 事件中心 | 170 条事件；顶部「今天重点 三件」含排序依据；渲染耗时约 5–7 秒（日历接口慢，不是坏） |
+
 ## 五、还没覆盖的
 
 - 三个页面的浏览器端渲染**已用真实 Chrome 验证**（见上节），并据此修了三个 bug。
