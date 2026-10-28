@@ -18,11 +18,12 @@ import { judgeCalendarReleases, summarizeReleases } from '../domain/expectation-
  *
  * @param {{ nowMs?: number, limit?: number, deps?: { getCalendar?: Function } }} opts
  */
-export async function getExpectationLedger({ nowMs = Date.now(), limit = 12, deps = {} } = {}) {
+export async function getExpectationLedger({ nowMs = Date.now(), limit = 12, force = false, deps = {} } = {}) {
   const loadCalendar = deps.getCalendar ?? getCalendar;
   let calendar = null;
   try {
-    calendar = await loadCalendar({ force: false });
+    // force 只影响日历缓存是否重取，判定与整理与它无关
+    calendar = await loadCalendar({ force });
   } catch (err) {
     /**
      * 日历挂了不该让这一屏变成红字：台账可以为空，但要说清是「取不到」

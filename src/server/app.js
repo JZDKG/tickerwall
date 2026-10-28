@@ -116,6 +116,16 @@ export function createApp(deps) {
         }
         return sendJson(res, 200, await deps.getGoldComparison({ windowKey, force: takeForce(url) }));
       }
+      /**
+       * 预期台账（产品 2.4）：刚公布的与预期差多少、接下来要看什么。
+       * 判定在 domain/expectation-sources.js，服务层只整理 —— 这里只做
+       * limit 的参数归一（0 或非数字退回默认值，不让 ?limit=0 把屏刷空）。
+       */
+      if (url.pathname === '/api/expectations') {
+        const rawLimit = Number(url.searchParams.get('limit'));
+        const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(30, Math.floor(rawLimit)) : 12;
+        return sendJson(res, 200, await deps.getExpectationLedger({ limit, force: takeForce(url) }));
+      }
       // 解释读取与事件版本（方案 §8.1）：实现在 routes.js，这里只委派一次
       if (await handleExplanationRoutes(url, res, { takeForce })) return;
       if (url.pathname === '/api/calendar') {

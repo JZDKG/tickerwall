@@ -27,6 +27,7 @@ import { getDetail } from './src/server/services/detail.service.js';
 import { getMacro } from './src/server/services/macro.service.js';
 import { getCalendar, getEventStudy } from './src/server/services/calendar.service.js';
 import { getGoldComparison } from './src/server/services/comparison.service.js';
+import { getExpectationLedger } from './src/server/services/expectations.service.js';
 import { startCollector } from './src/server/jobs/collector.js';
 import { buildDefaultJobs, recoverPendingJobs } from './src/server/jobs/index.js';
 import { installShutdown } from './src/server/lifecycle.js';
@@ -50,6 +51,7 @@ const handle = createApp({
   getEventStudy,
   getCalendar,
   getGoldComparison,
+  getExpectationLedger,
   ttlMs: CACHE_TTL_MS,
   jobs: () => collector?.status?.() ?? [],
 });
