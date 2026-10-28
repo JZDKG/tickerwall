@@ -68,8 +68,18 @@ export function swap(section, selector, html) {
   tmp.innerHTML = html.trim();
   const fresh = tmp.firstElementChild;
   if (!fresh) return;
-  if (old) old.replaceWith(fresh);
-  else section.querySelector('.graph-stage').before(fresh);
+  if (old) {
+    old.replaceWith(fresh);
+    return;
+  }
+  /**
+   * 结构不完整时（升级过程里旧 section 可能缺 .graph-stage）不能让整段渲染崩掉：
+   * 原来这里直接 `.before(fresh)`，null 会抛 TypeError，整个图谱区跟着白掉。
+   * 退化成「插到 section 末尾」，chrome 至少还在。
+   */
+  const stage = section.querySelector('.graph-stage');
+  if (stage) stage.before(fresh);
+  else section.appendChild(fresh);
 }
 
 export function syncChrome(section, data, state, reality) {
