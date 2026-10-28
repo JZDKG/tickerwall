@@ -6,6 +6,7 @@
 import { route } from './router.js';
 import { countdownEl, refreshBtn, updatedEl } from './shared/dom.js';
 import { store } from './shared/store.js';
+import { attachGlossary } from './shared/glossary.js';
 import { apply, renderSkeleton } from './views/list.js';
 import { questionsEl } from './shared/dom.js';
 import { loadQuestionCards, questionCardsHTML } from './views/explanations/questions.js';
@@ -92,6 +93,14 @@ export async function loadQuotes(force = false) {
     paintCountdown();
   }
 }
+
+/**
+ * 原位术语（产品 2.5）：绑一次委托监听。
+ *
+ * 绑在 document 上而不是各视图里：术语会随卡片、指标、图表重渲染反复重建，
+ * 逐个绑定既低效，重建后还会失效（点了没反应）。
+ */
+attachGlossary(document);
 
 refreshBtn.addEventListener('click', () => loadQuotes(true));
 

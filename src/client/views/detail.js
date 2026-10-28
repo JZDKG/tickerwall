@@ -23,6 +23,18 @@ import { store } from '../shared/store.js';
 import { createApi } from '../shared/api.js';
 import { createQueryCache, describeRefresh } from '../shared/query-cache.js';
 import { comparisonCardHTML } from './comparison.js';
+import { attachGlossary, termHTML } from '../shared/glossary.js';
+
+/**
+ * 术语化的标签片段（产品 2.5）。
+ *
+ * 返回**未转义**的 HTML：metricCards 内部会把标签当字符串拼接，
+ * 术语按钮必须保持标签形态才有交互。词条内容都来自本地术语表，
+ * 不来自外部输入，所以这里按可信片段处理。
+ */
+export function termText(name) {
+  return termHTML(name);
+}
 import { loadCalendarCached } from '../shared/calendar.js';
 
 
@@ -702,10 +714,19 @@ export function metricCards(data) {
   const x = data.ext ?? {};
   const s = data.stats ?? {};
   const cards = [];
-  const add = (label, value, cls = '') => {
+  /**
+   * @param {string|object} label 文本，或 `raw()` 包好的可信片段（术语按钮）
+   * @param {*} value
+   * @param {string} cls 方向类名
+   * @param {boolean} asRaw label 是可信片段吗（默认按外部输入转义）
+   */
+  const add = (label, value, cls = '', asRaw = false) => {
     if (value == null || value === '') return;
-    // label / value 可能带外部数据（如备注、波动率分位），交给模板转义
-    cards.push(html`<div class="metric ${cls}"><span class="m-label">${label}</span><span class="m-value">${value}</span></div>`);
+    // label / value 可能带外部数据（如备注、波动率分位），默认交给模板转义；
+    // 术语按钮是我们自己拼的可信片段，用 raw() 包一层才不会被转义成文字
+    cards.push(
+      html`<div class="metric ${cls}"><span class="m-label">${asRaw ? raw(String(label)) : label}</span><span class="m-value">${value}</span></div>`,
+    );
   };
 
   const basisLabel = data.priceBasis === 'settle' ? '昨结算' : '昨收';
@@ -731,8 +752,12 @@ export function metricCards(data) {
   if (s.rv20 != null) {
     const pct = s.rv20Percentile;
     add(
-      'RV20 实现波动',
+      // 术语化（产品 2.5）：「实现波动」与「分位」是详情页最常被问的两个词
+      `${termText('实现波动率')} RV20`,
+      // 值里的「分位」保持纯文本：值这一列整体走转义，塞 HTML 会被当字面量显示
       `${s.rv20.toFixed(1)}%${pct != null ? ` · ${s.volRegime ?? ''} ${pct.toFixed(0)} 分位` : ''}`,
+      null,
+      true,
     );
   }
   if (s.rv60 != null) add('RV60 实现波动', `${s.rv60.toFixed(1)}%`);
@@ -746,7 +771,7 @@ export function metricCards(data) {
   add('MA250', fmtPrice(s.ma250, d));
 
   if (s.maxDrawdown?.pct != null && s.maxDrawdown.pct < 0) {
-    add('最大回撤', `${s.maxDrawdown.pct.toFixed(1)}%`, 'down');
+    add(termText('最大回撤'), `${s.maxDrawdown.pct.toFixed(1)}%`, 'down', true);
   }
   if (s.bestDay) add('单日最大涨', `${s.bestDay.pct.toFixed(2)}%`, 'up');
   if (s.worstDay) add('单日最大跌', `${s.worstDay.pct.toFixed(2)}%`, 'down');

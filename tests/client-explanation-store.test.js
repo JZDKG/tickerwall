@@ -148,3 +148,31 @@ describe('边角分支', () => {
     expect(currentExplanation('dxy').generatedAt).toBe('2026-10-28T09:00:00Z');
   });
 });
+
+describe('覆盖边角', () => {
+  it('envelope 直接就是 explanation（没有包一层）也能发布', () => {
+    const r = publishExplanation({ assetId: 'gold-intl', envelope: { id: 'flat_1', generatedAt: '2026-10-28T10:00:00Z' } });
+    expect(r.accepted).toBe(true);
+    expect(currentExplanationId('gold-intl')).toBe('flat_1');
+  });
+
+  it('subscribeExplanation 用默认窗口 session（省略第三个参数也行）', () => {
+    const seen = [];
+    const off = subscribeExplanation('gold-intl', undefined, (s) => seen.push(s?.explanationId ?? null));
+    publishExplanation({ assetId: 'gold-intl', envelope: envelope('exp_default') });
+    expect(seen).toEqual([null, 'exp_default']);
+    off();
+  });
+
+  it('重复订阅同一个函数不会重复触发两次（Set 去重）', () => {
+    let calls = 0;
+    const fn = () => {
+      calls += 1;
+    };
+    subscribeExplanation('oil', 'session', fn);
+    subscribeExplanation('oil', 'session', fn);
+    const before = calls;
+    publishExplanation({ assetId: 'oil', envelope: envelope('o1') });
+    expect(calls - before).toBe(1);
+  });
+});

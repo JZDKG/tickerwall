@@ -338,7 +338,10 @@ describe('metricCards / perfChips / crossCheckTable / goldSpreadBlock', () => {
     const html = String(metricCards(data));
     expect(html).toContain('昨结算');
     expect(html).toContain('振幅');
-    expect(html).toContain('RV20 实现波动');
+    // 产品 2.5 之后「实现波动率」是术语按钮：标签文本仍要在，但形态是 <button>
+    expect(html).toContain('实现波动率');
+    expect(html).toContain('RV20');
+    expect(html).toContain('data-gl-term="realizedVol"');
     expect(html).toContain('偏高 70 分位');
     expect(html).toContain('连涨 3 日');
     expect(html).toContain('最大回撤');
