@@ -366,12 +366,12 @@ SQLite 提供 Online Backup API，也支持 `VACUUM INTO`。后续在线备份�
 
 ### 13.2 覆盖率推进（目标 95%）
 
-2026-10-29 实测（`npm run test:cov`）：**全站 94.24% statements / 82.95% branches / 94.38% functions / 96.14% lines**。
+2026-10-29 实测（`npm run test:cov`）：**全站 94.24% statements / 83.03% branches / 94.38% functions / 96.14% lines**。
 （E01–E08 全部落地；`src/server/**` 与 `src/client/shared/**` 均在门槛之上，主战场只剩 `src/client/views/**`。）
 
 | 范围 | 实测 | 门槛 | 说明 |
 | --- | --- | --- | --- |
-| 全站 | 94.24 / 82.95 / 94.38 / **96.14** | 73 / 64 / 73 / 73 | 目标 95，按目录分批抬 |
+| 全站 | 94.24 / 83.03 / 94.38 / **96.14** | 73 / 64 / 73 / 73 | 目标 95，按目录分批抬 |
 | `src/server/**` | 门槛通过（app.js 95.7%、log.js 95%、lifecycle 88.9%、契约 100%） | 92 / 80 / 93 / 94 | 剩余缺口是解释服务与 collector 的异常分支 |
 | `src/client/shared/**` | 99.46 / 97.05 / 100 / 100 | 97 / 97 / 99 / 99 | 已达 95（含新增的 api / query-cache / explanation-store） |
 | `src/client/views/**` | 86.54 / 76.19 / 81.20 / 89.05 | 50 / 46 / 50 / 49 | 已远越门槛。逐文件战果见下节「已拿下的文件」 |
@@ -400,7 +400,7 @@ SQLite 提供 Online Backup API，也支持 `VACUUM INTO`。后续在线备份�
 | 行 lines | **96.14** | 95 | **达成** |
 | 语句 statements | 94.24 | 95 | 差 0.76 |
 | 函数 functions | 94.38 | 95 | 差 0.62 |
-| 分支 branches | 82.95 | 95 | 见 §13.3（口径所致，不可达） |
+| 分支 branches | 83.03 | 95 | 见 §13.3（口径所致，不可达） |
 
 行覆盖是四项里最先到位的一项，靠的是视图层的真实渲染与交互测试
 （不是目录排除，也不是「跑通不断言」）。剩余三项的差距性质不同，

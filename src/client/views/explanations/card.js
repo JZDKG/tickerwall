@@ -144,7 +144,9 @@ export function factorHTML(hypothesis, { open = false, index = 0 } = {}) {
       <span class="explain-factor-caret" aria-hidden="true">${open ? '▾' : '▸'}</span>
     </button>
     <div class="explain-factor-body" id="ef-${index}" ${open ? '' : 'hidden'}>
+      <div class="explain-layer"><b>本次候选解释</b><span>这条渠道在本次窗口是否成立，取决于下面的依据</span></div>
       <p class="explain-plain">${esc(hypothesis.plain ?? '')}</p>
+      <div class="explain-layer dim"><b>一般机制</b><span>机制本身怎么运作，与本次是否成立无关</span></div>
       <p class="explain-mech">${esc(hypothesis.mechanism ?? '')}</p>
       <div class="explain-sub"><b>适用条件</b>${conds}</div>
       <div class="explain-sub"><b>哪些情况会削弱它</b>${exclusions}</div>
@@ -214,7 +216,9 @@ function factsHTML(facts) {
   const f = (facts ?? []).find((x) => x.code === 'TARGET_CHANGE');
   if (!f) return '';
   const others = (facts ?? []).filter((x) => x.code === 'DRIVER_CHANGE').slice(0, 6);
+  // 显式标出「事实」这一层：只有数字与日期，不含原因判断（方案 §3.1）
   return `<div class="explain-facts">
+    <div class="explain-layer"><b>事实</b><span>发生了什么：只有数字与日期，不含原因</span></div>
     <div class="explain-fact-main">
       <b>${esc(fmtFactorChange(f.change))}</b>
       <span>${esc(f.label ?? '')}　${esc(f.window?.start ?? '')}${f.window?.end ? ` → ${esc(f.window.end)}` : ''}</span>
