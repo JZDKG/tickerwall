@@ -30,7 +30,7 @@ import {
 import { TOPIC_FILTERS, filterMapEvents } from './map/logic/filters.js';
 import { sparklinePath } from './map/logic/sparkline.js';
 import { mapEl } from '../shared/dom.js';
-import { dirOf, esc, fmtPrice, safeHref } from '../shared/format.js';
+import { dirOf, esc, fmtPrice, html, raw, safeHref } from '../shared/format.js';
 import { store } from '../shared/store.js';
 import { on } from '../shared/bus.js';
 import { loadCalendarCached } from '../shared/calendar.js';
@@ -778,10 +778,10 @@ export function spawnBubble(ev) {
   el.className = `map-bubble lv-${ev.level}`;
   el.style.left = `${left}px`;
   el.style.top = `${top}px`;
-  el.innerHTML = `
-    <div class="bb-head"><span class="bb-region">${esc(anchor.label)}</span><span class="bb-time">${esc(ev.time.slice(11, 16))}</span></div>
-    <div class="bb-title">${esc(ev.title.slice(0, 60))}</div>
-  `;
+  el.innerHTML = html`
+    <div class="bb-head"><span class="bb-region">${anchor.label}</span><span class="bb-time">${ev.time.slice(11, 16)}</span></div>
+    <div class="bb-title">${ev.title.slice(0, 60)}</div>
+  `.toString();
   el.addEventListener('click', () => { location.hash = '#/events'; });
   layer.appendChild(el);
 
@@ -926,13 +926,17 @@ export function renderMap() {
       + '</g>'
     : '';
 
-  mapEl.innerHTML = `
+  // 主模板用 html`` 统一转义。内部已自行完成转义的片段（landPaths、
+  // regionSvg、feedRows……）用 raw() 显式放行 —— 它们是渲染层自己产出的
+  // HTML/SVG，不是外部输入；若当普通字符串插入会被整体转义成 &lt;path，
+  // 整张地图直接变成乱码。
+  mapEl.innerHTML = html`
     <div class="map-top">
       <div class="map-title">
         <h2>全球市场地图</h2>
         <p>${
           mapRegion
-            ? `聚焦 ${esc(REGIONS.REGION_ANCHORS[mapRegion].label)} · ${visibleItems.length} 条事件 · <button type="button" class="map-region-clear" id="map-region-clear">显示全部</button>`
+            ? html`聚焦 ${REGIONS.REGION_ANCHORS[mapRegion].label} · ${visibleItems.length} 条事件 · <button type="button" class="map-region-clear" id="map-region-clear">显示全部</button>`
             : `${quotes.length} 个标的 · ${items.length} 条实时事件 · 点国家或赛区点聚焦，滚轮缩放 / 拖拽平移`
         }</p>
       </div>
@@ -952,8 +956,8 @@ export function renderMap() {
       ${TOPIC_FILTERS.map((f) => {
         const on = f.key === mapFilter;
         const n = filterMapEvents(items, { filterKey: f.key, region: mapRegion }).length;
-        return `<button type="button" class="map-pill${on ? ' on' : ''}" role="tab" aria-selected="${on}" data-filter="${esc(f.key)}">${esc(f.label)}<em>${n}</em></button>`;
-      }).join('')}
+        return html`<button type="button" class="map-pill${on ? ' on' : ''}" role="tab" aria-selected="${on}" data-filter="${f.key}">${f.label}<em>${n}</em></button>`;
+      })}
     </div>
     <div class="map-body">
       <div class="map-canvas" id="map-canvas">
@@ -976,21 +980,21 @@ export function renderMap() {
           </defs>
           <rect class="map-ocean" width="${LOGICAL_WIDTH}" height="${LOGICAL_HEIGHT}" fill="url(#oceanGlow)" />
           <g id="map-viewport">
-            <g class="map-graticule"><path d="${graticulePath()}" /></g>
-            <g class="world-land">${landPaths()}</g>
+            <g class="map-graticule"><path d="${raw(graticulePath())}" /></g>
+            <g class="world-land">${raw(landPaths())}</g>
             <g class="night-layer">
-              ${night.outer.map((b) => `<path class="night-band band-${b.key}" d="${b.d}" />`).join('')}
+              ${night.outer.map((b) => html`<path class="night-band band-${b.key}" d="${b.d}" />`)}
               <path class="night-core" d="${night.core}" />
               <path class="terminator" d="${night.line}" />
             </g>
-            ${sunMark}
+            ${raw(sunMark)}
             <g class="impact-layer"></g>
-            <g class="map-regions">${regionSvg}</g>
-            <g class="map-cities">${citySvg}</g>
-            ${btcSvg}
+            <g class="map-regions">${raw(regionSvg)}</g>
+            <g class="map-cities">${raw(citySvg)}</g>
+            ${raw(btcSvg)}
           </g>
         </svg>
-        <div class="map-anchors lod-0" id="map-anchors" data-lod="lod-0">${anchorsHtml}${beaconHtml}</div>
+        <div class="map-anchors lod-0" id="map-anchors" data-lod="lod-0">${raw(anchorsHtml)}${raw(beaconHtml)}</div>
         <div class="map-broadcast" id="map-broadcast"></div>
         <div class="map-bubbles" id="map-bubbles"></div>
       </div>
@@ -1000,11 +1004,11 @@ export function renderMap() {
           <em>${visibleItems.filter((i) => i.level === 'high').length} 条高影响</em>
           <button type="button" class="mf-fold" id="mf-fold" title="收起面板">⟩</button>
         </div>
-        <div class="mf-list">${feedRows}</div>
+        <div class="mf-list">${raw(feedRows)}</div>
       </aside>
       <div class="map-timeline" id="map-timeline"></div>
     </div>
-  `;
+  `.toString();
 
   const layerNow = document.getElementById('map-bubbles');
   if (layerNow && liveBubbles.length) {
@@ -1154,22 +1158,24 @@ export function openNodeCard(cityKey) {
   el.id = 'map-node-card';
   el.style.left = `${px}px`;
   el.style.top = `${py}px`;
-  el.innerHTML = `
+  // macro / rowsWithSpark 是渲染层已转义好的片段，用 raw() 放行；
+  // 标题、城市名这类外部数据交给 html`` 自动转义
+  el.innerHTML = html`
     <div class="nc-head">
-      <span class="nc-city">${esc(city.name)}</span>
+      <span class="nc-city">${city.name}</span>
       <span class="nc-status ${openNow ? 'on' : 'off'}">${openNow ? '交易中' : '已收盘'}</span>
     </div>
-    ${macro ? `<div class="nc-macros">${macro}</div>` : ''}
-    ${rowsWithSpark}
-    ${spill.length ? `<div class="nc-spill">
+    ${macro ? html`<div class="nc-macros">${raw(macro)}</div>` : ''}
+    ${raw(rowsWithSpark)}
+    ${spill.length ? html`<div class="nc-spill">
       <span class="nc-spill-head">波及事件</span>
-      ${spill.map((ev) => `<button type="button" class="nc-spill-row lv-${esc(ev.level)}" data-spill="${esc(ev.id)}">
-        <i>${esc(String(ev.time).slice(11, 16))}</i><span>${esc(ev.title.slice(0, 34))}</span></button>`).join('')}
+      ${spill.map((ev) => html`<button type="button" class="nc-spill-row lv-${ev.level}" data-spill="${ev.id}">
+        <i>${String(ev.time).slice(11, 16)}</i><span>${ev.title.slice(0, 34)}</span></button>`)}
     </div>` : ''}
     <div class="nc-foot">
       <a href="#/d/${encodeURIComponent(members[0].id)}">打开详情 →</a>
     </div>
-  `;
+  `.toString();
   el.addEventListener('click', (e) => e.stopPropagation());
 
   // 波及事件点进去是「在地图上锁定这一条的冲击链」，不是跳出地图。
@@ -1420,7 +1426,7 @@ export async function loadMap() {
     renderMap();
     fresh.reverse().slice(-2).forEach((ev) => spawnBubble(ev));
   } catch (err) {
-    mapEl.innerHTML = `<div class="d-error">地图加载失败：${esc(err?.message ?? String(err))}</div>`;
+    mapEl.innerHTML = html`<div class="d-error">地图加载失败：${err?.message ?? String(err)}</div>`.toString();
   }
 }
 

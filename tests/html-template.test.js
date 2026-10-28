@@ -178,8 +178,18 @@ describe('attrHref：转义 + 协议白名单', () => {
  * 约束：raw() 只允许出现在白名单文件里
  * ------------------------------------------------------------------ */
 describe('raw() 的使用范围', () => {
-  // 加入白名单前请先想清楚：这里每一处都是「绕过转义」的授权
-  const RAW_ALLOWED = new Set();
+  /**
+   * raw() 的授权名单。加文件前请先想清楚：每一处都是「绕过转义」的授权，
+   * 而且 raw 不检查内容，责任全在调用方。
+   *
+   * views/map.js —— 它的 SVG/HTML 片段由 landPaths()、regionSvg、
+   *   citySvg、sunMark、anchorsHtml、feedRows、openNodeCard 的 rowsWithSpark
+   *   等生成，这些函数内部已经用 esc()/模板完成转义，返回的是「渲染层
+   *   自己产出的 HTML」。当普通字符串插进外层 html`` 会被整体转义成
+   *   &lt;path，整张地图变乱码 —— 所以必须显式放行。
+   *   这些片段不接受外部输入直接透传，安全边界在各自的生成函数里。
+   */
+  const RAW_ALLOWED = new Set([path.join('views', 'map.js')]);
 
   function walk(dir) {
     const out = [];
@@ -289,7 +299,7 @@ describe('棘轮：innerHTML 里的裸插值', () => {
    * 逐文件列入比「列一个文件但允许它有裸插值」有意义得多 —— 后者只是把
    * 数字挪个地方，没有守住任何东西。
    */
-  const MIGRATED = new Set(['views/events.js']);
+  const MIGRATED = new Set(['views/events.js', 'views/map.js']);
 
   /**
    * 全站基线。这个数字只允许变小，不许变大。
@@ -300,7 +310,7 @@ describe('棘轮：innerHTML 里的裸插值', () => {
    * 必须为 0」来守，两者合起来才有意义。195 是 `innerHTML` 这一类当前
    * 的实测值（detail 82 / macro 45 / events 33 / map 28 / 其余 7）。
    */
-  const BASELINE = 162;
+  const BASELINE = 134;
 
   function bareInterpolations(code) {
     // 数 `innerHTML = \`…\`` 之后的模板里出现的 ${，粗略但足够做棘轮
@@ -406,5 +416,50 @@ describe('整页组合渲染', () => {
     renderEvents();
     expect(eventsEl.innerHTML).toContain('<div class="cal-list">');
     expect(eventsEl.innerHTML).not.toContain('&lt;div class=&quot;cal-list&quot;');
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * map.js：SVG 不能被二次转义成文本
+ *
+ * 这是 map.js 迁移里最容易翻车的地方 —— 主模板里嵌着 landPaths()、
+ * regionSvg、citySvg、sunMark、night 面片等内联 SVG。它们若被当普通字符串
+ * 转义，`<path` 会变成 `&lt;path`，整张世界地图直接变乱码或空白。
+ *
+ * 用静态断言守（不起浏览器）：模板里这些插值必须经 raw() 包装。
+ * ------------------------------------------------------------------ */
+describe('map.js 的 SVG 片段经过 raw() 放行', () => {
+  const code = () => readFileSync(path.join(CLIENT, 'views/map.js'), 'utf8');
+
+  it('地图与图层片段都包了 raw()', () => {
+    const src = code();
+    for (const call of [
+      'raw(graticulePath())',
+      'raw(landPaths())',
+      'raw(sunMark)',
+      'raw(regionSvg)',
+      'raw(citySvg)',
+      'raw(btcSvg)',
+      'raw(anchorsHtml)',
+      'raw(beaconHtml)',
+      'raw(feedRows)',
+      'raw(rowsWithSpark)',
+    ]) {
+      expect(src, `缺少 ${call}`).toContain(call);
+    }
+  });
+
+  it('夜空面片改用 html`` 生成，不再裸拼字符串', () => {
+    const src = code();
+    expect(src).toContain('night.outer.map((b) => html`<path class="night-band');
+    expect(src).not.toContain("night.outer.map((b) => `<path");
+  });
+
+  it('主模板与卡片模板都走 html``', () => {
+    const src = code();
+    expect(src).toContain('mapEl.innerHTML = html`');
+    expect(src).toContain('el.innerHTML = html`\n    <div class="nc-head">');
+    // 事件流气泡
+    expect(src).toContain('el.innerHTML = html`\n    <div class="bb-head">');
   });
 });
