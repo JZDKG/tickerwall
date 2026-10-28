@@ -397,7 +397,15 @@ function qualityListFromSnapshot(explanation) {
  *        `observations` 用于注入（测试、回放）：给了就不再打上游。
  * @returns {{ status:number, body:object }}
  */
-export async function getExplanationResponse({ asset, windowKey, force = false, observations: injected = null } = {}) {
+export async function getExplanationResponse({
+  asset,
+  windowKey,
+  force = false,
+  observations: injected = null,
+  // 事件证据：{ eventId, revision, shockType? }。缺省为「窗口内没有已分类事件」，
+  // 事件型机制（供给受阻 / 需求增强）因此只能是「尚未确认」，不会默认成立。
+  eventEvidence = null,
+} = {}) {
   if (!explanationAssetIds().includes(asset)) {
     return { status: 400, body: { ok: false, error: `不支持的资产：${asset ?? '(空)'}` } };
   }
@@ -406,8 +414,9 @@ export async function getExplanationResponse({ asset, windowKey, force = false, 
   }
 
   const cacheKey = `${asset}|${windowKey}`;
+  const injectedAny = Boolean(injected) || Array.isArray(eventEvidence);
   const hit = explanationCache.get(cacheKey);
-  if (!force && !injected && hit && Date.now() - hit.at < EXPLANATION_CACHE_TTL_MS) {
+  if (!force && !injectedAny && hit && Date.now() - hit.at < EXPLANATION_CACHE_TTL_MS) {
     return {
       status: 200,
       body: {
@@ -493,7 +502,7 @@ export async function getExplanationResponse({ asset, windowKey, force = false, 
     assetId: asset,
     windowKey,
     observations,
-    events: [],
+    events: Array.isArray(eventEvidence) ? eventEvidence : [],
     asOf: generatedAt,
     generatedAt,
     id,

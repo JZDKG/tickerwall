@@ -32,8 +32,13 @@ export function setExplainEnabled(on) {
   }
 }
 
-/** 有解释能力的资产（首版黄金；原油/美元/美债属于阶段三） */
-export const EXPLAINABLE = new Set(['gold-intl']);
+/**
+ * 有解释能力的资产。
+ *
+ * C1 已完成黄金与原油；美元与美债的机制库还没写，所以这里不放开 ——
+ * 界面上未开放的资产会显示「解释能力还没开放」，而不是给一个空壳。
+ */
+export const EXPLAINABLE = new Set(['gold-intl', 'oil']);
 
 export function isExplainable(assetId) {
   return EXPLAINABLE.has(assetId);

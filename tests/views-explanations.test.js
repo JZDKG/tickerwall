@@ -280,7 +280,10 @@ describe('请求序号：旧响应不能覆盖新选择', () => {
     expect(out.phase).toBe('unsupported');
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(isExplainable('gold-intl')).toBe(true);
-    expect(isExplainable('oil')).toBe(false);
+    // C1 之后原油也已开放；美元与美债仍不在可解释集合里
+    expect(isExplainable('oil')).toBe(true);
+    expect(isExplainable('dxy')).toBe(false);
+    expect(isExplainable('us10y')).toBe(false);
   });
 });
 

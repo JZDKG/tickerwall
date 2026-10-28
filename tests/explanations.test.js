@@ -260,17 +260,29 @@ describe('时间错位：不能各取最新值当成当期同涨同跌', () => {
 /* ------------------------- 冲突与状态汇总 ------------------------- */
 
 describe('冲突：支持与反向同时存在时标 mixed，不强行合成单一方向', () => {
-  it('两个方向相反的渠道都 consistent → 双方都变 mixed', () => {
+  it('两个方向相反的机制假设都 consistent → 双方都变 mixed', () => {
     const list = [
-      { mechanismId: 'A', to: 'gold-intl', sign: 1, status: 'consistent', reasons: [] },
-      { mechanismId: 'B', to: 'gold-intl', sign: -1, status: 'consistent', reasons: [] },
-      { mechanismId: 'C', to: 'gold-intl', sign: 1, status: 'not_supported', reasons: [] },
+      { mechanismId: 'A', to: 'gold-intl', relationType: 'mechanism', sign: 1, status: 'consistent', reasons: [] },
+      { mechanismId: 'B', to: 'gold-intl', relationType: 'mechanism', sign: -1, status: 'consistent', reasons: [] },
+      { mechanismId: 'C', to: 'gold-intl', relationType: 'mechanism', sign: 1, status: 'not_supported', reasons: [] },
     ];
     markConflicts(list);
     expect(list[0].status).toBe('mixed');
     expect(list[1].status).toBe('mixed');
     expect(list[2].status).toBe('not_supported');
     expect(list[0].reasons).toContain('OPPOSING_CHANNEL_SUPPORTED');
+  });
+
+  it('计价换算 / 共同驱动 / 历史相关不参与冲突判定（它们不是方向预测）', () => {
+    const list = [
+      { mechanismId: 'USD', to: 'oil', relationType: 'mechanism', sign: -1, status: 'consistent', reasons: [] },
+      { mechanismId: 'BRENT', to: 'oil', relationType: 'valuation-conversion', sign: 1, status: 'consistent', reasons: [] },
+      { mechanismId: 'COPPER', to: 'oil', relationType: 'historical-correlation', sign: 0, status: 'untested', reasons: [] },
+    ];
+    markConflicts(list);
+    // 只有一条方向性机制成立 → 不构成「相反证据」
+    expect(list[0].status).toBe('consistent');
+    expect(list[1].status).toBe('consistent');
   });
 });
 
@@ -576,5 +588,115 @@ describe('事实只列本次会用到的指标', () => {
     const out = await getExplanationResponse({ asset: 'gold-intl', windowKey: '5d', observations: m });
     expect(out.body.meta.freshness).toBe('stale');
     expect(out.body.meta.freshnessReasons).toContain('BEYOND_UPDATE_CYCLE');
+  });
+});
+
+/* ================================================================== *
+ * 原油解释（C1）
+ *
+ * 方案 §9 阶段三：「每个资产具备证据不足和反向案例后再开放」。
+ * 这一组必须同时覆盖三种情形：
+ *   · 观测一致（美元走强、油价下跌）；
+ *   · 证据不足（缺布伦特 / 缺事件证据）→ 必须是「尚未确认」，不能装成结论；
+ *   · 反向（供给事件已分类，但油价下跌）→ not_supported。
+ * ================================================================== */
+
+/** 原油：美元上行、油价下跌、VIX 上行、铜下跌 */
+function oilObservations({ oilFrom = 70, oilTo = 69, dxyFrom = 104, dxyTo = 104.6, vixFrom = 16, vixTo = 18, copperFrom = 4.2, copperTo = 4.15 } = {}) {
+  const m = new Map();
+  m.set('oil', obs('oil', levels(22, oilFrom, oilTo)));
+  m.set('dxy', obs('dxy', levels(22, dxyFrom, dxyTo)));
+  m.set('vix', obs('vix', levels(22, vixFrom, vixTo)));
+  m.set('copper', obs('copper', levels(22, copperFrom, copperTo)));
+  m.set('brent', obs('brent', levels(22, 74, 73)));
+  return m;
+}
+
+describe('原油：观测一致与证据不足', () => {
+  it('美元走强 + 油价下跌 → 计价效应 consistent', async () => {
+    const out = await getExplanationResponse({ asset: 'oil', windowKey: '5d', observations: oilObservations() });
+    expect(out.status).toBe(200);
+    const h = out.body.explanation.hypotheses.find((x) => x.mechanismId === 'M-OIL-USD');
+    expect(h.status).toBe('consistent');
+    expect(h.reasons).toContain('SIGN_MATCH');
+  });
+
+  it('缺布伦特序列 → 基准价差渠道「尚未确认」，而不是不成立', async () => {
+    const m = oilObservations();
+    m.delete('brent');
+    const out = await getExplanationResponse({ asset: 'oil', windowKey: '5d', observations: m });
+    const h = out.body.explanation.hypotheses.find((x) => x.mechanismId === 'M-OIL-BRENT-ANCHOR');
+    expect(h.status).toBe('untested');
+    expect(h.reasons).toContain('MISSING_INSTRUMENT:brent');
+    // 缺失的事实不能编出来
+    expect(h.evidence).toEqual([]);
+  });
+
+  it('没有已分类事件 → 供给/需求渠道「尚未确认」并说明缺什么', async () => {
+    const out = await getExplanationResponse({ asset: 'oil', windowKey: '5d', observations: oilObservations() });
+    const supply = out.body.explanation.hypotheses.find((x) => x.mechanismId === 'M-OIL-SUPPLY-SHOCK');
+    expect(supply.status).toBe('untested');
+    expect(supply.reasons).toContain('NO_EVENT_EVIDENCE');
+    expect(out.body.explanation.unknowns.map((u) => u.code)).toContain('NO_EVENT_EVIDENCE');
+  });
+
+  it('同向上涨（美元也涨）→ 计价效应 not_supported（反向案例）', async () => {
+    const out = await getExplanationResponse({
+      asset: 'oil',
+      windowKey: '5d',
+      observations: oilObservations({ dxyFrom: 104, dxyTo: 104.6, oilFrom: 70, oilTo: 71 }),
+    });
+    const h = out.body.explanation.hypotheses.find((x) => x.mechanismId === 'M-OIL-USD');
+    expect(h.status).toBe('not_supported');
+    expect(h.reasons).toContain('SIGN_MISMATCH');
+  });
+});
+
+describe('原油：事件型机制（供给 / 需求）', () => {
+  const supplyEvent = { eventId: 'evt-1', revision: 1, shockType: 'supply', action: '减产' };
+
+  it('供给事件已分类 + 油价上行 → consistent，并保留事件引用', async () => {
+    const out = await getExplanationResponse({
+      asset: 'oil',
+      windowKey: '5d',
+      observations: oilObservations({ oilFrom: 70, oilTo: 72 }),
+      eventEvidence: [supplyEvent],
+    });
+    const h = out.body.explanation.hypotheses.find((x) => x.mechanismId === 'M-OIL-SUPPLY-SHOCK');
+    expect(h.status).toBe('consistent');
+    expect(h.eventRefs).toEqual([{ eventId: 'evt-1', revision: 1 }]);
+  });
+
+  it('供给事件已分类但油价下跌 → not_supported（必须允许反例）', async () => {
+    const out = await getExplanationResponse({
+      asset: 'oil',
+      windowKey: '5d',
+      observations: oilObservations({ oilFrom: 70, oilTo: 68 }),
+      eventEvidence: [supplyEvent],
+    });
+    const h = out.body.explanation.hypotheses.find((x) => x.mechanismId === 'M-OIL-SUPPLY-SHOCK');
+    expect(h.status).toBe('not_supported');
+    expect(h.reasons).toContain('SIGN_MISMATCH');
+  });
+
+  it('事件类型不匹配（需求事件走供给渠道）→ 不当作证据', async () => {
+    const out = await getExplanationResponse({
+      asset: 'oil',
+      windowKey: '5d',
+      observations: oilObservations({ oilFrom: 70, oilTo: 72 }),
+      eventEvidence: [{ eventId: 'evt-2', revision: 1, shockType: 'demand' }],
+    });
+    const supply = out.body.explanation.hypotheses.find((x) => x.mechanismId === 'M-OIL-SUPPLY-SHOCK');
+    const demand = out.body.explanation.hypotheses.find((x) => x.mechanismId === 'M-OIL-DEMAND-SHOCK');
+    expect(supply.status).toBe('untested');
+    expect(supply.reasons).toContain('NO_MATCHING_EVENT');
+    expect(demand.status).toBe('consistent');
+  });
+
+  it('美元与美债仍未开放解释（能力边界可测）', async () => {
+    for (const asset of ['dxy', 'us10y']) {
+      const out = await getExplanationResponse({ asset, windowKey: 'session', observations: new Map() });
+      expect(out.status).toBe(400);
+    }
   });
 });

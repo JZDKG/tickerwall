@@ -33,6 +33,7 @@ import {
   SHOCK_CONDITIONS,
   shockConditionSet,
 } from './knowledge-base.js';
+import { edgeExplanationOf, graphExplanationBlock } from '../explanations/graph.js';
 import {
   findLastValid,
   lastRollingCorr,
@@ -128,6 +129,26 @@ export function noEdgeCard(data, a, b) {
  * 3. 机理卡：一条边 = 机理 + 实盘验证 + 何时失效
  * ------------------------------------------------------------------ */
 
+/**
+ * 机理卡里的「解释状态」一行。
+ *
+ * 统计相关与机制判定必须并列，谁也不能盖住谁：
+ * 图上可能「相关还在动」而机制「尚未确认」，这不是矛盾。
+ */
+export function edgeExplainRow(edge, r, explanation) {
+  if (!explanation) return '';
+  const info = edgeExplanationOf(edge?.id, explanation, r);
+  if (!info.available) {
+    return `<div class="mg-sect"><i class="dot"></i><h4>解释状态</h4>
+      <p class="mg-foot-note">${esc(info.note ?? '这份解释里没有这条渠道')}</p></div>`;
+  }
+  const tone = info.status === 'consistent' ? 'pos' : info.status === 'mixed' ? 'warn' : 'cold';
+  return `<div class="mg-sect"><i class="dot"></i><h4>解释状态（同一份快照）</h4>
+    <p class="mg-lead">${esc(info.label ?? info.mechanismId)}：<span class="mg-ex-status ${tone}">${esc(info.statusText)}</span></p>
+    ${info.note ? `<p class="mg-foot-note">${esc(info.note)}</p>` : ''}
+  </div>`;
+}
+
 export function edgeCard(data, edge, reality, state) {
   if (!edge) {
     const [a, b] = state?.pair ?? [];
@@ -142,6 +163,7 @@ export function edgeCard(data, edge, reality, state) {
 
   const row = (k, v, cls = '') => `<div class="mg-kv ${cls}"><span>${esc(k)}</span><b>${v}</b></div>`;
 
+  const explanation = state?.explanation ?? null;
   const rel = relationTypeOf(edge);
   // 日期错位必须显式说出来：共同日期可能是更早的那一天
   const asOfNote = r?.unaligned
@@ -173,6 +195,7 @@ export function edgeCard(data, edge, reality, state) {
       <p>${esc(edge.mechanism)}</p>
     </div>
 
+    ${edgeExplainRow(edge, r, explanation)}
     <div class="mg-sect"><i class="dot"></i><h4>${esc(corrCaption(r?.n ?? 0))}</h4>
       ${asOfNote}
       ${row(`${A?.short ?? edge.from} 本窗口`, `<span class="${pctCls(r?.lastA)}">${esc(fmtChg(r?.lastA, A?.kind))}</span>`)}
@@ -195,7 +218,7 @@ export function edgeCard(data, edge, reality, state) {
  * 4. 导图焦点卡：上游驱动 / 下游传导
  * ------------------------------------------------------------------ */
 
-export function mindCardPanel(data, focusId, reality) {
+export function mindCardPanel(data, focusId, reality, explanation = null) {
   const up = MACRO_TRANSMISSION_EDGES.filter((e) => e.to === focusId);
   const down = MACRO_TRANSMISSION_EDGES.filter((e) => e.from === focusId);
   const f = data.universe.find((u) => u.id === focusId);
@@ -222,6 +245,7 @@ export function mindCardPanel(data, focusId, reality) {
         down.map((e) => line(e, data.universe.find((u) => u.id === e.to)?.short ?? e.to, 'down')).join('') || '<li class="mg-mini empty">无已登记下游</li>'
       }</ul>
     </div>
+    ${graphExplanationBlock(explanation, { assetId: focusId, windowKey: 'session' })}
     <p class="mg-foot-note">点左侧/右侧任意卡片，焦点会带过渡切过去 —— 顺着因果链一路追查。</p>`;
 }
 
@@ -395,12 +419,13 @@ export function alertBannerHTML(data, reality) {
  */
 export function inspectorHTML(data, state, reality) {
   const mode = state.graphMode ?? 'compass';
+  const explanation = state.explanation ?? null;
   if (mode === 'compass') {
     const pairEdge = findEdge(state.pair?.[0], state.pair?.[1]);
     const playbook = state.playbook ? MACRO_PLAYBOOKS.find((p) => p.id === state.playbook) : null;
     return playbook ? playbookPanel(playbook, data, reality) : edgeCard(data, pairEdge, reality, state);
   }
-  if (mode === 'mindmap') return mindCardPanel(data, state.graphFocus ?? 'gold-intl', reality);
+  if (mode === 'mindmap') return mindCardPanel(data, state.graphFocus ?? 'gold-intl', reality, explanation);
   return sandboxPanel(data, state);
 }
 

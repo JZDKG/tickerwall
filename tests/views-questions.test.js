@@ -6,6 +6,7 @@
  * ================================================================== */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { meaningNotesFor } from '../src/client/views/explanations/card.js';
 import {
   questionTemplate,
   targetFactOf,
@@ -198,6 +199,14 @@ describe('卡片与渲染', () => {
     expect(questionCardsHTML([card])).toContain('稍后会自动补上');
   });
 
+  it('原油也有自己的「与我有什么关系」（标地区与条件，不给具体油价）', () => {
+    const notes = meaningNotesFor('oil');
+    expect(notes.length).toBeGreaterThan(0);
+    const text = notes.map(([k, v]) => `${k}${v}`).join(' ');
+    expect(text).toContain('加油站');
+    expect(text).toContain('不推断具体幅度');
+  });
+
   it('最多渲染三张卡', () => {
     const cards = ['a', 'b', 'c', 'd'].map((id) => ({
       assetId: id,
@@ -228,10 +237,13 @@ describe('取数：只读快照，功能开关可关掉', () => {
       max: 3,
       fetchImpl,
     });
-    expect(cards).toHaveLength(1);
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-    expect(fetchImpl.mock.calls[0][0]).toContain('asset=gold-intl');
-    expect(fetchImpl.mock.calls[0][0]).toContain('window=session');
+    // 比特币没有机制库 → 不请求；黄金与原油各一张
+    expect(cards).toHaveLength(2);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    const urls = fetchImpl.mock.calls.map((c) => c[0]);
+    expect(urls.some((u) => u.includes('asset=gold-intl'))).toBe(true);
+    expect(urls.some((u) => u.includes('asset=oil'))).toBe(true);
+    expect(urls.every((u) => u.includes('window=session'))).toBe(true);
   });
 
   it('功能开关关闭时一张都不取', async () => {

@@ -12,6 +12,10 @@ import { macroEl } from '../shared/dom.js';
 import { store } from '../shared/store.js';
 import { clockText, dirOf, esc, html, raw } from '../shared/format.js';
 import { macroGraphSectionHTML, findEdge, EDGE_BY_ID } from '/macro-graph.js';
+// 图谱消费「同一份解释」：取数与状态判断在 explanations/graph.js（纯函数 + 60s 缓存）。
+// 注意不能放回 views/macro/：那是构建期子树，主入口不许直接加载它。
+import { loadGraphExplanation } from './explanations/graph.js';
+import { isExplainable } from './explanations/state.js';
 
 /* ------------------------------------------------------------------ *
  * 传导图谱画布：X6 版按需加载，失败就退回手绘 SVG
@@ -444,9 +448,61 @@ export function syncPairUI() {
   refreshGraph();
 }
 
+/**
+ * 当前该取哪份解释（方案 §3.3）。
+ *
+ *   导图 → 焦点标的
+ *   罗盘 → 选中那一对里「可解释」的那一端
+ *   沙盘 → 震源自身
+ */
+export function graphFocusAsset() {
+  if (!macroState) return null;
+  const mode = macroState.graphMode ?? 'compass';
+  if (mode === 'mindmap') return macroState.graphFocus ?? null;
+  if (mode === 'sandbox') return macroState.shock?.id ?? null;
+  const pair = macroState.pair ?? [];
+  return pair.find((id) => isExplainable(id)) ?? null;
+}
+
+let explainPending = null;
+
+/**
+ * 取「同一份解释」并写回 macroState。
+ *
+ * 只在这一份确实变化时重绘一次，避免 refreshGraph ↔ hydrate 互相触发。
+ */
+export async function hydrateGraphExplanation() {
+  const asset = graphFocusAsset();
+  if (!asset || !isExplainable(asset)) {
+    if (macroState?.explanation) {
+      macroState.explanation = null;
+      macroState.explanationAsset = null;
+      refreshGraph();
+    }
+    return;
+  }
+  if (macroState.explanationAsset === asset && macroState.explanation) return;
+  if (explainPending === asset) return;
+  explainPending = asset;
+  try {
+    const ex = await loadGraphExplanation(asset);
+    macroState.explanation = ex;
+    macroState.explanationAsset = asset;
+  } catch {
+    macroState.explanation = null;
+    macroState.explanationAsset = asset;
+  } finally {
+    explainPending = null;
+  }
+  refreshGraph();
+}
+
 export function refreshGraph() {
   const host = document.getElementById('macro-graph-host');
   if (!host || !macroState?.data) return;
+
+  // 图的解释状态跟着当前焦点走：切了资产就重新取一份同一接口的快照
+  if (macroState.explanationAsset !== graphFocusAsset()) void hydrateGraphExplanation();
 
   if (macroFlowMod) {
     // X6 画布：只换 chrome（模式条 / 横幅 / 右侧卡），#mg-x6 与画布实例原地复用，
@@ -772,6 +828,9 @@ export async function loadMacro(windowSize = 250, force = false) {
         shock: null,
         // 冲击条件：原因未分类 / 供给受阻 / 需求增强（方案 §5.4）
         shockCondition: null,
+        // 与详情页同源的解释快照（方案 §3.3 / B5）
+        explanation: null,
+        explanationAsset: null,
       };
     }
     macroState.data = data;

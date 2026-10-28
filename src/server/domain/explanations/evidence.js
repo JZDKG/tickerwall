@@ -110,6 +110,57 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
     };
   }
 
+  /**
+   * 事件型机制（例如「供给受阻推高油价」）没有价格驱动端：
+   * 它检验的是「已分类的事件 + 目标方向」是否与机制一致。
+   *
+   * 只有同时满足才可能成立：
+   *   1. 存在可核实事件，且事件已被分类到这条机制对应的冲击类型；
+   *   2. 目标在同一窗口内有实质变化。
+   * 事件存在但方向相反 → not_supported（这就是「反向案例」，必须有）。
+   */
+  if (mechanism.eventOnly) {
+    const targetObs = observations.get(mechanism.to);
+    const chTo = targetObs
+      ? computeChange(targetObs.series, {
+          comparisonPolicy: targetObs.definition?.comparisonPolicy,
+          observations: observationsCount,
+        })
+      : null;
+    const matched = events.filter((e) => !mechanism.shockType || e.shockType === mechanism.shockType);
+    if (!matched.length) {
+      return { ...base, missing, reasons: ['NO_MATCHING_EVENT'], eventRefs: [] };
+    }
+    if (!chTo || !isMaterialChange(chTo)) {
+      return {
+        ...base,
+        missing,
+        reasons: ['NO_MATERIAL_TARGET_CHANGE'],
+        eventRefs: matched.map((e) => ({ eventId: e.eventId, revision: e.revision })),
+        evidence: [evidenceEntry({ role: 'support', instrumentId: mechanism.to, definition: targetObs?.definition, change: chTo })].filter(
+          (e) => e.change,
+        ),
+      };
+    }
+    const shown = presentChange(chTo);
+    const actualSign = Math.sign(shown.value);
+    const expected = Math.sign(mechanism.sign);
+    const ok = expected === 0 || actualSign === expected;
+    return {
+      ...base,
+      status: ok ? 'consistent' : 'not_supported',
+      statusLabel: ok ? CHANNEL_STATUS.consistent.label : CHANNEL_STATUS.not_supported.label,
+      statusPlain: ok ? CHANNEL_STATUS.consistent.plain : CHANNEL_STATUS.not_supported.plain,
+      reasons: [ok ? 'SIGN_MATCH' : 'SIGN_MISMATCH'],
+      missing,
+      window: { key: windowKey, start: chTo.start, end: chTo.end, observations: targetObs?.series?.dates?.length ?? 0 },
+      evidence: [
+        evidenceEntry({ role: ok ? 'support' : 'contrary', instrumentId: mechanism.to, definition: targetObs?.definition, change: chTo }),
+      ].filter((e) => e.change),
+      eventRefs: matched.map((e) => ({ eventId: e.eventId, revision: e.revision })),
+    };
+  }
+
   // 2) 统计相关类：只报两端变化与样本数，不给方向判定
   if (mechanism.relationType === 'historical-correlation' || mechanism.sign === 0) {
     const fromObs = observations.get(mechanism.from);
@@ -271,8 +322,17 @@ export function markConflicts(hypotheses) {
     byTarget.get(h.to).push(h);
   }
   for (const list of byTarget.values()) {
-    const positives = list.filter((h) => h.status === 'consistent' && h.sign > 0);
-    const negatives = list.filter((h) => h.status === 'consistent' && h.sign < 0);
+    /**
+     * 只有「机制假设」之间才谈得上方向冲突。
+     *
+     * 计价换算（例如 WTI↔布伦特同向）、共同驱动与历史相关**不是方向预测**：
+     * 它们天然会与某个机制方向相反（两个基准一起跌，就同时出现「同向」与
+     * 「下跌渠道成立」）。把它们算进冲突，会让每次正常行情都被标成
+     * 「有相反证据」，等于把冲突提示废掉。
+     */
+    const directional = list.filter((h) => h.relationType === 'mechanism');
+    const positives = directional.filter((h) => h.status === 'consistent' && h.sign > 0);
+    const negatives = directional.filter((h) => h.status === 'consistent' && h.sign < 0);
     if (!positives.length || !negatives.length) continue;
     for (const h of [...positives, ...negatives]) {
       h.status = 'mixed';

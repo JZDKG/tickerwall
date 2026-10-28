@@ -13,7 +13,9 @@
  * 纯数据 + 纯查表函数，不依赖 HTTP / DOM / 数据库，也不含任何坐标或颜色。
  * ================================================================== */
 
-export const MECHANISM_LIBRARY_VERSION = 'gold-v1';
+// gold-v1：只有黄金。gold-v2：加入原油（含事件型供给/需求机制）。
+// 版本号进快照，历史解释不会被新规则重新解释。
+export const MECHANISM_LIBRARY_VERSION = 'gold-v2';
 
 /** 关系类型：决定图上怎么画、文案怎么说，绝不能混用 */
 export const RELATION_TYPES = {
@@ -239,6 +241,136 @@ export const MECHANISMS = [
     horizon: 'unknown',
     sources: [NY_FED],
   },
+
+  /* ---------------------------- 原油（C1） ---------------------------- */
+  {
+    id: 'M-OIL-USD',
+    version: MECHANISM_LIBRARY_VERSION,
+    relationType: 'mechanism',
+    from: 'dxy',
+    to: 'oil',
+    sign: -1,
+    label: '计价效应',
+    plain: '计价效应：原油以美元报价，美元走强会抬高非美买家的采购成本。',
+    mechanism:
+      '美元走强意味着用其他货币买同一桶油更贵，需求可能因此收缩；但供给端冲击往往盖过计价效应，所以这条渠道的成立有前提。',
+    requires: [{ instrument: 'dxy', label: '美元指数' }],
+    conditionCodes: ['SAME_WINDOW'],
+    exclusions: [
+      '供给受阻主导价格，计价效应被供给冲击盖过',
+      '美元与油价同时被同一组风险偏好推动（此时属于共同驱动，不是单向因果）',
+    ],
+    needsEventEvidence: false,
+    horizon: 'days-to-weeks',
+    sources: [NY_FED],
+  },
+  {
+    id: 'M-OIL-BRENT-ANCHOR',
+    version: MECHANISM_LIBRARY_VERSION,
+    relationType: 'valuation-conversion',
+    from: 'brent',
+    to: 'oil',
+    sign: 1,
+    label: '基准价差',
+    plain: '计价换算：WTI 与布伦特是两个交割地、品质不同的基准，长期同向但存在价差。',
+    mechanism:
+      '两个基准共同反映全球供需，因此大体同向；但交割地瓶颈、航运成本与品质差异会让价差走阔，此时同向关系会暂时失效。',
+    requires: [{ instrument: 'brent', label: '布伦特原油' }],
+    conditionCodes: ['SAME_WINDOW'],
+    exclusions: [
+      '库欣交割地库存异常或航运受阻，价差主导了单边走势',
+      '两个基准的交易时段不重叠，当日变化不可比',
+    ],
+    needsEventEvidence: false,
+    horizon: 'same-day',
+    sources: [NY_FED],
+  },
+  {
+    id: 'M-OIL-RISK-APPETITE',
+    version: MECHANISM_LIBRARY_VERSION,
+    relationType: 'mechanism',
+    from: 'vix',
+    to: 'oil',
+    sign: -1,
+    label: '风险偏好',
+    plain: '风险偏好：市场恐慌时资金撤离风险资产，原油常被归为风险资产一端。',
+    mechanism:
+      '风险资产被抛售时，原油作为顺周期资产常承压，波动率上升是这类情形的同步信号；但供给冲击也会同时推高油价与波动率，方向可能相反。',
+    requires: [{ instrument: 'vix', label: 'VIX 波动率指数' }],
+    conditionCodes: ['SAME_WINDOW', 'NEEDS_POSITION_EVIDENCE'],
+    exclusions: [
+      '供给冲击主导，油价与波动率同时上升',
+      '只有波动率变化，没有持仓、裂解价差或库存证据',
+    ],
+    needsEventEvidence: false,
+    horizon: 'days',
+    sources: [NY_FED],
+  },
+  {
+    id: 'M-OIL-SUPPLY-SHOCK',
+    version: MECHANISM_LIBRARY_VERSION,
+    relationType: 'mechanism',
+    from: 'oil',
+    to: 'oil',
+    sign: 1,
+    label: '供给受阻',
+    plain: '供给冲击：产能、运输或政策导致供给减少，价格由供给端决定。',
+    mechanism:
+      '供给减少时，在需求不变的假设下价格上行。这条渠道需要**已分类的事件证据**：只知道涨价，无法区分是供给还是需求造成。',
+    requires: [],
+    eventOnly: true,
+    shockType: 'supply',
+    conditionCodes: ['NEEDS_EVENT_EVIDENCE', 'SHOCK_TYPE_CLASSIFIED'],
+    exclusions: [
+      '需求同时坍塌，价格可能不涨反跌',
+      '产油国释放储备或联合增产，抵消了供给缺口',
+      '事件发生时间晚于价格变化',
+    ],
+    needsEventEvidence: true,
+    horizon: 'unknown',
+    sources: [NY_FED],
+  },
+  {
+    id: 'M-OIL-DEMAND-SHOCK',
+    version: MECHANISM_LIBRARY_VERSION,
+    relationType: 'mechanism',
+    from: 'oil',
+    to: 'oil',
+    sign: 1,
+    label: '需求增强',
+    plain: '需求冲击：开工、出行或补库走强带动需求，价格由需求端决定。',
+    mechanism:
+      '需求走强时价格上行，但「需求驱动」与「供给驱动」的后续影响完全不同：前者通常伴随风险资产同向，后者常见股跌债跌。区分需要需求侧证据。',
+    requires: [],
+    eventOnly: true,
+    shockType: 'demand',
+    conditionCodes: ['NEEDS_EVENT_EVIDENCE', 'NEEDS_DEMAND_EVIDENCE'],
+    exclusions: [
+      '需求证据缺失，仅凭价格上涨无法归类',
+      '去库存或进口配额变化造成的表观需求波动',
+    ],
+    needsEventEvidence: true,
+    horizon: 'unknown',
+    sources: [NY_FED],
+  },
+  {
+    id: 'M-OIL-HISTORICAL-COPPER',
+    version: MECHANISM_LIBRARY_VERSION,
+    relationType: 'historical-correlation',
+    from: 'copper',
+    to: 'oil',
+    sign: 0,
+    label: '历史相关',
+    plain: '历史相关：铜与油常被同一组工业需求推动，统计同向不等于因果。',
+    mechanism:
+      '铜与原油都受全球工业周期影响，因此历史上多次同向；但两者各有独立的供给冲击（矿山事故 / 产油国政策），统计相关不给当期原因。',
+    requires: [{ instrument: 'copper', label: '铜价' }],
+    conditionCodes: ['SAME_WINDOW', 'STATISTICAL_ONLY'],
+    exclusions: ['任一端出现独立的供给冲击，同向关系失效'],
+    needsEventEvidence: false,
+    horizon: 'unknown',
+    sources: [NY_FED],
+  },
 ];
 
 const BY_ID = new Map(MECHANISMS.map((m) => [m.id, m]));
@@ -273,4 +405,7 @@ export const CONDITION_TEXT = {
   NEEDS_FX: '需要同窗口汇率数据',
   NOT_CAUSAL: '这条关系不表达单向因果',
   STATISTICAL_ONLY: '这只是统计相关，不给方向也不给当期原因',
+  NEEDS_EVENT_EVIDENCE: '需要可核实的事件与发布时间，只有价格方向不算',
+  SHOCK_TYPE_CLASSIFIED: '事件需要先分类为供给受阻，才能走这条渠道',
+  NEEDS_DEMAND_EVIDENCE: '需要需求侧证据（开工、出行、订单、库存）',
 };

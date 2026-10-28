@@ -181,6 +181,8 @@ export function comparisonUnitOf(id) {
 
 /** 已知的黄金场景驱动指标（解释层用来决定要取哪些序列） */
 export const GOLD_DRIVERS = ['dfii10', 't10yie', 'us10y', 'dxy', 'oil', 'vix', 'usdcny'];
+/** 原油的驱动集合（C1）。铜只用于「历史相关」，不参与方向判定 */
+export const OIL_DRIVERS = ['brent', 'dxy', 'vix', 'copper'];
 
 /**
  * 支持的资产与它需要的观测集合。
@@ -195,7 +197,13 @@ export const EXPLAINABLE_ASSETS = [
     instruments: ['gold-intl', ...GOLD_DRIVERS],
     relatedAssets: ['gold-cn'],
   },
-  { id: 'oil', name: 'WTI 原油', enabled: false, instruments: ['oil'], relatedAssets: [] },
+  {
+    id: 'oil',
+    name: 'WTI 原油',
+    enabled: true,
+    instruments: ['oil', ...OIL_DRIVERS],
+    relatedAssets: ['brent'],
+  },
   { id: 'dxy', name: '美元指数', enabled: false, instruments: ['dxy'], relatedAssets: [] },
   { id: 'us10y', name: '美债 10 年期', enabled: false, instruments: ['us10y'], relatedAssets: [] },
 ];

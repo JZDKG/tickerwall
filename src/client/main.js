@@ -50,8 +50,10 @@ export async function refreshQuestions({ force = false } = {}) {
   if (!force && Date.now() - questionsAt < QUESTIONS_TTL_MS) return;
   questionsAt = Date.now();
   try {
+    // 只取「有解释能力」的资产，行情列表里有 23 个，绝大多数还没有机制库
+    const explainable = new Set(['gold-intl', 'oil']);
     const assets = (store.quotes ?? [])
-      .filter((q) => q.id === 'gold-intl')
+      .filter((q) => explainable.has(q.id))
       .map((q) => ({ assetId: q.id, name: q.name, sigma: sigmaOfHistory(q.history) }));
     const cards = await loadQuestionCards({
       assets: assets.length ? assets : [{ assetId: 'gold-intl', name: '国际金价' }],
