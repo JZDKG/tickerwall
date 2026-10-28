@@ -158,6 +158,15 @@ describe('六种页面状态都能渲染，没有白屏分支', () => {
     expect(htmlText).toContain('国际金价本窗口下降');
   });
 
+  it('背景指标过期：单独提示，不影响「数据在正常更新周期内」的判断', () => {
+    const htmlText = explanationCardHTML({
+      ...DATA,
+      meta: { freshness: 'fresh', freshnessReasons: [], refreshStatus: 'idle', backgroundStale: ['oil'] },
+    });
+    expect(htmlText).toContain('背景指标过期：oil');
+    expect(htmlText).toContain('数据状态：数据在正常更新周期内');
+  });
+
   it('获取失败：提供重试入口，提示行情不受影响', () => {
     const htmlText = explanationCardHTML({ ...DATA, phase: 'error', error: 'HTTP 503', explanation: null });
     expect(htmlText).toContain('data-phase="error"');
@@ -280,10 +289,10 @@ describe('请求序号：旧响应不能覆盖新选择', () => {
     expect(out.phase).toBe('unsupported');
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(isExplainable('gold-intl')).toBe(true);
-    // C1 之后原油也已开放；美元与美债仍不在可解释集合里
-    expect(isExplainable('oil')).toBe(true);
-    expect(isExplainable('dxy')).toBe(false);
-    expect(isExplainable('us10y')).toBe(false);
+    // C1 之后原油、美债 10 年期、美元指数都已开放；
+    // 未登记机制库的资产（比特币、标普）仍然不在集合里
+    for (const id of ['gold-intl', 'oil', 'us10y', 'dxy']) expect(isExplainable(id), id).toBe(true);
+    for (const id of ['btc', 'sp500', 'copper']) expect(isExplainable(id), id).toBe(false);
   });
 });
 

@@ -351,10 +351,27 @@ export function persistReferencedObservations(explanation, observations, { known
  * 辅助序列（例如只服务于内外盘折算的美元兑人民币）落后几天，不该让整张
  * 黄金解释变成「已过期」—— 那会把「有个旁支数据旧了」误报成「这次结论不可读」。
  */
-export function referencedInstrumentIds(explanation) {
-  const ids = new Set();
-  for (const f of explanation?.facts ?? []) if (f.instrumentId) ids.add(f.instrumentId);
+export function referencedInstrumentIds(explanation, { directionalOnly = false } = {}) {
+  const ids = new Set([explanation?.assetId].filter(Boolean));
+  for (const f of explanation?.facts ?? []) {
+    // 只把「目标资产本窗口变化」当作支撑结论的事实；
+    // 其余事实是背景数字，过期时按背景处理（见 meta.backgroundStale）
+    if (directionalOnly && f.code !== 'TARGET_CHANGE') continue;
+    if (f.instrumentId) ids.add(f.instrumentId);
+  }
   for (const h of explanation?.hypotheses ?? []) {
+    /**
+     * directionalOnly：只统计「给出了方向判定」的机制假设所依赖的指标。
+     *
+     * 为什么需要区分：历史相关与共同驱动只是背景说明，事件型机制在缺事件时
+     * 也没有给出任何判定。它们依赖的序列过期（例如原油源延迟 8 天）不该把整张
+     * 黄金解释判成「已过期」—— 真正支撑结论的实际收益率、美元都是新的。
+     * 这些被排除但仍过期的指标会单独列在 meta.backgroundStale 里，界面照实提示。
+     */
+    if (directionalOnly) {
+      const isDirectional = h.relationType === 'mechanism' && ['consistent', 'not_supported', 'mixed'].includes(h.status);
+      if (!isDirectional) continue;
+    }
     for (const e of h.evidence ?? []) if (e.instrumentId) ids.add(e.instrumentId);
   }
   return ids;
@@ -362,15 +379,33 @@ export function referencedInstrumentIds(explanation) {
 
 /** 读取元数据：freshness 与 contentStatus 是两件事，可以同时「证据不足且过期」 */
 function metaFor(explanation, observations) {
-  const used = referencedInstrumentIds(explanation);
-  const list = observationQualityList(observations).filter((o) => used.size === 0 || used.has(o.instrumentId));
+  const used = referencedInstrumentIds(explanation, { directionalOnly: true });
+  // 只关心「这次解释真的会用到」的指标：机制库没声明的序列（例如只服务沪金折算的
+  // 汇率）既不参与判定，也不该出现在背景提示里
+  const relevance = new Set([explanation?.assetId].filter(Boolean));
+  for (const m of mechanismsFor(explanation?.assetId)) {
+    if (m.from) relevance.add(m.from);
+    for (const req of m.requires ?? []) relevance.add(req.instrument);
+  }
+  const all = observationQualityList(observations).filter((o) => relevance.has(o.instrumentId));
+  const list = all.filter((o) => used.size === 0 || used.has(o.instrumentId));
   const fresh = assessExplanationFreshness({ observations: list, asOf: new Date().toISOString() });
+  // 背景指标（历史相关 / 共同驱动 / 没有判定的渠道）里的过期项：不计入总体新鲜度，
+  // 但要能看见，不能假装它们是最新的
+  const backgroundStale = assessExplanationFreshness({
+    observations: all.filter((o) => !used.has(o.instrumentId)),
+    asOf: new Date().toISOString(),
+  })
+    .details.filter((d) => d.status === 'stale')
+    .map((d) => d.instrumentId);
   return {
     evaluatedAt: new Date().toISOString(),
     freshness: fresh.freshness,
     freshnessReasons: fresh.freshnessReasons,
     refreshStatus: 'idle',
     contentStatus: explanation?.contentStatus ?? null,
+    // 背景指标过期（不影响结论可读性，但界面要照实说）
+    backgroundStale,
     storage: explanationStorageStatus(),
   };
 }

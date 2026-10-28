@@ -14,8 +14,9 @@
  * ================================================================== */
 
 // gold-v1：只有黄金。gold-v2：加入原油（含事件型供给/需求机制）。
+// gold-v3：加入美债 10 年期与美元指数（收益率分解 + 利差/避险）。
 // 版本号进快照，历史解释不会被新规则重新解释。
-export const MECHANISM_LIBRARY_VERSION = 'gold-v2';
+export const MECHANISM_LIBRARY_VERSION = 'gold-v3';
 
 /** 关系类型：决定图上怎么画、文案怎么说，绝不能混用 */
 export const RELATION_TYPES = {
@@ -370,6 +371,130 @@ export const MECHANISMS = [
     needsEventEvidence: false,
     horizon: 'unknown',
     sources: [NY_FED],
+  },
+
+  /* ------------------------ 美债 10 年期（C1） ------------------------ */
+  {
+    id: 'M-US10Y-REAL-PART',
+    version: MECHANISM_LIBRARY_VERSION,
+    relationType: 'mechanism',
+    from: 'dfii10',
+    to: 'us10y',
+    sign: 1,
+    label: '实际回报',
+    plain: '名义收益率 ≈ 实际收益率 + 通胀补偿。实际回报上行会推高名义收益率。',
+    mechanism:
+      '名义收益率可以拆成实际回报与通胀补偿两部分。实际收益率上行（经济增长预期或政策偏紧）通常带动名义收益率同向上行。',
+    requires: [{ instrument: 'dfii10', label: '10 年期实际收益率' }],
+    conditionCodes: ['SAME_WINDOW', 'SIGNED_SERIES'],
+    exclusions: [
+      '通胀补偿同幅下行，抵消了实际回报的上行',
+      '避险买盘压低名义收益率（危机时常见）',
+    ],
+    needsEventEvidence: false,
+    horizon: 'days-to-weeks',
+    sources: [FRED_DFII10],
+  },
+  {
+    id: 'M-US10Y-BREAKEVEN',
+    version: MECHANISM_LIBRARY_VERSION,
+    relationType: 'mechanism',
+    from: 't10yie',
+    to: 'us10y',
+    sign: 1,
+    label: '通胀补偿',
+    plain: '通胀补偿（盈亏平衡通胀率）：市场对未来十年通胀的补偿要求。',
+    mechanism:
+      '通胀补偿上行意味着投资者要求更高的名义回报来覆盖预期通胀，因此通常推高名义收益率；但它不说明实际回报如何变化。',
+    requires: [{ instrument: 't10yie', label: '10 年期盈亏平衡通胀率' }],
+    conditionCodes: ['SAME_WINDOW', 'SIGNED_SERIES'],
+    exclusions: [
+      '通胀补偿上行同时实际收益率下行，名义收益率几乎不变',
+      '流动性溢价（避险买债）压过通胀补偿',
+    ],
+    needsEventEvidence: false,
+    horizon: 'days-to-weeks',
+    sources: [FRED_T10YIE],
+  },
+  {
+    id: 'M-US10Y-HISTORICAL-OIL',
+    version: MECHANISM_LIBRARY_VERSION,
+    relationType: 'historical-correlation',
+    from: 'oil',
+    to: 'us10y',
+    sign: 0,
+    label: '历史相关',
+    plain: '历史相关：油价与收益率历史上多次同向（通胀渠道或增长渠道）。',
+    mechanism:
+      '油价上行既可能推高通胀预期、也可能反映需求走强，两者都可能带动收益率；但避险行情下两者会反向。统计相关不给当期原因。',
+    requires: [{ instrument: 'oil', label: '原油价格' }],
+    conditionCodes: ['SAME_WINDOW', 'STATISTICAL_ONLY'],
+    exclusions: ['避险主导时收益率与油价反向'],
+    needsEventEvidence: false,
+    horizon: 'unknown',
+    sources: [NY_FED, FRED_T10YIE],
+  },
+
+  /* ------------------------ 美元指数（C1） ------------------------ */
+  {
+    id: 'M-DXY-RATE-DIFF',
+    version: MECHANISM_LIBRARY_VERSION,
+    relationType: 'mechanism',
+    from: 'us10y',
+    to: 'dxy',
+    sign: 1,
+    label: '利差吸引',
+    plain: '利差：两地利率之差决定了套息与资金流向。',
+    mechanism:
+      '美国利率相对上行时，持有美元的利息回报变高，资金流入可能推高美元；但若上行源于财政风险担忧，美元反而可能走弱。',
+    requires: [{ instrument: 'us10y', label: '10 年期名义收益率' }],
+    conditionCodes: ['SAME_WINDOW', 'SIGNED_SERIES'],
+    exclusions: [
+      '收益率上行由信用风险（财政可持续性）推动，美元同时走弱',
+      '其他经济体利率上行更快，利差其实在收窄',
+    ],
+    needsEventEvidence: false,
+    horizon: 'days-to-weeks',
+    sources: [FRED_DFII10],
+  },
+  {
+    id: 'M-DXY-RISK',
+    version: MECHANISM_LIBRARY_VERSION,
+    relationType: 'mechanism',
+    from: 'vix',
+    to: 'dxy',
+    sign: 1,
+    label: '避险买美元',
+    plain: '避险：全球流动性紧张时，美元常被当作结算与避险货币买进。',
+    mechanism:
+      '市场恐慌时，机构需要美元结算与补充保证金，美元常被动走强；这是流动性需求，不代表美国经济更好。',
+    requires: [{ instrument: 'vix', label: 'VIX 波动率指数' }],
+    conditionCodes: ['SAME_WINDOW'],
+    exclusions: [
+      '美国自身是风险源（例如美债信用事件），美元与风险资产同跌',
+      '美联储大幅宽松、美元流动性充裕时避险属性减弱',
+    ],
+    needsEventEvidence: false,
+    horizon: 'days',
+    sources: [FRED_DFII10],
+  },
+  {
+    id: 'M-DXY-HISTORICAL-GOLD',
+    version: MECHANISM_LIBRARY_VERSION,
+    relationType: 'historical-correlation',
+    from: 'gold-intl',
+    to: 'dxy',
+    sign: 0,
+    label: '历史相关',
+    plain: '历史相关：美元与黄金长期反向，但方向可能来自共同驱动。',
+    mechanism:
+      '黄金以美元计价，同时两者都对实际利率与避险情绪敏感，因此长期反向；共同驱动存在时，不能把同向变化读成「一个推动了另一个」。',
+    requires: [{ instrument: 'gold-intl', label: '国际金价' }],
+    conditionCodes: ['SAME_WINDOW', 'STATISTICAL_ONLY'],
+    exclusions: ['地缘危机或央行购金主导时两者同向'],
+    needsEventEvidence: false,
+    horizon: 'unknown',
+    sources: [CHICAGO_FED],
   },
 ];
 

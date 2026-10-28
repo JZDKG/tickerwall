@@ -693,10 +693,146 @@ describe('原油：事件型机制（供给 / 需求）', () => {
     expect(demand.status).toBe('consistent');
   });
 
-  it('美元与美债仍未开放解释（能力边界可测）', async () => {
-    for (const asset of ['dxy', 'us10y']) {
+  it('未登记机制库的资产仍然 400（能力边界可测）', async () => {
+    for (const asset of ['btc', 'sp500']) {
       const out = await getExplanationResponse({ asset, windowKey: 'session', observations: new Map() });
       expect(out.status).toBe(400);
     }
+  });
+});
+
+/* ================================================================== *
+ * 美债 10 年期与美元指数（C1 的后两个资产）
+ *
+ * 收益率必须能拆成「实际回报 + 通胀补偿」两段来检验；美元要能区分
+ * 利差渠道与避险渠道。两者都要有「缺数据 → 尚未确认」和「方向相反 →
+ * 不支持」这两种情形，否则不开解释能力。
+ * ================================================================== */
+
+describe('美债 10 年期：收益率分解', () => {
+  const us10yObs = ({ realFrom = 1.6, realTo = 1.74, beFrom = 2.2, beTo = 2.26, yFrom = 4.2, yTo = 4.36 } = {}) => {
+    const m = new Map();
+    m.set('us10y', obs('us10y', levels(22, yFrom, yTo)));
+    m.set('dfii10', obs('dfii10', levels(22, realFrom, realTo)));
+    m.set('t10yie', obs('t10yie', levels(22, beFrom, beTo)));
+    m.set('oil', obs('oil', levels(22, 70, 70.5)));
+    return m;
+  };
+
+  it('实际收益率上行 + 名义上行 → 实际回报渠道 consistent', async () => {
+    const out = await getExplanationResponse({ asset: 'us10y', windowKey: '5d', observations: us10yObs() });
+    expect(out.status).toBe(200);
+    const h = out.body.explanation.hypotheses.find((x) => x.mechanismId === 'M-US10Y-REAL-PART');
+    expect(h.status).toBe('consistent');
+  });
+
+  it('通胀补偿上行 + 名义上行 → 通胀补偿渠道 consistent', async () => {
+    const out = await getExplanationResponse({ asset: 'us10y', windowKey: '5d', observations: us10yObs() });
+    const h = out.body.explanation.hypotheses.find((x) => x.mechanismId === 'M-US10Y-BREAKEVEN');
+    expect(h.status).toBe('consistent');
+  });
+
+  it('缺通胀补偿序列 → 该渠道尚未确认，不猜', async () => {
+    const m = us10yObs();
+    m.delete('t10yie');
+    const out = await getExplanationResponse({ asset: 'us10y', windowKey: '5d', observations: m });
+    const h = out.body.explanation.hypotheses.find((x) => x.mechanismId === 'M-US10Y-BREAKEVEN');
+    expect(h.status).toBe('untested');
+    expect(h.reasons).toContain('MISSING_INSTRUMENT:t10yie');
+  });
+
+  it('实际收益率上行但名义下行（避险买债）→ not_supported', async () => {
+    const out = await getExplanationResponse({
+      asset: 'us10y',
+      windowKey: '5d',
+      observations: us10yObs({ realFrom: 1.6, realTo: 1.74, yFrom: 4.36, yTo: 4.2 }),
+    });
+    const h = out.body.explanation.hypotheses.find((x) => x.mechanismId === 'M-US10Y-REAL-PART');
+    expect(h.status).toBe('not_supported');
+    expect(h.reasons).toContain('SIGN_MISMATCH');
+  });
+});
+
+describe('美元指数：利差与避险', () => {
+  const dxyObs = ({ rFrom = 4.2, rTo = 4.36, vixFrom = 16, vixTo = 18, dFrom = 104, dTo = 104.6 } = {}) => {
+    const m = new Map();
+    m.set('dxy', obs('dxy', levels(22, dFrom, dTo)));
+    m.set('us10y', obs('us10y', levels(22, rFrom, rTo)));
+    m.set('vix', obs('vix', levels(22, vixFrom, vixTo)));
+    m.set('gold-intl', obs('gold-intl', levels(22, 4000, 3960)));
+    return m;
+  };
+
+  it('美债上行 + 美元上行 → 利差渠道 consistent', async () => {
+    const out = await getExplanationResponse({ asset: 'dxy', windowKey: '5d', observations: dxyObs() });
+    expect(out.status).toBe(200);
+    const h = out.body.explanation.hypotheses.find((x) => x.mechanismId === 'M-DXY-RATE-DIFF');
+    expect(h.status).toBe('consistent');
+  });
+
+  it('VIX 上行 + 美元上行 → 避险渠道 consistent', async () => {
+    const out = await getExplanationResponse({ asset: 'dxy', windowKey: '5d', observations: dxyObs() });
+    const h = out.body.explanation.hypotheses.find((x) => x.mechanismId === 'M-DXY-RISK');
+    expect(h.status).toBe('consistent');
+  });
+
+  it('美债上行但美元下跌 → 利差渠道 not_supported（信用风险情形）', async () => {
+    const out = await getExplanationResponse({
+      asset: 'dxy',
+      windowKey: '5d',
+      observations: dxyObs({ rFrom: 4.2, rTo: 4.36, dFrom: 104.6, dTo: 104 }),
+    });
+    const h = out.body.explanation.hypotheses.find((x) => x.mechanismId === 'M-DXY-RATE-DIFF');
+    expect(h.status).toBe('not_supported');
+  });
+
+  it('黄金与美元的历史相关只给「这是统计相关」，不判定当期方向', async () => {
+    const out = await getExplanationResponse({ asset: 'dxy', windowKey: '5d', observations: dxyObs() });
+    const h = out.body.explanation.hypotheses.find((x) => x.mechanismId === 'M-DXY-HISTORICAL-GOLD');
+    expect(h.status).toBe('untested');
+    expect(h.reasons).toContain('STATISTICAL_ONLY');
+  });
+
+  it('四个资产都能取到解释，未知资产仍然是 400', async () => {
+    for (const asset of ['gold-intl', 'oil', 'us10y', 'dxy']) {
+      const out = await getExplanationResponse({
+        asset,
+        windowKey: '5d',
+        observations: new Map([[asset, obs(asset, levels(22, asset === 'us10y' ? 4.2 : 100, asset === 'us10y' ? 4.3 : 101))]]),
+      });
+      expect(out.status, asset).toBe(200);
+    }
+    expect((await getExplanationResponse({ asset: 'btc', windowKey: '5d', observations: new Map() })).status).toBe(400);
+  });
+});
+
+/* ================================================================== *
+ * 新鲜度的范围：方向性结论 vs 背景指标
+ *
+ * 一条「历史相关」或「缺事件」的渠道过期，不该把整张解释判成过期；
+ * 目标资产或方向性渠道过期时，必须如实报 stale。
+ * ================================================================== */
+describe('新鲜度只按方向性结论计算', () => {
+  it('背景指标（历史相关的原油）过期，黄金解释仍然 fresh，并单列背景过期', async () => {
+    const m = goldWithRealYield();
+    m.get('oil').lastObservedAt = '2026-08-01';
+    const out = await getExplanationResponse({ asset: 'gold-intl', windowKey: '5d', observations: m });
+    expect(out.body.meta.freshness).toBe('fresh');
+    expect(out.body.meta.backgroundStale).toContain('oil');
+  });
+
+  it('目标资产自身过期 → stale（当期结论不能用旧价格讲）', async () => {
+    const m = goldWithRealYield();
+    m.get('gold-intl').lastObservedAt = '2026-08-01';
+    const out = await getExplanationResponse({ asset: 'gold-intl', windowKey: '5d', observations: m });
+    expect(out.body.meta.freshness).toBe('stale');
+  });
+
+  it('方向性渠道的驱动过期 → stale（结论依赖它）', async () => {
+    const m = goldWithRealYield();
+    m.get('dfii10').lastObservedAt = '2026-08-01';
+    m.get('us10y').lastObservedAt = '2026-08-01';
+    const out = await getExplanationResponse({ asset: 'gold-intl', windowKey: '5d', observations: m });
+    expect(out.body.meta.freshness).toBe('stale');
   });
 });

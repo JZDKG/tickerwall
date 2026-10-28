@@ -59,6 +59,16 @@ const MEANING_NOTES = {
     ['化工与塑料', '原油是石脑油等化工原料的上游，成本传导存在库存周期，短期方向可能滞后。'],
     ['时间范围', '这里说的是同一窗口内的方向一致性，不构成对下一交易日的价格预测。'],
   ],
+  us10y: [
+    ['债券价格（已持有的）', '收益率上行等于债券价格下跌：手里的旧债市值会缩水；反过来收益率下行时旧债价格上涨。这里说的是收益率方向，不是价格。'],
+    ['贷款与存款（中国境内）', '中国的房贷与存款利率主要跟随 LPR 与政策利率，不直接跟随美债收益率；美债更多通过汇率与资本流动间接影响。'],
+    ['时间范围', '这里说的是同一窗口内的方向一致性，不构成对收益率点位的预测。'],
+  ],
+  dxy: [
+    ['进口与出境成本', '美元走强意味着人民币换美元更贵：进口商品、出境旅行与留学成本上升；出口企业结汇则相对受益。'],
+    ['换算口径', '美元指数是一篮子货币的加权（欧元权重最大），不等于美元兑人民币；两者方向多数时候一致但会分化。'],
+    ['时间范围', '这里说的是同一窗口内的方向一致性，不构成对汇率的预测。'],
+  ],
   'gold-cn': [
     ['境内溢价', '国内金价 = 国际金折算 + 境内外溢价；进口配额与季节性需求会改变溢价，因此不能只看国际金涨跌。'],
     ['计价单位', '元/克与国际美元/盎司之间还有汇率与单位换算（1 盎司 ≈ 31.1035 克）。'],
@@ -220,8 +230,14 @@ function metaLine(meta, explanation) {
     meta?.freshness === 'stale'
       ? ''
       : `<span>数据状态：${esc(fresh)}${reasons.length ? `（${esc(reasons.join('；'))}）` : ''}</span>`;
+  // 背景指标过期：不影响结论判定，但必须能看见（不能假装都是最新的）
+  const bg = (meta?.backgroundStale ?? []).filter(Boolean);
+  const bgSpan = bg.length
+    ? `<span class="explain-bg-stale" title="这些指标只用于背景说明，没有给出方向判定">背景指标过期：${esc(bg.join('、'))}</span>`
+    : '';
   return `<div class="explain-meta">
     ${freshSpan}
+    ${bgSpan}
     <span>截至 ${esc(shortTime(explanation?.asOf))}</span>
     ${cs ? `<span class="explain-cs ${cs.tone}" title="${esc(cs.note)}">${esc(cs.text)}</span>` : ''}
     ${cs ? `<span class="explain-cs-note">${esc(cs.note)}</span>` : ''}
@@ -236,6 +252,7 @@ export const FRESHNESS_REASON_TEXT = {
   FALLBACK_TO_CACHE: '上游失败，使用库里的旧序列',
   SOURCE_UNAVAILABLE: '该指标当前没有可用来源',
   UNALIGNED_WINDOW: '与目标资产缺少共同时间窗',
+  BACKGROUND_ONLY_STALE: '只用于背景说明的指标过期（不影响结论判定）',
   PARTIAL_OVERLAP: '两侧交易日不完全重叠',
 };
 

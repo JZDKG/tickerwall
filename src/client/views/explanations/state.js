@@ -38,7 +38,7 @@ export function setExplainEnabled(on) {
  * C1 已完成黄金与原油；美元与美债的机制库还没写，所以这里不放开 ——
  * 界面上未开放的资产会显示「解释能力还没开放」，而不是给一个空壳。
  */
-export const EXPLAINABLE = new Set(['gold-intl', 'oil']);
+export const EXPLAINABLE = new Set(['gold-intl', 'oil', 'us10y', 'dxy']);
 
 export function isExplainable(assetId) {
   return EXPLAINABLE.has(assetId);

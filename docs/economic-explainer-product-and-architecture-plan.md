@@ -1,7 +1,7 @@
 # 面向普通用户的经济解释产品与架构实施方案
 
 - 日期：2026-10-28
-- 状态：待实施
+- 状态：阶段一、阶段二已完成；阶段三进行中（详见 §14）
 - 适用对象：产品设计、前后端开发、数据维护与测试人员
 
 项目的核心目标是让非金融专业用户在一分钟内理解：发生了什么、为什么可能发生、通过哪些渠道影响其他市场，以及哪些条件会改变这个解释。下一阶段围绕“带证据的经济解释”组织现有行情、新闻、地图和传导图谱，先完成黄金场景，再扩展到原油、美元和美债。
@@ -585,16 +585,18 @@ git diff --check
 | B4 资产详情 | `views/explanations/{card,state}.js`、`views/detail.js`（图表之前）、`public/styles/explanations.css` | `tests/views-explanations.test.js` |
 | B5 首页与图谱 | `views/explanations/questions.js`、`index.html#questions`、`main.js` 异步补卡 | `tests/views-questions.test.js` |
 | B6 采集与可观测性 | `jobs/collector.js`（同键合并、退避、触发链）、`jobs/index.js`（五类任务）、`/api/health` 暴露任务状态 | `tests/collector.test.js` |
+| C1 原油 / 美元 / 美债 | `mechanisms.js`（gold-v3：原油 6 条、美债 3 条、美元 4 条；含事件型供给 / 需求机制）、`evaluateMechanism` 支持 `eventOnly`、`instruments.js` 打开四个资产 | `tests/explanations.test.js` 的原油 / 美债 / 美元三组（含证据不足与反向案例） |
+| B5 图谱消费同一份解释 | `views/explanations/graph.js`（边→渠道映射、状态并列、60s 缓存）、`panels.js`（焦点卡解释块、机理卡解释状态行）、`macro.js`（按焦点取数） | `tests/graph-explanation.test.js`、浏览器走查 |
 | C2 条件化沙盘 | `knowledge-base.js`（`SHOCK_CONDITIONS`、`SHOCK_CONDITION_SETS`）、`propagateShock` 支持 `activeEdges`、沙盘卡条件选择器 | `tests/divergence.test.js`「条件化沙盘」 |
 | C3 历史回放（读取路径） | `db/explanations.js`（`readObservationAsOf` / `readEventAsOf` / 固定版本读取） | `tests/db-explanations.test.js` |
+| §10.2 理解测试 | 六个问题与「不许出现的措辞」写成断言（不依赖浏览器，可进 CI） | `tests/understanding.test.js` |
 
 ### 14.2 尚未完成
 
-- **C1 原油 / 美元 / 美债**：机制库目前只为 `gold-intl` 登记了条件与例外；其余资产仍是旧口径展示，`EXPLAINABLE_ASSETS` 未放开。
-- **C4 地图与生活影响联动**：地图仍只消费事件发生地，尚未接解释路径。
-- **C5 真实流量**：没有可靠数据源，保持不做。
-- **图谱消费同一解释快照**：B5 只完成了首页与详情的快照一致；聚焦图仍用旧的相关性状态渲染，接入点在 `flow-canvas.js` 的 `reality`，需要先给图谱一条「按 explanationId 取因素」的通道。
-- **§10.2 浏览器理解测试**：目前是人工走查（Chromium headless 脚本验证卡片出现、可展开、切窗口后内容更新、无控制台异常），尚未脚本化为 CI 用例。
+- **C4 地图与生活影响联动**：地图仍只消费事件发生地，尚未把解释路径与地区条件接上（`views/map.js` 目前读事件赛区，不读解释快照）。
+- **C5 真实流量**：基金流量、贸易量、能源运输等数据没有可靠来源，保持不做。
+- **事件冲击分类器**：供给 / 需求渠道已按 `eventEvidence.shockType` 实现并测试，但生产侧还没有把新闻分类到 shockType 的组件，因此线上这两条渠道稳定显示「尚未确认」。这是有意的：缺证据就不给结论。
+- **浏览器端 CI**：理解测试已脚本化（`tests/understanding.test.js`），但真实渲染的端到端走查仍是人工执行 Chromium headless 脚本（验证卡片出现、可展开、切窗口后内容更新、无控制台异常）。
 
 ### 14.3 有意改变的口径（契约测试已记录原因）
 
@@ -602,3 +604,6 @@ git diff --check
 - `evaluateEdgeReality` 的当期比较改为共同日期配对；`n` 由数组长度改为有效配对数。
 - 沙盘不再输出「一阶 / 二阶」「多空交织」「利多 10Y」；改称直接 / 间接渠道、方向未定、收益率上行 / 下行压力。
 - `freshness` 只按本次解释实际引用的指标计算：与结论无关、更新较慢的序列不再把整张解释标成过期。
+- `freshness` 进一步只统计**方向性结论**（目标资产 + 给出判定的机制渠道）。历史相关、共同驱动、缺事件未判定的渠道过期时，改列 `meta.backgroundStale`，界面单独提示「背景指标过期」。
+- 冲突判定（`mixed`）只在方向性机制之间比较：计价换算、共同驱动、历史相关不是方向预测，不参与「相反证据」判定。
+- 机制库版本升到 `gold-v3`（新增原油、美债、美元）；旧快照保留 `gold-v1` / `gold-v2` 的版本号，读取时不会被新规则重新解释。

@@ -127,10 +127,19 @@ describe('取数：与详情页同一接口', () => {
     expect(fetchImpl.mock.calls[0][0]).toContain('window=session');
   });
 
-  it('未开放资产不发请求', async () => {
+  it('未登记机制库的资产不发请求（不浪费一次往返）', async () => {
     const fetchImpl = vi.fn();
-    expect(await loadGraphExplanation('dxy', { fetchImpl })).toBeNull();
+    expect(await loadGraphExplanation('btc', { fetchImpl })).toBeNull();
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('已开放资产（原油 / 美债 / 美元）会取同一接口的快照', async () => {
+    for (const assetId of ['oil', 'us10y', 'dxy']) {
+      const fetchImpl = vi.fn(async () => ({ status: 200, json: async () => ({ explanation: { ...EXP, assetId }, meta: {} }) }));
+      const got = await loadGraphExplanation(assetId, { fetchImpl });
+      expect(got.assetId, assetId).toBe(assetId);
+      expect(fetchImpl.mock.calls[0][0]).toContain(`asset=${assetId}`);
+    }
   });
 
   it('失败时返回 null（图退回只显示统计相关）', async () => {

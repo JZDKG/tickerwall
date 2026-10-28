@@ -574,3 +574,11 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* 背景指标过期：只提示，不参与总体新鲜度判定 */
+.explain-bg-stale {
+  font-size: 11px;
+  color: var(--muted-2);
+  border-left: 2px solid rgba(224, 168, 60, 0.5);
+  padding-left: 6px;
+}
