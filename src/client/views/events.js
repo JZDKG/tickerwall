@@ -10,6 +10,7 @@
 import { loadCalendarCached } from '../shared/calendar.js';
 import { eventsEl } from '../shared/dom.js';
 import { clockText, esc, html, safeHref } from '../shared/format.js';
+import { todayFocusHTML } from './today-focus.js';
 import { PLACEHOLDER, store } from '../shared/store.js';
 
 
@@ -291,6 +292,7 @@ export function renderEvents(opts = {}) {
     : (data.sources ?? []).map((s) => (s.ok ? `${s.source} ${s.count}` : `${s.source} 失败`)).join(' · ');
 
   eventsEl.innerHTML = html`
+    <div id="today-focus-slot"></div>
     <div class="d-top">
       <button type="button" class="back-btn" id="back-events">← 返回列表</button>
       <div class="d-id">
@@ -599,10 +601,36 @@ export async function loadEventStudy(force = false) {
  * （store.events.llmRetry）。原来的 stopEventsTimer() 只 clearInterval(eventsTimer)，
  * 漏了这一个 —— 离开事件页后它仍会触发一次重绘，把已经清空的容器写回内容。
  * ------------------------------------------------------------------ */
+/**
+ * 事件中心顶部「今天重点三件 + 下一件关键发布」（产品 §3）。
+ *
+ * 单独一路取数：它与事件流不是同一份数据（要用日历的下一件发布），
+ * 而且**取不到就不显示这一块**，不能让顶部结构挡住事件流。
+ */
+export async function hydrateTodayFocus({ fetchImpl = null } = {}) {
+  const slot = document.getElementById('today-focus-slot');
+  if (!slot) return null;
+  const f = fetchImpl ?? (typeof fetch === 'function' ? fetch : null);
+  if (!f) return null;
+  try {
+    const res = await f('./api/today-focus', { cache: 'no-store' });
+    const body = await res.json().catch(() => null);
+    if (!body) return null;
+    slot.innerHTML = todayFocusHTML(body).toString();
+    return body;
+  } catch {
+    // 顶部结构是加分项：取不到就保持空槽，不给一块红字
+    slot.innerHTML = '';
+    return null;
+  }
+}
+
 export function mountEvents() {
   eventsEl.hidden = false;
   window.scrollTo({ top: 0 });
   loadEvents(true);
+  // 顶部结构单独一路取：取不到就保持空槽，不挡事件流
+  void hydrateTodayFocus();
   eventsTimer = setInterval(() => loadEvents(false), 30000);
 }
 

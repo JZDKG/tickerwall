@@ -7,7 +7,7 @@
  * ================================================================== */
 
 import { describe, it, expect } from 'vitest';
-import { lifePathEntryHTML, lifePathHTML, stepRowHTML } from '../src/client/views/life-path.js';
+import { lifePathHTML, stepRowHTML } from '../src/client/views/life-path.js';
 import { buildLifePath, listScenarios } from '../src/server/domain/life-path.js';
 
 const mount = (s) => {
@@ -87,18 +87,4 @@ describe('异常与入口', () => {
     expect(() => lifePathHTML(null)).not.toThrow();
   });
 
-  it('入口只列有 id 的项', () => {
-    const el = mount(lifePathEntryHTML([{ id: 'a', title: 'T', plain: 'P' }, { title: '无 id' }]));
-    expect(el.querySelectorAll('.lp-open')).toHaveLength(1);
-  });
-
-  it('没有可列项时整块不渲染（空入口比没有入口更糟）', () => {
-    expect(lifePathEntryHTML([])).toBe('');
-    expect(lifePathEntryHTML(null)).toBe('');
-  });
-
-  it('入口来自 domain 的清单', () => {
-    const el = mount(lifePathEntryHTML(listScenarios()));
-    expect(el.querySelector('.lp-open').dataset.scenario).toBe('fuel-cost');
-  });
 });

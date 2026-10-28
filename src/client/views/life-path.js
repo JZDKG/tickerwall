@@ -53,20 +53,3 @@ export function lifePathHTML(path) {
     <p class="lp-disclaimer">${esc(path.disclaimer ?? '')}</p>
   </section>`;
 }
-
-/** 入口：只列有场景的地区，空入口比没有入口更糟 */
-export function lifePathEntryHTML(list) {
-  const items = (list ?? []).filter((x) => x?.id);
-  if (!items.length) return '';
-  return `<section class="d-block lp-entry">
-    <h3>与生活的连接 <span class="h3-note">换汇、出行、进口商品</span></h3>
-    <ul class="lp-entry-list">${items
-      .map(
-        (x) => `<li><button type="button" class="lp-open" data-scenario="${esc(x.id)}">
-          <span class="lp-entry-title">${esc(x.title ?? '')}</span>
-          <span class="lp-entry-plain">${esc(x.plain ?? '')}</span>
-        </button></li>`,
-      )
-      .join('')}</ul>
-  </section>`;
-}

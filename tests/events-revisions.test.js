@@ -128,3 +128,48 @@ describe('同事件折叠', () => {
     expect(el.querySelector('.ev-cluster')).toBeNull();
   });
 });
+
+/* ================================================================== *
+ * 事件中心顶部「今天重点」（产品 §3 的挂载点）
+ *
+ * 这块是加分项：取不到就保持空槽，**不能让顶部结构挡住事件流**。
+ * ================================================================== */
+describe('今天重点的挂载', () => {
+  const slotHTML = '<div id="today-focus-slot"></div>';
+
+  it('取到数据后填进槽位', async () => {
+    document.body.innerHTML = `<section id="events">${slotHTML}</section>`;
+    const body = { count: 1, short: true, rule: '规则', focus: [{ id: 'a', title: 'A', time: '2026-10-28 10:00:00', why: '高等级' }], next: null };
+    const out = await events.hydrateTodayFocus({
+      fetchImpl: async () => ({ ok: true, json: async () => body }),
+    });
+    expect(out.count).toBe(1);
+    expect(document.getElementById('today-focus-slot').textContent).toContain('今天重点');
+  });
+
+  it('没有槽位时直接返回 null（不在别的页面乱插）', async () => {
+    document.body.innerHTML = '<section id="events"></section>';
+    expect(await events.hydrateTodayFocus({ fetchImpl: async () => ({ json: async () => ({}) }) })).toBeNull();
+  });
+
+  it('取数失败时保持空槽，不显示红字（加分项不该遮挡主内容）', async () => {
+    document.body.innerHTML = `<section id="events">${slotHTML}</section>`;
+    const out = await events.hydrateTodayFocus({ fetchImpl: async () => { throw new Error('502'); } });
+    expect(out).toBeNull();
+    expect(document.getElementById('today-focus-slot').innerHTML).toBe('');
+  });
+
+  it('返回体不是 JSON 时也不抛', async () => {
+    document.body.innerHTML = `<section id="events">${slotHTML}</section>`;
+    const out = await events.hydrateTodayFocus({ fetchImpl: async () => ({ json: async () => { throw new Error('bad'); } }) });
+    expect(out).toBeNull();
+  });
+
+  it('没有 fetch 时安全返回（离线/测试环境）', async () => {
+    document.body.innerHTML = `<section id="events">${slotHTML}</section>`;
+    const saved = globalThis.fetch;
+    globalThis.fetch = undefined;
+    expect(await events.hydrateTodayFocus()).toBeNull();
+    globalThis.fetch = saved;
+  });
+});

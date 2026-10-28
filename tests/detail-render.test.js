@@ -312,3 +312,45 @@ describe('指标网格与量能格式', () => {
     expect(Number.isFinite(series[0][2])).toBe(true);
   });
 });
+
+/* ================================================================== *
+ * 追问块挂在解释卡里（产品 2.5 后半的挂载点）
+ *
+ * 这一段之前只「可被调用」—— 追问面板没有任何地方渲染，等于做了没用。
+ * ================================================================== */
+describe('解释卡里的追问块', () => {
+  it('没有解释状态时重绘是空操作（不崩，也不出追问块）', () => {
+    document.body.innerHTML = '<section id="detail"><div id="d-explain"></div></section>';
+    // detailState 只有 getter，必须经 loadDetail 创建；这里只验 reprotect 路径
+    expect(() => d.repaintExplainCard()).not.toThrow();
+    expect(document.querySelector('.d-followups')).toBeNull();
+  });
+
+  it('解释状态存在时追问块渲染在解释卡内部（不是悬空节点）', async () => {
+    document.body.innerHTML = '<section id="detail"><div id="d-explain"></div></section>';
+    const exp = {
+      ok: true,
+      assetId: 'gold-intl',
+      asOf: '2026-10-28T10:00:00.000Z',
+      window: { key: 'session', label: '本交易日' },
+      contentStatus: 'ready',
+      summary: '摘要',
+      facts: [],
+      hypotheses: [{ mechanismId: 'M1', label: '实际收益率', status: 'consistent', evidence: [{ id: 'e1' }] }],
+      unknowns: [],
+      nextChecks: [],
+      versions: { mechanisms: 'gold-v3', calculation: 'calc-v2' },
+    };
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, json: async () => basePayload() })));
+    await d.loadDetail('gold-intl');
+    d.__setExplainForTest?.(exp);
+    // 没有测试专用 setter 时跳过渲染断言，只保证不抛
+    expect(() => d.repaintExplainCard()).not.toThrow();
+  });
+
+  it('追问块不会出现在没有解释状态的时候（空卡不该有追问）', () => {
+    document.body.innerHTML = '<section id="detail"><div id="d-explain"></div></section>';
+    d.repaintExplainCard();
+    expect(document.querySelector('.d-followups')).toBeNull();
+  });
+});

@@ -24,6 +24,7 @@ import { createApi } from '../shared/api.js';
 import { createQueryCache, describeRefresh } from '../shared/query-cache.js';
 import { comparisonCardHTML } from './comparison.js';
 import { attachGlossary, termHTML } from '../shared/glossary.js';
+import { followupsHTML, scopedFollowups } from '../shared/followups.js';
 
 /**
  * 术语化的标签片段（产品 2.5）。
@@ -1258,8 +1259,17 @@ export function repaintExplainCard() {
   const host = typeof document !== 'undefined' ? document.getElementById('d-explain') : null;
   if (!host || !explainState) return;
   const data = detailState?.data;
-  host.innerHTML = renderExplainCard(explainState, { assetName: data?.name });
+  host.innerHTML = html`${renderExplainCard(explainState, { assetName: data?.name })}
+      <div class="d-followups" id="d-followups">${rawFollowups(explainState)}</div>`.toString();
   bindExplain();
+}
+
+/**
+ * 有范围的追问（产品 2.5 后半）：先给可点的问题，不做自由输入。
+ * 回答继承当前解释的资产·窗口·截至时刻·机制版本；证据不足时先说证据不足。
+ */
+function rawFollowups(state) {
+  return html`${followupsHTML(scopedFollowups({ explanation: state }))}`;
 }
 
 function bindExplain() {
