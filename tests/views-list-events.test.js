@@ -745,3 +745,89 @@ describe('事件版本徽章与面板', () => {
     expect(await events.loadEventRevisions('jin10:9', { fetchImpl: bad })).toEqual([]);
   });
 });
+
+/* ================================================================== *
+ * 事件中心的交互绑定（renderEvents 末尾那段）
+ *
+ * 每个按钮都对应一个用户动作；断言「点了之后 store 变成什么 + 页面有没有
+ * 重绘」，因为这几处都是纯前端切状态、不重新请求。
+ * ================================================================== */
+describe('事件中心交互', () => {
+  const DATA = {
+    total: 2,
+    generatedAt: '2026-10-26T02:05:00Z',
+    items: [
+      { id: 'a', time: '2026-10-26 10:00:00', level: 'high', title: 'A', topics: [{ key: 'fed', label: '货币政策' }], symbols: [], origin: 'direct', lang: 'en', publisher: 'P', source: 'S' },
+      { id: 'b', time: '2026-10-26 09:00:00', level: 'mid', title: 'B', topics: [{ key: 'energy', label: '能源' }], symbols: [], origin: 'aggregate', lang: 'ja', publisher: 'P2', source: 'S2' },
+    ],
+    topics: [{ key: 'fed', label: '货币政策' }, { key: 'energy', label: '能源' }],
+    sources: [],
+    coverage: { sources: { total: 0, ok: 0, failed: 0 } },
+    counts: { high: 1, mid: 1, low: 0 },
+    study: { rows: [] },
+  };
+
+  const paint = (over = {}) => {
+    store.events = { data: DATA, calendar: null, level: 'all', topic: null, origin: 'all', newIds: null, newCount: 0, ...over };
+    events.renderEvents();
+  };
+
+  it('等级筛选：点按钮写回 store 并重绘', () => {
+    paint();
+    const btn = eventsEl.querySelector('#level-filter button[data-l="high"]');
+    expect(btn).toBeTruthy();
+    btn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    expect(store.events.level).toBe('high');
+    expect(eventsEl.querySelectorAll('.event').length).toBe(1);
+  });
+
+  it('主题筛选：点标签写回 store 并重绘', () => {
+    paint();
+    const btn = eventsEl.querySelector('#topic-filter .pick[data-t="energy"]');
+    expect(btn).toBeTruthy();
+    btn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    expect(store.events.topic).toBe('energy');
+    expect(eventsEl.querySelectorAll('.event').length).toBe(1);
+  });
+
+  it('来源筛选：点按钮写回 store 并重绘', () => {
+    paint();
+    const btn = eventsEl.querySelector('#origin-filter .pick[data-o="direct"]');
+    expect(btn).toBeTruthy();
+    btn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    expect(store.events.origin).toBe('direct');
+  });
+
+  it('事件研究口径切换：T+0 / T+1 存成数字，auto 存成 auto', () => {
+    paint({ studyMode: 'auto' });
+    store.events.study = { rows: [{ lag: 0, n: 5 }, { lag: 1, n: 5 }] };
+    events.renderEvents();
+    const auto = eventsEl.querySelector('#study-lag button[data-lag="auto"]');
+    if (auto) {
+      auto.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+      expect(store.events.studyMode).toBe('auto');
+    }
+    const t1 = eventsEl.querySelector('#study-lag button[data-lag="1"]');
+    if (t1) {
+      t1.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+      expect(store.events.studyMode).toBe(1);
+    }
+  });
+
+  it('「跳到最新」清掉新条目标记并回到顶部', () => {
+    paint({ newIds: new Set(['a']), newCount: 1 });
+    const btn = eventsEl.querySelector('#jump-new');
+    if (btn) {
+      btn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+      expect(store.events.newIds).toBeNull();
+      expect(store.events.newCount).toBe(0);
+    }
+  });
+
+  it('返回按钮回到列表（hash 清空）', () => {
+    paint();
+    window.location.hash = '#/events';
+    eventsEl.querySelector('#back-events')?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    expect(window.location.hash).toBe('');
+  });
+});

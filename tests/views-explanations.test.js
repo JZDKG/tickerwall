@@ -22,6 +22,7 @@ import {
   renderExplainCard,
   isExplainable,
   bindExplainInteractions,
+  fetchExplanation,
   explainEnabled,
   setExplainEnabled,
   EXPLAIN_FLAG_KEY,
@@ -347,5 +348,36 @@ describe('渲染器：单位与时间格式化', () => {
     expect(renderExplainCard(state, { assetName: '国际金价' })).toBe(
       explanationCardHTML({ ...state, assetName: '国际金价' }),
     );
+  });
+});
+
+/* ================================================================== *
+ * 取数的三条容错路径
+ * ================================================================== */
+describe('fetchExplanation 的容错', () => {
+  it('响应不是 JSON 时返回空 body（不抛）', async () => {
+    const fetchImpl = async () => ({
+      status: 200,
+      json: async () => {
+        throw new Error('not json');
+      },
+    });
+    const r = await fetchExplanation({ assetId: 'gold-intl', windowKey: 'session', fetchImpl });
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({});
+  });
+
+  it('fetch 抛错时给 503 与可读原因', async () => {
+    const fetchImpl = async () => {
+      throw new Error('offline');
+    };
+    const r = await fetchExplanation({ assetId: 'gold-intl', windowKey: 'session', fetchImpl });
+    expect(r.status).toBe(503);
+    expect(r.body.error).toContain('offline');
+  });
+
+  it('没有 fetch 的环境给 503（不是静默失败）', async () => {
+    const r = await fetchExplanation({ assetId: 'gold-intl', windowKey: 'session', fetchImpl: null });
+    expect(r.status).toBe(503);
   });
 });
