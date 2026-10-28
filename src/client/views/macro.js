@@ -213,8 +213,8 @@ export const LINE_COLORS = ['#f5455c', '#5b9cf8', '#e0a83c', '#0ecb81', '#a78bfa
 export function macroMatrixHTML(data) {
   const { ids, corr, counts, stats } = data.matrix;
   const meta = new Map(data.universe.map((u) => [u.id, u]));
-  const pair = macroState.pair;
-  const robustOnly = Boolean(macroState.robustOnly);
+  const pair = macroState?.pair;
+  const robustOnly = Boolean(macroState?.robustOnly);
 
   // 统计索引：a|b → 该对的完整检验结果
   const stMap = new Map();
@@ -223,18 +223,16 @@ export function macroMatrixHTML(data) {
     stMap.set(`${r.b}|${r.a}`, r);
   }
 
-  let head = '<tr><th class="corner">标的</th>';
-  for (const id of ids) {
+  // 单行写：与迁移前逐字节一致，避免无谓的空白差异
+  const headCells = ids.map((id) => {
     const m = meta.get(id);
-    head += `<th title="${esc(m?.name ?? id)}"><span>${esc(m?.short ?? id)}</span></th>`;
-  }
-  head += '</tr>';
+    return html`<th title="${m?.name ?? id}"><span>${m?.short ?? id}</span></th>`;
+  });
+  const head = html`<tr><th class="corner">标的</th>${headCells}</tr>`;
 
-  let body = '';
-  ids.forEach((rid, i) => {
+  const bodyRows = ids.map((rid, i) => {
     const rm = meta.get(rid);
-    body += `<tr><th class="row-head" title="${esc(rm?.name ?? rid)}">${esc(rm?.short ?? rid)}</th>`;
-    ids.forEach((cid, j) => {
+    const cells = ids.map((cid, j) => {
       const c = corr[i][j];
       const n = counts[i][j];
       const st = stMap.get(`${rid}|${cid}`);
@@ -245,7 +243,8 @@ export function macroMatrixHTML(data) {
       const dim = robustOnly && !isSelf && st && !(st.significantBH && st.stable);
 
       const text = c == null ? '—' : c.toFixed(2);
-      const star = !isSelf && st?.significantBH ? '<i class="sig">*</i>' : '';
+      // 星号必须是 SafeHtml —— 普通字符串会被转义成 &lt;i&gt;
+      const star = !isSelf && st?.significantBH ? html`<i class="sig">*</i>` : '';
       const ci = st?.ci ? `95%CI [${st.ci.lo.toFixed(2)}, ${st.ci.hi.toFixed(2)}]` : '';
       const tip = isSelf
         ? `${rm?.short ?? rid}（n=${n ?? '—'}）`
@@ -261,24 +260,25 @@ export function macroMatrixHTML(data) {
             .filter(Boolean)
             .join('\n');
 
-      body += `<td class="corr ${corrCellClass(c)}${active ? ' active' : ''}${dim ? ' dim' : ''}"
+      return html`<td class="corr ${corrCellClass(c)}${active ? ' active' : ''}${dim ? ' dim' : ''}"
         style="background:${corrBg(c)}"
-        data-a="${esc(rid)}" data-b="${esc(cid)}"
-        title="${esc(tip)}">${text}${star}</td>`;
+        data-a="${rid}" data-b="${cid}"
+        title="${tip}">${text}${star}</td>`;
     });
-    body += '</tr>';
+    return html`<tr><th class="row-head" title="${rm?.name ?? rid}">${rm?.short ?? rid}</th>${cells}</tr>`;
   });
 
   const sig = (stats ?? []).filter((r) => r.significantBH).length;
   const stable = (stats ?? []).filter((r) => r.significantBH && r.stable).length;
   const total = (stats ?? []).length;
 
-  return `<div class="matrix-wrap">
-    <table class="corr-matrix"><thead>${head}</thead><tbody>${body}</tbody></table>
+  // q&lt;0.05 改回字面 q<0.05：模板会转义一次，写实体就成了双转义
+  return html`<div class="matrix-wrap">
+    <table class="corr-matrix"><thead>${head}</thead><tbody>${bodyRows}</tbody></table>
   </div>
   <div class="stat-bar">
     <span class="stat-note">
-      <b>*</b> 通过 Benjamini-Hochberg 多重比较校正（q&lt;0.05）：<b>${sig}/${total}</b> 对，
+      <b>*</b> 通过 Benjamini-Hochberg 多重比较校正（q<0.05）：<b>${sig}/${total}</b> 对，
       其中样本内外同号 <b>${stable}</b> 对
     </span>
     <label class="stat-toggle">

@@ -508,6 +508,35 @@ describe('macro.js 子组件返回 SafeHtml', async () => {
     expect(String(out)).toContain('chart-empty');
   });
 
+  it('macroMatrixHTML 返回 SafeHtml，星号是真实标签而非转义文本', () => {
+    const ids = ['sp500', 'us10y'];
+    const out = mod.macroMatrixHTML({
+      universe: [
+        { id: 'sp500', name: '标普<500>', short: '标普&500' },
+        { id: 'us10y', name: '美债', short: '美债' },
+      ],
+      matrix: {
+        ids,
+        corr: [[1, -0.43], [-0.43, 1]],
+        counts: [[120, 120], [120, 120]],
+        stats: [
+          { a: 'sp500', b: 'us10y', significantBH: true, stable: true, p: 0.0001, pNW: 0.0002, q: 0.0004, n: 120 },
+        ],
+      },
+    });
+    expect(out).toBeInstanceOf(SafeHtml);
+    const h = String(out);
+    // 显著性星号必须是真标签 —— 写成普通字符串会被转义成 &lt;i&gt;
+    expect(h).toContain('<i class="sig">*</i>');
+    expect(h).not.toContain('&lt;i class="sig"&gt;');
+    // 属性里的外部数据只转一次
+    expect(h).toContain('标普&lt;500&gt;');
+    expect(h).toContain('标普&amp;500');
+    expect(h).not.toContain('&amp;lt;');
+    // style 属性保留引号（assertQuotedAttribute 的硬要求）
+    expect(h).toMatch(/style="background:[^"]*"/);
+  });
+
   it('macroPairSection 返回 SafeHtml，标的名只转义一次', () => {
     // macroState 未初始化 → pair 为空 → 空态（也是 SafeHtml）
     const empty = mod.macroPairSection(DATA);
