@@ -4,6 +4,8 @@
  * 来源：public/app.js（原 3655 行单体）L3568-3655，整段搬运，逻辑未改写。
  * ================================================================== */
 import { esc, fmtPrice, html } from '../shared/format.js';
+import { createApi } from '../shared/api.js';
+import { createQueryCache, describeRefresh } from '../shared/query-cache.js';
 
 
 /* ------------------------------------------------------------------ *
@@ -35,7 +37,23 @@ export function briefingRows(items) {
   return html`<div class="briefing-list">${rows}</div>`;
 }
 
-export async function openBriefing() {
+/** 隔夜复盘的取数（同一份 api 客户端 + 查询缓存，视图只消费快照） */
+let briefingCache = null;
+function briefingQuery({ force = false } = {}) {
+  if (!briefingCache) {
+    const api = createApi({ base: './', timeoutMs: 15_000 });
+    briefingCache = createQueryCache({ api });
+  }
+  // 30 秒内复用：反复点开面板不该每次都打服务端
+  return briefingCache.fetchKey('briefing', { path: 'api/briefing', maxAgeMs: 30_000, force });
+}
+
+/** 仅测试用：清掉模块级缓存（生产里 30 秒自然过期，不需要手动清） */
+export function __resetBriefingCache() {
+  briefingCache = null;
+}
+
+export async function openBriefing({ force = false } = {}) {
   if (briefingOpen) return closeBriefing();
   briefingOpen = true;
   briefingBtn?.classList.add('on');
@@ -46,9 +64,22 @@ export async function openBriefing() {
   document.body.appendChild(panel);
 
   try {
-    const res = await fetch('./api/briefing', { cache: 'no-store' });
-    const data = await res.json();
+    /**
+     * 走统一请求层（方案 E07）：超时、取消、错误分类都在 api.js。
+     *
+     * 注意查询缓存**不抛异常**：失败时返回 { data:null, refreshStatus:'failed',
+     * error } 的快照。视图要读快照决定显示什么 —— 这样「有旧数据但这次刷新
+     * 失败」也能表达，而不是只有「空白」和「装作正常」两种选择。
+     */
+    const snapshot = await briefingQuery({ force });
     if (!briefingOpen) return;
+    if (!snapshot.data) {
+      const reason = describeRefresh(snapshot);
+      panel.innerHTML = html`<div class="briefing-head"><h3>隔夜复盘</h3></div>
+        <p class="briefing-empty">读取失败：${reason.text}</p>`.toString();
+      return;
+    }
+    const data = snapshot.data;
     // 快照时间是 ISO/UTC，直接切片会显示成 UTC 钟点，要转成本机时间
     const hhmm = (iso) => {
       const dt = new Date(iso);

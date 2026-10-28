@@ -11,6 +11,7 @@
  * ================================================================== */
 
 import { explanationCardHTML } from './card.js';
+import { publishExplanation } from '../../shared/explanation-store.js';
 import { loadExplanationHistory, loadExplanationVersion, historyListHTML, replayBannerHTML } from './history.js';
 
 /** 解释能力开关（方案 §10.3：先置于可关闭的功能开关后） */
@@ -83,6 +84,12 @@ export function applyResponse(state, { status, body }) {
     };
   }
   if (status === 200 && body?.explanation) {
+    /**
+     * 发布到共享注册表（方案 E07 / §8）：首页、详情、图谱、地图读同一个
+     * explanationId。旧快照晚到会被注册表按 generatedAt 丢掉 —— 界面不会
+     * 因为一次慢响应退回上一版。
+     */
+    publishExplanation({ assetId: state.assetId, windowKey: state.windowKey, envelope: body });
     return {
       ...state,
       phase: 'ready',
