@@ -313,9 +313,9 @@ export function macroLeadLagHTML(data) {
 export function macroPairSection(data) {
   const changes = data.recent?.changes ?? {};
   const dates = data.recent?.dates ?? [];
-  const pair = macroState.pair;
+  const pair = macroState?.pair;
   if (!pair || !changes[pair[0]] || !changes[pair[1]]) {
-    return '<div class="chart-empty">点上方矩阵里的任意格子，查看这两个标的的滚动相关性</div>';
+    return html`<div class="chart-empty">点上方矩阵里的任意格子，查看这两个标的的滚动相关性</div>`;
   }
   const meta = new Map(data.universe.map((u) => [u.id, u]));
   const a = changes[pair[0]];
@@ -327,12 +327,13 @@ export function macroPairSection(data) {
   const chartW = Math.max(300, Math.round(macroEl.clientWidth - 40));
   const chartH = Math.round(Math.min(260, Math.max(150, chartW * 0.22)));
 
-  return `<div class="pair-head">
-      <span class="pair-name">${esc(meta.get(pair[0])?.name ?? pair[0])} ~ ${esc(meta.get(pair[1])?.name ?? pair[1])}</span>
-      ${current != null ? `<span class="pair-now ${dirOf(current)}">当前 40 ${data.freq === 'week' ? '周' : '日'}滚动相关性 ${current.toFixed(3)}</span>` : ''}
+  const span = data.freq === 'week' ? '周' : '日';
+  return html`<div class="pair-head">
+      <span class="pair-name">${meta.get(pair[0])?.name ?? pair[0]} ~ ${meta.get(pair[1])?.name ?? pair[1]}</span>
+      ${current != null ? html`<span class="pair-now ${dirOf(current)}">当前 40 ${span}滚动相关性 ${current.toFixed(3)}</span>` : ''}
     </div>
-    <div class="chart-legend"><span><i style="background:${current != null && current > 0 ? 'var(--up)' : '#5b9cf8'}"></i>40 ${data.freq === 'week' ? '周' : '日'}滚动相关性（-1 ~ +1）</span></div>
-    ${richRollingSVG(points, { width: chartW, height: chartH })}`;
+    <div class="chart-legend"><span><i style="background:${current != null && current > 0 ? 'var(--up)' : '#5b9cf8'}"></i>40 ${span}滚动相关性（-1 ~ +1）</span></div>
+    ${raw(richRollingSVG(points, { width: chartW, height: chartH }))}`;
 }
 
 /** 滚动相关性折线：以 0 为中线，正负分色 */

@@ -508,6 +508,13 @@ describe('macro.js 子组件返回 SafeHtml', async () => {
     expect(String(out)).toContain('chart-empty');
   });
 
+  it('macroPairSection 返回 SafeHtml，标的名只转义一次', () => {
+    // macroState 未初始化 → pair 为空 → 空态（也是 SafeHtml）
+    const empty = mod.macroPairSection(DATA);
+    expect(empty).toBeInstanceOf(SafeHtml);
+    expect(String(empty)).toContain('chart-empty');
+  });
+
   it('macroCompareHTML 返回 SafeHtml（未勾选标的时是空态）', () => {
     const out = mod.macroCompareHTML(DATA);
     expect(out).toBeInstanceOf(SafeHtml);
