@@ -103,6 +103,46 @@ describe('未加引号的属性插值被拒绝', () => {
   it('正文里的插值不受影响', () => {
     expect(() => html`<p>${'x'}</p>`).not.toThrow();
   });
+
+  /* ---------------------------------------------------------------- *
+   * 对抗用例：v1 的实现真的漏过下面第一条
+   *
+   * 原来用 `!/["'][^"']*=\s*$/` 判断「是否在引号内」，那条正则可以从
+   * `class="btn"` 的**闭合**引号开始匹配「引号 + 非引号字符 + =」，于是
+   * 「已闭合」被判成「在引号内」，整个校验被绕过 —— 直接渲染出
+   * `onclick=alert(1)`。现在用状态机扫描，两条都对。
+   * ---------------------------------------------------------------- */
+  it('前面已有闭合的带引号属性时，后面的裸属性仍要被拦', () => {
+    expect(() => html`<button class="btn" onclick=${'alert(1)'}>x</button>`).toThrow(/未加引号的属性插值/);
+    expect(() => html`<a class="a" title="b" href=${'x'}>y</a>`).toThrow(/未加引号的属性插值/);
+  });
+
+  it('属性值里的 = 不受影响（URL query 参数）', () => {
+    expect(() => html`<a href="https://e.com?k=${'x'}">y</a>`).not.toThrow();
+    expect(() => html`<a href="https://e.com?a=${'1'}&b=${'2'}">y</a>`).not.toThrow();
+    expect(() => html`<a href='https://e.com?k=${'x'}'>y</a>`).not.toThrow();
+  });
+
+  it('引号内的另一种引号是字面字符，不改状态', () => {
+    // title 里的撇号不能让「已闭合」被判成「未闭合」
+    expect(() => html`<a title="it's" href=${'x'}>y</a>`).toThrow(/未加引号的属性插值/);
+  });
+
+  it('裸属性在前也要拦', () => {
+    expect(() => html`<a href=${'x'} class="y">z</a>`).toThrow(/未加引号的属性插值/);
+  });
+
+  it('被拦下的那一刻不会产生任何输出（不是「转义后放行」）', () => {
+    let out = null;
+    try {
+      out = html`<button onclick=${'alert(1)'}>x</button>`;
+    } catch {
+      /* 预期 */
+    }
+    expect(out).toBeNull();
+    // 反面教材：如果能拼出来，必然是裸的
+    expect(() => `${out}`).not.toThrow();
+  });
 });
 
 describe('attrHref：转义 + 协议白名单', () => {

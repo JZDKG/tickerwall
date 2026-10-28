@@ -119,27 +119,65 @@ function renderValue(value) {
 }
 
 /**
+ * 扫描到末尾时，是否停在某个引号**内部**。
+ *
+ * 必须逐个字符走状态机，不能用「数引号奇偶」或正则回看：
+ *   · 数奇偶会被 `title="it's"` 里的撇号骗（它在双引号内是字面字符）
+ *   · 正则回看会被 `<button class="btn" onclick=` 骗 ——
+ *     从 `"btn"` 的**闭合**引号开始也能匹配上「引号 + 非引号字符 + =」，
+ *     于是「已闭合」被当成「在引号内」，整个校验被绕过。
+ *
+ * 这不是理论问题：那条正则在 v1 里真的放行了
+ * `html`<button class="btn" onclick=${'alert(1)'}>` —— 直接渲染出
+ * `onclick=alert(1)`。
+ */
+function quoteStateOf(text) {
+  let inDouble = false;
+  let inSingle = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const c = text[i];
+    if (inDouble) {
+      if (c === '"') inDouble = false;
+    } else if (inSingle) {
+      if (c === "'") inSingle = false;
+    } else if (c === '"') {
+      inDouble = true;
+    } else if (c === "'") {
+      inSingle = true;
+    }
+  }
+  return inDouble || inSingle;
+}
+
+/**
  * 未加引号的属性插值检测。
  *
  * `<a href=${x}>` 靠 HTML 转义防不住 —— 空格会把 `javascript:alert(1) foo`
  * 拆成两个属性，转义后的 `&quot;` 在无引号语境里也不还原。这类写法一律
  * 拒绝，逼调用方写成 `<a href="${x}">`（或干脆用 attrHref）。
+ *
+ * 判据：插值紧跟在 `=` 之后，且到那个 `=` 为止**不在任何引号内**。
  */
-function assertQuotedAttribute(strings, index) {
-  const before = strings[index] ?? '';
-  // 插值紧跟在 `=` 之后（允许中间有空格）就是在无引号属性里
-  if (/=\s*$/.test(before) && !/["'][^"']*=\s*$/.test(before)) {
-    throw new Error(
-      `html\`\` 不允许未加引号的属性插值：...${before.slice(-24)}\${…}。` +
-        '请写成 attr="…"，或用 attrHref()。',
-    );
-  }
+function assertQuotedAttribute(built) {
+  const eq = built.lastIndexOf('=');
+  if (eq < 0 || !/^\s*$/.test(built.slice(eq + 1))) return;
+  // 引号状态要从模板开头累积看，不能只看紧邻的那一段：
+  // `<a href="x?a=${1}&b=${2}">` 的第二个插值前后文是 `&b=`，局部看不出
+  // 它其实还在 href 的双引号里。
+  if (quoteStateOf(built)) return;
+
+  throw new Error(
+    `html\`\` 不允许未加引号的属性插值：...${built.slice(-24)}\${…}。` +
+      '请写成 attr="…"，或用 attrHref()。',
+  );
 }
 
 export function html(strings, ...values) {
   let out = strings[0];
   for (let i = 0; i < values.length; i += 1) {
-    assertQuotedAttribute(strings, i);
+    // 用「已经拼好的前文」判断，而不是 strings[i] —— 引号可能开在前面的
+    // 静态片段里，也可能跨过已渲染的值
+    assertQuotedAttribute(out);
     out += renderValue(values[i]) + strings[i + 1];
   }
   return new SafeHtml(out);
