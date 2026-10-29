@@ -263,9 +263,9 @@ describe('问题区只有一个', () => {
     expect(src).not.toContain('今天先看这三个问题');
   });
 
-  it('首页 DOM 顺序：问题 → 行情 → 简报', async () => {
+  it('首页 DOM 顺序：问题 → 简报（折叠） → 行情', async () => {
     const html = await import('node:fs').then((fs) => fs.readFileSync('public/index.html', 'utf8'));
-    expect(html.indexOf('id="questions"')).toBeLessThan(html.indexOf('id="rows"'));
-    expect(html.indexOf('id="rows"')).toBeLessThan(html.indexOf('id="home-brief"'));
+    expect(html.indexOf('id="questions"')).toBeLessThan(html.indexOf('id="home-brief"'));
+    expect(html.indexOf('id="home-brief"')).toBeLessThan(html.indexOf('id="rows"'));
   });
 });

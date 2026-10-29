@@ -26,3 +26,31 @@
   .tasks { gap: 8px; }
   .task-group .task-label { display: none; }
 }
+
+/* ---------- 首页补充阅读区的折叠态（2.3 / 2.4 / 2.6） ---------- *
+ * 展开时三块加起来 800+px，会把 23 个标的挤出首屏；放在行情之后又等于沉底。
+ * 所以默认收起：摘要一行约 40px，点开才是完整内容。 */
+.home-brief { margin: 10px 0 14px; }
+.home-brief-accordion {
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .02);
+}
+.hb-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 12px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 13px;
+  color: var(--muted, #9aa4b2);
+}
+.hb-summary::-webkit-details-marker { display: none; }
+.hb-text { flex: 1; }
+.hb-more { color: var(--accent, #6ea8fe); font-size: 12px; }
+.home-brief-accordion[open] .hb-more::after { content: '收起'; }
+.home-brief-accordion[open] .hb-more { font-size: 0; }
+.home-brief-accordion[open] .hb-more::after { font-size: 12px; }
+.hb-body { padding: 0 12px 12px; }

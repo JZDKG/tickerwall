@@ -9,7 +9,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { homeBriefHTML, renderHomeBrief, shouldHideHomeBrief, watchPickerHTML } from '../src/client/views/home-brief.js';
+import { homeBriefHTML, homeBriefSummary, renderHomeBrief, shouldHideHomeBrief, watchPickerHTML } from '../src/client/views/home-brief.js';
 
 const briefItems = { reason: 'HAS_ITEMS', count: 1, items: [{ id: 'a', time: '2026-10-28 10:00:00', title: '金价回落', sources: 2 }], sinceMs: Date.now() - 3600_000 };
 const ledgerOk = {
@@ -183,9 +183,19 @@ describe('问题优先的层级', () => {
     empty: false,
   });
 
-  it('简报排在行情之后（第 81 轮：不让 23 个标的被挤到两屏外）', () => {
+  /**
+   * 第 82 轮改判：简报回到行情**之前**，但必须处于**折叠态**。
+   * 完整展开 800+px 会把 23 个标的挤出首屏；放在行情之后（Y≈6000）又等于沉底。
+   * 折叠后摘要只占约 40px，两者兼得。
+   */
+  it('简报在行情之前且默认收起', () => {
     const html = readFileSync('public/index.html', 'utf8');
-    expect(html.indexOf('id="rows"')).toBeLessThan(html.indexOf('id="home-brief"'));
+    expect(html.indexOf('id="home-brief"')).toBeLessThan(html.indexOf('id="rows"'));
+    const el = document.createElement('div');
+    renderHomeBrief(el, briefItems, ledgerOk);
+    const details = el.querySelector('details.home-brief-accordion');
+    expect(details).toBeTruthy();
+    expect(details.open).toBe(false);
   });
 
   it('选择面板不会让人选超过三个（第四个 disable）', () => {
@@ -290,9 +300,19 @@ describe('问题优先的层级', () => {
     empty: false,
   });
 
-  it('简报排在行情之后（第 81 轮：不让 23 个标的被挤到两屏外）', () => {
+  /**
+   * 第 82 轮改判：简报回到行情**之前**，但必须处于**折叠态**。
+   * 完整展开 800+px 会把 23 个标的挤出首屏；放在行情之后（Y≈6000）又等于沉底。
+   * 折叠后摘要只占约 40px，两者兼得。
+   */
+  it('简报在行情之前且默认收起', () => {
     const html = readFileSync('public/index.html', 'utf8');
-    expect(html.indexOf('id="rows"')).toBeLessThan(html.indexOf('id="home-brief"'));
+    expect(html.indexOf('id="home-brief"')).toBeLessThan(html.indexOf('id="rows"'));
+    const el = document.createElement('div');
+    renderHomeBrief(el, briefItems, ledgerOk);
+    const details = el.querySelector('details.home-brief-accordion');
+    expect(details).toBeTruthy();
+    expect(details.open).toBe(false);
   });
 
   it('选择面板不会让人选超过三个（第四个 disable）', () => {
@@ -317,3 +337,50 @@ const brief_ = (n) => ({
   items: Array.from({ length: n }, (_, i) => ({ id: `e${i}`, title: `事件${i}`, time: '2026-10-29 10:00:00', level: 'high', assets: ['gold-intl'], fingerprint: `f${i}` })),
 });
 
+
+/* ================================================================== *
+ * 折叠态（第 82 轮裁决：精简折叠置于行情前，两者兼得）
+ *
+ * 完整展开 800+px 会把 23 个标的挤出首屏；放在行情之后（Y≈6000）等于沉底。
+ * 所以摘要一行常驻、默认收起。
+ * ================================================================== */
+describe('折叠态摘要', () => {
+  const briefItems = {
+    ok: true, status: 'ok', hasWatch: true, empty: false, count: 4, sinceMs: Date.now() - 3600_000,
+    items: [1, 2, 3].map((i) => ({ id: `e${i}`, title: `事件${i}`, time: '2026-10-29 10:00:00', level: 'high', assets: ['gold-intl'], fingerprint: `f${i}` })),
+  };
+  const ledger = { total: 12, items: [] };
+
+  it('摘要包含三块的要点，且只有一行（不铺开内容）', () => {
+    const el = document.createElement('div');
+    el.innerHTML = homeBriefHTML(briefItems, ledger, { ok: true, scenario: 'fuel-cost' });
+    const summary = el.querySelector('.hb-summary');
+    expect(summary.textContent).toContain('关注简报');
+    expect(summary.textContent).toContain('3 条');
+    expect(summary.textContent).toContain('预期台账 12 条');
+    expect(summary.textContent).toContain('油价与出行成本');
+  });
+
+  it('没有关注项时摘要如实说「还没选关注项」，不说「暂无更新」', () => {
+    const el = document.createElement('div');
+    el.innerHTML = homeBriefHTML({ ok: true, hasWatch: false, items: [] }, ledger);
+    expect(el.querySelector('.hb-summary').textContent).toContain('还没选关注项');
+    expect(el.querySelector('.hb-summary').textContent).not.toContain('暂无');
+  });
+
+  it('默认收起；open:true 时展开（深链接/测试可强制展开）', () => {
+    const a = document.createElement('div');
+    a.innerHTML = homeBriefHTML(briefItems, ledger);
+    expect(a.querySelector('details').open).toBe(false);
+    const b = document.createElement('div');
+    b.innerHTML = homeBriefHTML(briefItems, ledger, null, { open: true });
+    expect(b.querySelector('details').open).toBe(true);
+  });
+
+  it('展开体里三块内容都在（不是只有摘要）', () => {
+    const el = document.createElement('div');
+    el.innerHTML = homeBriefHTML(briefItems, ledger, { ok: true });
+    const body = el.querySelector('.hb-body');
+    expect(body.querySelectorAll('.d-block').length).toBeGreaterThanOrEqual(2);
+  });
+});

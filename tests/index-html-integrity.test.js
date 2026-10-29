@@ -53,12 +53,12 @@ describe('标签闭合', () => {
 });
 
 describe('首页区块顺序（看板核心不该被挤到两屏外）', () => {
-  it('问题 → 行情 → 简报', () => {
+  it('问题 → 简报 → 行情（简报折叠态，只占一行）', () => {
     const q = html.indexOf('id="questions"');
     const rows = html.indexOf('id="rows"');
     const brief = html.indexOf('id="home-brief"');
     expect(q).toBeGreaterThan(0);
-    expect(q).toBeLessThan(rows);
-    expect(rows).toBeLessThan(brief);
+    expect(q).toBeLessThan(brief);
+    expect(brief).toBeLessThan(rows);
   });
 });

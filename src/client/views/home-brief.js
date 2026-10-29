@@ -42,10 +42,48 @@ export function shouldHideHomeBrief(brief, ledger) {
  * （最多三张问题卡，行情之前）承担。曾经在这里又渲染一遍「今天先看这三个
  * 问题」，结果是首屏出现两个都在说「先看问题」的区块，行情被挤到 Y≈1461。
  */
-export function homeBriefHTML(brief, ledger, lifePath = null) {
-  return `${watchBriefHTML(brief)}${expectationsCardHTML(ledger)}${
+/** 折叠态摘要里的数字：只报「有多少」，不报「好不好」 */
+export function homeBriefSummary(brief, ledger, lifePath = null) {
+  const parts = [];
+  const changed = brief?.items?.length ?? 0;
+  if (brief?.hasWatch && changed > 0) parts.push(`关注简报：自上次查看 ${changed} 条`);
+  else if (brief?.hasWatch) parts.push('关注简报：暂时没有新变化');
+  else parts.push('关注简报：还没选关注项');
+  if (ledger?.total > 0) parts.push(`预期台账 ${ledger.total} 条待公布`);
+  if (lifePath && lifePath.ok !== false) parts.push('油价与出行成本');
+  return parts.join(' · ');
+}
+
+/**
+ * 首页补充阅读区：**紧凑折叠**。
+ *
+ * 为什么折叠：这三块（2.3 / 2.4 / 2.6）是产品亮点，但完整展开有 800+px，
+ * 放在行情之前会把 23 个标的挤出首屏；放在行情之后（Y≈6000）又等于沉底。
+ * 折叠态两者兼得：摘要一行常驻（约 40px），要读细节点开即可。
+ *
+ * @param {object} brief
+ * @param {object} ledger
+ * @param {object|null} lifePath
+ * @param {{ open?: boolean }} [opts] 默认收起；测试与深链接可强制展开
+ */
+export function homeBriefHTML(brief, ledger, lifePath = null, { open = false } = {}) {
+  const body = `${watchBriefHTML(brief)}${expectationsCardHTML(ledger)}${
     lifePath && lifePath.ok !== false ? lifePathHTML(lifePath) : ''
   }`;
+  const summary = homeBriefSummary(brief, ledger, lifePath);
+  /**
+   * 这里用字符串拼接而不是 `html`` `：`body` 是三块子渲染器产出的 HTML 片段，
+   * 塞进 `html`` ` 会被当成普通字符串**转义**（卡片变成一堆 `&lt;section`）。
+   * 要原样插入就得写 `raw()`，而 `raw()` 全站只允许出现在白名单文件里
+   * （由 tests/html-template.test.js 的棘轮守住）。
+   * 摘要里的数字都是我这边拼的，仍然过 `esc()` 以防将来加进外部文案。
+   */
+  return [
+    `<details class="home-brief-accordion${open ? ' open' : ''}"${open ? ' open' : ''}>`,
+    `<summary class="hb-summary"><span class="hb-dot">💡</span><span class="hb-text">${esc(summary)}</span><span class="hb-more">展开</span></summary>`,
+    `<div class="hb-body">${body}</div>`,
+    '</details>',
+  ].join('');
 }
 
 /**
@@ -66,7 +104,7 @@ export function renderHomeBrief(host, brief, ledger, handlers = {}) {
     host.innerHTML = '';
     return false;
   }
-  host.innerHTML = homeBriefHTML(brief, ledger, lifePath);
+  host.innerHTML = homeBriefHTML(brief, ledger, lifePath, { open: handlers.open === true });
   host.hidden = false;
   host.querySelector('#wb-pick')?.addEventListener('click', () => handlers.onPick?.());
   return true;

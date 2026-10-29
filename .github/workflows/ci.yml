@@ -58,3 +58,9 @@ jobs:
       # 发布包：白名单收集 → 解压到全新临时目录 → 起真进程 → 三个入口都 200
       - name: 发布包冒烟
         run: npm run pack
+
+      # 真实浏览器回归：起临时服务 + headless Chrome，跑 14 条页面断言。
+      # 本项目修掉的 bug 里有 9 个只在真实浏览器暴露（jsdom 全绿时也照样存在），
+      # 这一步就是它们唯一的自动防线。ubuntu-latest 自带 Google Chrome。
+      - name: 真实浏览器回归
+        run: npm run test:browser

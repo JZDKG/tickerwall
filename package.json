@@ -29,7 +29,8 @@
     "backup": "node tools/backup.mjs",
     "restore": "node tools/restore.mjs",
     "pack": "node tools/pack.mjs",
-    "pack:smoke": "PACK_SMOKE=1 vitest run tests/pack-tool.test.js"
+    "pack:smoke": "PACK_SMOKE=1 vitest run tests/pack-tool.test.js",
+    "test:browser": "node tools/browser-check.mjs"
   },
   "engines": {
     "node": ">=24.0.0",
