@@ -69,6 +69,16 @@ export default defineConfig({
      * 这里在 worker 里给每次运行一个全新临时目录（`paths.js` 认 KANBAN_DATA_DIR），
      * 于是无论哪个测试漏了 `:memory:`，写的也是临时目录。
      */
+    /**
+     * 单条用例上限 15s（默认 5s）。
+     *
+     * 事故记录：连续四条用例在 Ubuntu 上卡在 5.0–6.6s —— 都是**真的走一遍
+     * 解释管线**（读观测、查修订、可能触上游），本机 4 核快、远端 2 核就超。
+     * 这不是逻辑问题，是「集成型用例 + 慢机器」的组合，逐条加超时只是
+     * 把同一件事重复做；统一给 15s，挂死仍会在 15s 暴露。
+     * 纯单元用例仍然秒级，不受影响。
+     */
+    testTimeout: 15_000,
     // 每个 worker 各一个数据目录：run 级别的 env 会被并行 worker 共用，
     // 导致它们在同一个 SQLite 文件上互相抢锁（CI 上表现为 job-queue 超时）。
     setupFiles: ['tests/setup-per-worker.mjs'],
