@@ -118,7 +118,13 @@ export async function seedFrom(s) {
   return null;
 }
 
-export async function seedHistory() {
+/**
+ * @param {{ allowNetwork?: boolean }} [opts]
+ *   `allowNetwork` 默认跟随离线模式（DISABLE_BACKGROUND=1 → 不补种）。
+ *   测试要验证补种逻辑本身时显式传 true —— 比临时改环境变量干净，
+ *   也不会让「关掉后台」这条语义在测试里被悄悄绕过。
+ */
+export async function seedHistory({ allowNetwork = process.env.DISABLE_BACKGROUND !== '1' } = {}) {
   /**
    * 离线模式（DISABLE_BACKGROUND=1）不补种。
    *
@@ -126,7 +132,7 @@ export async function seedHistory() {
    * 后台任务，进程仍然会先联网抓一轮才开门。集成测试与断网环境都要求
    * 「关掉后台 = 不联网」，所以这道门必须在这里，而不是入口那次调用上。
    */
-  if (process.env.DISABLE_BACKGROUND === '1') return;
+  if (!allowNetwork) return;
   const targets = INSTRUMENTS.filter((i) => i.seed && !ring.has(i.id));
   await Promise.all(
     targets.map(async (inst) => {

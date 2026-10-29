@@ -22,6 +22,9 @@
 import { defineConfig } from 'vite';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { join } from 'node:path';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 
@@ -56,6 +59,19 @@ export default defineConfig({
     },
   },
   test: {
+    /**
+     * **测试永远不碰仓库的 data/**。
+     *
+     * 事故：在干净检出里跑全量，`data/kanban.db` 与 `data/history.json` 被创建 ——
+     * CI 上表现为「隔离测试期间仓库数据目录从不存在变成存在」的断言失败。
+     * 根因是个别测试通过服务层懒开库，拿到的是默认路径。
+     *
+     * 这里在 worker 里给每次运行一个全新临时目录（`paths.js` 认 KANBAN_DATA_DIR），
+     * 于是无论哪个测试漏了 `:memory:`，写的也是临时目录。
+     */
+    env: {
+      KANBAN_DATA_DIR: mkdtempSync(join(tmpdir(), 'kanban-test-data-')),
+    },
     /**
      * 覆盖率：分层门槛，不是全仓一刀切 95%。
      *

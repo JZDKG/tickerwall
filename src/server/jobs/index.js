@@ -35,6 +35,18 @@ export function buildDefaultJobs(overrides = {}) {
   const explain =
     overrides.explain ??
     (() => Promise.all(EXPLAIN_ASSETS.map((asset) => getExplanationResponse({ asset, windowKey: EXPLAIN_WINDOW }))));
+  /**
+   * 历史回补的触发动作。默认真的入队；测试可以替换掉，
+   * 免得一个「调度表长得对不对」的用例去写数据库。
+   */
+  const backfill =
+    overrides.backfill ??
+    (async () => {
+      const day = new Date().toISOString().slice(0, 10);
+      for (const asset of EXPLAIN_ASSETS) {
+        enqueue({ taskKey: 'history-backfill', dedupeKey: `history:${asset}:${day}`, payload: { asset } });
+      }
+    });
 
   return [
     {
@@ -86,12 +98,7 @@ export function buildDefaultJobs(overrides = {}) {
       backoffBaseMs: 15 * 60_000,
       maxBackoffMs: 6 * 60 * 60_000,
       triggers: ['daily-series'],
-      run: async () => {
-        const day = new Date().toISOString().slice(0, 10);
-        for (const asset of EXPLAIN_ASSETS) {
-          enqueue({ taskKey: 'history-backfill', dedupeKey: `history:${asset}:${day}`, payload: { asset } });
-        }
-      },
+      run: backfill,
     },
     {
       key: 'explanations',

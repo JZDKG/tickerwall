@@ -313,3 +313,25 @@ ready 被这个次要动作覆盖回 loading。修法：只合并 `history` / `h
 **未修**：机制适用条件的**方向**检查（名义 vs 实际、事件方向 vs 机制符号）、
 观测 id 的不可变修订标识、以及全部 6 条阅读路径问题 —— 见
 [explanation-trust-fixes.md](./explanation-trust-fixes.md) 的待办清单。
+
+### 第 84 轮：CI 首次真跑失败（3 项，本机干净检出复现）
+
+远端 CI #40816845695 在**环境预检**就红了：`doctor.mjs` 要求运行时依赖已安装，
+而工作流先预检后 `npm ci` —— 顺序已改为先安装（见 `.github/workflows/ci.yml`）。
+修完顺序后再在**干净检出**里跑全量，复现 3 项失败，逐一修掉：
+
+1. `quotes-service.test.js` 的 `seedHistory` 在 `DISABLE_BACKGROUND=1` 下提前返回。
+   修法：`seedHistory({ allowNetwork })` 显式可注入（默认跟随离线模式），
+   测试 opt-in；另加一条**反向**用例断言离线模式一次 fetch 都不发。
+2. 干净检出里跑全量会创建仓库 `data/kanban.db` 与 `data/history.json`。
+   根因：个别测试经服务层懒开库，拿到默认路径。修法：`vite.config.js`
+   的 `test.env` 给每次运行一个全新 `KANBAN_DATA_DIR`（`paths.js` 认它）。
+   复验：干净检出全量后 `git status -- data` 为空。
+3. `collector.test.js` 的「默认任务能真的跑通」超时。
+   根因：新增的 `history-backfill-schedule` 在 tick 里真的 `enqueue()` 写库，
+   与并行 worker 抢同一个 DB 文件。修法：`buildDefaultJobs` 接受 `overrides.backfill`，
+   该用例注入假实现（并断言它被调用）—— 调度表用例不该写数据库。
+
+干净检出（`DISABLE_BACKGROUND=1 TZ=Asia/Shanghai`）结果：**2913 通过 + 1 skipped**，
+仓库 `data/` 未被写入。本机门禁：95.06 / 84.09 / 95.17 / 96.85、verify:build 一致、
+pack 720 文件冒烟通过、test:browser 14/14。

@@ -497,13 +497,14 @@ describe('seedFrom / seedPoints / seedHistory', () => {
     const inst = { id: 'seed-x', seed: { kind: 'binance', symbol: 'BTCUSDT', note: '参考形态' } };
     const restore = withInst(inst);
     fetchRaw.mockResolvedValue(JSON.stringify(klines(10)));
-    await seedHistory();
+    // 显式允许联网补种：本用例验的是补种逻辑，不是在验离线模式的门
+    await seedHistory({ allowNetwork: true });
     expect(ring.get('seed-x').length).toBe(10);
     expect(historyNoteFor('seed-x')).toBe('参考形态');
 
     // 已有数据不再补种
     const before = fetchRaw.mock.calls.length;
-    await seedHistory();
+    await seedHistory({ allowNetwork: true });
     expect(fetchRaw.mock.calls.length).toBe(before);
 
     // 超过 12 小时注脚过期
@@ -679,4 +680,28 @@ process.on('exit', () => {
   } catch {
     /* ignore */
   }
+});
+
+/* ================================================================== *
+ * 离线模式不补种（CI 的 DISABLE_BACKGROUND=1 就是这条路径）
+ *
+ * 补种会打外网。原来它在 listen() 之前被调用，于是「关掉后台」仍然先联网
+ * 抓一轮才开门 —— 集成测试与断网环境都要求关掉后台 = 不联网。
+ * ================================================================== */
+describe('离线模式（DISABLE_BACKGROUND=1）', () => {
+  it('默认不补种：一次 fetch 都不发', async () => {
+    const prev = process.env.DISABLE_BACKGROUND;
+    process.env.DISABLE_BACKGROUND = '1';
+    try {
+      const inst = { id: 'off-x', seed: { kind: 'binance', symbol: 'BTCUSDT' } };
+      const restore = withInst(inst);
+      const before = fetchRaw.mock.calls.length;
+      await seedHistory();
+      expect(fetchRaw.mock.calls.length).toBe(before);
+      restore();
+    } finally {
+      if (prev == null) delete process.env.DISABLE_BACKGROUND;
+      else process.env.DISABLE_BACKGROUND = prev;
+    }
+  });
 });
