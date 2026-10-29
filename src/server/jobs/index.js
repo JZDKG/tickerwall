@@ -17,6 +17,7 @@ import { getEvents } from '../services/events.service.js';
 import { getCalendar } from '../services/calendar.service.js';
 import { loadAssetObservations, getExplanationResponse } from '../services/explanations.service.js';
 import { enqueue, runOne, sweepExpiredLeases, queueStats } from './queue.js';
+import { getDetail } from '../services/detail.service.js';
 
 /** 解释首版只覆盖黄金 */
 const EXPLAIN_ASSETS = ['gold-intl'];
@@ -111,6 +112,20 @@ export const QUEUE_HANDLERS = {
     const res = await getExplanationResponse({ asset, windowKey });
     if (res?.status && res.status >= 400) throw new Error(`解释重建失败：HTTP ${res.status}`);
     return { asset, windowKey, status: res?.status ?? 200, snapshotId: res?.body?.explanation?.id ?? null };
+  },
+  /**
+   * 历史回补（E06 的第二条生产线）。
+   *
+   * 为什么要有它：详情与历时的历史序列原来只在**用户访问**时顺带补齐，
+   * 没人看就永远缺。入队之后可以在后台把缺口补上，且与访问互不阻塞。
+   * 失败进队列的重试/终态机制，不会因为一次源超时就永久丢一段历史。
+   */
+  'history-backfill': async (job) => {
+    const id = job.payload?.asset ?? 'gold-intl';
+    const res = await getDetail(id, { force: true });
+    const rows = res?.body?.history?.rows?.length ?? 0;
+    if (!rows) throw new Error(`历史回补失败：${id} 没有取到任何历史行`);
+    return { asset: id, rows };
   },
 };
 

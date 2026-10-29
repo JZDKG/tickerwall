@@ -87,3 +87,22 @@ describe('启动恢复', () => {
     expect(out === undefined || typeof out === 'number' || typeof out === 'object').toBe(true);
   });
 });
+
+/* ================================================================== *
+ * 历史回补（E06 的第二条生产线）
+ *
+ * 详情与历时的历史序列原来只在**用户访问**时顺带补齐，没人看就永远缺。
+ * 入队之后后台能补，失败进队列的重试/终态，不会因为一次源超时就永久丢一段。
+ * ================================================================== */
+describe('history-backfill 处理器', () => {
+  it('注册在 QUEUE_HANDLERS 里（不是只有函数定义）', async () => {
+    const { QUEUE_HANDLERS } = await import('../src/server/jobs/index.js');
+    expect(typeof QUEUE_HANDLERS['history-backfill']).toBe('function');
+  });
+
+  it('处理器在取不到历史时抛错（让队列走重试/终态，而不是静默成功）', async () => {
+    const { QUEUE_HANDLERS } = await import('../src/server/jobs/index.js');
+    // 用一个不存在的资产：getDetail 会返回错误或空历史，处理器必须抛而不是返回 0 行说成功
+    await expect(QUEUE_HANDLERS['history-backfill']({ payload: { asset: 'definitely-not-an-asset' } })).rejects.toThrow();
+  }, 60_000);
+});
