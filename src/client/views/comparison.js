@@ -47,6 +47,20 @@ export function termRowHTML(term, { residual = false } = {}) {
  *
  * @param {object} data /api/comparison/gold 的响应
  */
+/**
+ * 副标题：窗口名 + **真实起止日期** + 缓存状态。
+ *
+ * 外部走查看到的错：标题写「近 5 日」，而数据截至 10-23 且缓存已过期 ——
+ * 只写窗口名会让读者以为覆盖到今天。
+ */
+export function comparisonWindowText(data) {
+  const label = data?.windowLabel ?? '本次窗口';
+  const range = data?.windowRange ?? null;
+  const span = range?.start && range?.end ? ` · ${range.start} → ${range.end}` : data?.cutoff ? ` · 对齐到 ${data.cutoff}` : '';
+  const stale = data?.dataAgeWarning ? ' · 日线缓存已过期（不是实时价）' : '';
+  return `${label}${span}${stale}`;
+}
+
 export function comparisonCardHTML(data) {
   if (!data || data.ok === false) {
     return `<div class="cmp-card cmp-card--error"><p class="cmp-empty">对照暂时不可用：${esc(data?.error ?? '接口没有返回内容')}</p></div>`;
@@ -54,7 +68,7 @@ export function comparisonCardHTML(data) {
 
   const head = `<div class="cmp-head">
       <h3>为什么国内金和国际金不同步？</h3>
-      <p class="cmp-sub">${esc(data.windowLabel ?? '今日')}${data.cutoff ? ` · 对齐到 ${esc(data.cutoff)}` : ''}</p>
+      <p class="cmp-sub">${esc(comparisonWindowText(data))}</p>
     </div>`;
 
   // 不可比 / 缺数据：只给原因

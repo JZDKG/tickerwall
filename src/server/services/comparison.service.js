@@ -206,6 +206,13 @@ export async function buildComparison({ windowKey = 'session', deps = {} } = {})
     windowLabel: window.label,
     // 三序列共同覆盖的最后一个交易日：界面要说清「对齐到哪一天」
     cutoff: cutoff ?? null,
+    /**
+     * 窗口的真实起止日期。
+     *
+     * 只写「近 5 日」是不够的：缓存过期时数据可能停在 10-23，标题却仍说「近 5 日」，
+     * 读者会以为是到今天为止的 5 天。界面应显示实际区间。
+     */
+    windowRange: { start: intl.startDate, end: intl.endDate },
     alignedEndDates: { intl: intl?.endDate ?? null, domestic: domestic?.endDate ?? null, fx: fx?.endDate ?? null },
     missing: [],
     // 缓存是否过期要报出来：相对变化仍然成立，但不能当成实时行情

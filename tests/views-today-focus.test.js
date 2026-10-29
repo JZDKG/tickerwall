@@ -174,3 +174,18 @@ describe('时区与语言', () => {
     expect(html).toContain('北京时间');
   });
 });
+
+describe('问题文案不留空括号', () => {
+  it('幅度缺失时只写「为何走弱」，不写「为何走弱（）」', async () => {
+    const leaf = await import('../src/client/views/explanations/questions.js');
+    const text = leaf.questionTemplate({ assetName: '国际金价', windowLabel: '过去一个交易时段，', direction: 'down', magnitude: '' });
+    expect(text).toBe('过去一个交易时段，国际金价为何走弱');
+    expect(text).not.toContain('（）');
+  });
+
+  it('有幅度时照常写在括号里', async () => {
+    const leaf = await import('../src/client/views/explanations/questions.js');
+    expect(leaf.questionTemplate({ assetName: '国际金价', windowLabel: '过去一个交易时段，', direction: 'down', magnitude: '0.66%' }))
+      .toBe('过去一个交易时段，国际金价为何走弱（0.66%）');
+  });
+});

@@ -231,3 +231,55 @@ describe('取数（经统一请求层）', () => {
     }
   });
 });
+
+/* ================================================================== *
+ * 第 87 轮：副标题必须写真实起止日期与缓存状态
+ *
+ * 外部走查的错：标题写「近 5 日」，数据实际截至 10-23 且缓存过期 ——
+ * 只写窗口名会让读者以为覆盖到今天。
+ * ================================================================== */
+describe('对照卡的窗口说明', () => {
+  it('有 windowRange 时写「窗口名 · 起 → 止」', async () => {
+    const { comparisonWindowText } = await import('../src/client/views/comparison.js');
+    const text = comparisonWindowText({ windowLabel: '近 5 日', windowRange: { start: '2026-10-17', end: '2026-10-23' } });
+    expect(text).toBe('近 5 日 · 2026-10-17 → 2026-10-23');
+  });
+
+  it('缓存过期时在副标题里明说不是实时价', async () => {
+    const { comparisonWindowText } = await import('../src/client/views/comparison.js');
+    const text = comparisonWindowText({
+      windowLabel: '近 5 日',
+      windowRange: { start: '2026-10-17', end: '2026-10-23' },
+      dataAgeWarning: '日线缓存已过期',
+    });
+    expect(text).toContain('不是实时价');
+  });
+
+  it('没有 windowRange 时退回 cutoff，不编日期', async () => {
+    const { comparisonWindowText } = await import('../src/client/views/comparison.js');
+    expect(comparisonWindowText({ windowLabel: '近 5 日', cutoff: '2026-10-23' })).toBe('近 5 日 · 对齐到 2026-10-23');
+  });
+});
+
+/* ================================================================== *
+ * 第 87 轮：内外盘对照要排在走势/分时/指标**之前**
+ *
+ * 外部走查：入口位于走势、分时、指标之后，要翻两屏才找得到。
+ * 它是「为什么和别处不同步」的直接追问，应该紧跟解释卡。
+ * ================================================================== */
+describe('在详情页里的位置', () => {
+  it('对照块排在「历史走势」与「关键指标」之前', async () => {
+    // 页面顺序由 renderDetail 的模板决定：读源码确认四段先后
+    // （goldSpreadBlock 依赖 DOM 引用，单元里只查模板顺序）
+    const src = (await import('node:fs')).readFileSync('src/client/views/detail.js', 'utf8');
+    const iExplain = src.indexOf('id="d-explain"');
+    const iCmp = src.indexOf('goldSpreadBlock(data.derived, d)');
+    // 注意用**唯一**的锚点：'历史走势' 也出现在 SVG 的 aria-label 里（第 321 行）
+    const iChart = src.indexOf('<h3>历史走势');
+    const iMetrics = src.indexOf('<h3>关键指标</h3>');
+    expect(iExplain).toBeGreaterThan(0);
+    expect(iCmp).toBeGreaterThan(iExplain);
+    expect(iCmp).toBeLessThan(iChart);
+    expect(iCmp).toBeLessThan(iMetrics);
+  });
+});

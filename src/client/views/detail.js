@@ -981,6 +981,10 @@ export function renderDetail(data) {
         : ''
     }
 
+    <!-- 内外盘对照紧跟解释卡：它是「为什么和别处不同步」的直接追问，
+         放在走势/分时/指标之后等于让人翻两屏才找到 -->
+    ${goldSpreadBlock(data.derived, d)}
+
     <section class="d-block">
       <div class="chart-head">
         <h3>历史走势 <span class="h3-note">${ranged[0]?.[0] ?? ''} ~ ${data.history.endDate ?? ''} · ${ranged.length} 条</span></h3>
@@ -1081,8 +1085,6 @@ export function renderDetail(data) {
       <h3>关键指标</h3>
       ${metricCards(data)}
     </section>
-
-    ${goldSpreadBlock(data.derived, d)}
 
     ${crossCheckTable(data.crosscheck, d)}
 
@@ -1210,6 +1212,15 @@ export function renderDetailError(id, message) {
  * ------------------------------------------------------------------ */
 
 let explainState = null;
+/**
+ * 解释状态的「代」。
+ *
+ * 只比 `seq` 不够：切换资产时 `createExplainState` 会把 seq 归零，
+ * 于是「黄金这次请求的 seq=1」与「原油那次请求的 seq=1」相等 ——
+ * 黄金的慢响应回来时能通过校验，把原油页面覆盖成黄金的解释
+ * （审阅用交错请求复现过）。epoch 每次重建状态都递增，旧响应一律作废。
+ */
+let explainEpoch = 0;
 
 /**
  * 取历史版本列表（C3）。
@@ -1219,8 +1230,9 @@ let explainState = null;
 export async function hydrateHistory() {
   if (!explainState || !isExplainable(explainState.assetId)) return null;
   const assetAtStart = explainState.assetId;
+  const epochAtStart = explainEpoch;
   const next = await refreshHistory(explainState);
-  if (!explainState || explainState.assetId !== assetAtStart) return null;
+  if (!explainState || explainState.assetId !== assetAtStart || explainEpoch !== epochAtStart) return null;
   /**
    * **只合并历史，不覆盖解释本身**。
    *
@@ -1239,8 +1251,9 @@ export async function hydrateHistory() {
 export async function replayVersion(versionId) {
   if (!explainState || !versionId) return null;
   const assetAtStart = explainState.assetId;
+  const epochAtStart = explainEpoch;
   const next = await viewVersion(explainState, versionId);
-  if (!explainState || explainState.assetId !== assetAtStart) return null;
+  if (!explainState || explainState.assetId !== assetAtStart || explainEpoch !== epochAtStart) return null;
   explainState = { ...next, openFactors: explainState.openFactors, assetName: explainState.assetName };
   repaintExplainCard();
   return explainState;
@@ -1249,6 +1262,7 @@ export async function replayVersion(versionId) {
 /** 取（或初始化）某个资产的解释状态 */
 export function ensureExplainState(assetId) {
   if (!explainState || explainState.assetId !== assetId) {
+    explainEpoch += 1;
     explainState = createExplainState(assetId);
     explainState.assetName = null;
   }
@@ -1310,9 +1324,13 @@ function bindExplain() {
  */
 export async function hydrateExplanation({ force = false } = {}) {
   if (!explainState || !isExplainable(explainState.assetId)) return null;
-  const seqAtStart = explainState.seq + 1;
+  const token = { assetId: explainState.assetId, seq: explainState.seq + 1, epoch: explainEpoch };
   const next = await refreshExplain(explainState, { force });
-  if (!explainState || next.seq !== seqAtStart) return null; // 旧响应，丢弃
+  // 三道校验缺一不可：同一代状态、同一个资产、同一个请求序号
+  if (!explainState) return null;
+  if (explainEpoch !== token.epoch) return null; // 期间重建过状态（切资产/重置）
+  if (explainState.assetId !== token.assetId) return null; // 资产已切走
+  if (next.seq !== token.seq) return null; // 旧响应
   // 保留用户已经展开的条目：refreshExplain 的 base 已带上 openFactors
   explainState = { ...next, openFactors: explainState.openFactors, assetName: explainState.assetName };
   repaintExplainCard();
@@ -1335,7 +1353,7 @@ export async function loadDetail(id, { force = false } = {}) {
     if (location.hash.startsWith('#/d/')) {
       renderDetail(detailState.data);
       // 图表先渲染，解释异步补上：取数慢不该让整页等
-      void hydrateExplanation();
+      void hydrateExplanation().then(() => applyFocus(focusTargetFromHash(location.hash)));
       void hydrateHistory();
     }
   } catch (err) {
@@ -1358,6 +1376,43 @@ export function stopDetailTimer() {
  * ------------------------------------------------------------------ */
 
 /** 进入详情页。id 变化才重置状态（同一标的来回切时保留周期/区间选择） */
+/**
+ * 从卡片深链接过来时的落点。
+ *
+ * `?window=session&focus=path|chart|evidence`：同一个详情页，三个按钮
+ * 分别落在解释卡的渠道、走势图、证据条目上（原来三个都落在页面顶部）。
+ */
+export function focusTargetFromHash(hash = '') {
+  const q = String(hash).split('?')[1] ?? '';
+  const focus = new URLSearchParams(q).get('focus');
+  return focus === 'path' || focus === 'chart' || focus === 'evidence' ? focus : null;
+}
+
+/** 落到指定位置：等解释卡渲染完再滚，避免滚到空节点 */
+export function applyFocus(focus) {
+  if (typeof document === 'undefined' || !focus) return false;
+  /** jsdom 没有 scrollIntoView：滚动是增强，缺它不该让落点失效 */
+  const scrollTo = (el, opts) => {
+    if (!el) return;
+    if (typeof el.scrollIntoView === 'function') el.scrollIntoView(opts);
+  };
+  if (focus === 'path') {
+    const first = document.querySelector('#d-explain [data-explain-toggle]');
+    if (first && first.getAttribute('aria-expanded') !== 'true') first.click();
+    scrollTo(document.getElementById('d-explain'), { block: 'start' });
+    return Boolean(first);
+  }
+  if (focus === 'evidence') {
+    scrollTo(document.querySelector('#d-explain .ex-evidence, #d-explain [data-explain-diff]'), { block: 'center' });
+    return true;
+  }
+  if (focus === 'chart') {
+    scrollTo(document.querySelector('.chart-head'), { block: 'start' });
+    return true;
+  }
+  return false;
+}
+
 export function mountDetail(id) {
   detailEl.hidden = false;
   window.scrollTo({ top: 0 });
@@ -1374,6 +1429,7 @@ export function mountDetail(id) {
 
 /** 测试专用：把模块单例复位到「从没进过详情页」的状态 */
 export function resetDetailForTests() {
+  explainEpoch = 0;
   stopDetailTimer();
   detailState = null;
   explainState = null;

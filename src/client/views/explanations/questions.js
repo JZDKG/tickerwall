@@ -20,7 +20,12 @@ import { fetchExplanation, isExplainable, explainEnabled } from './state.js';
 export function questionTemplate({ assetName, windowLabel, direction, magnitude, status }) {
   if (status === 'insufficient') return `${windowLabel}${assetName}为什么没有明确解释`;
   if (direction === 'flat') return `${windowLabel}${assetName}为什么基本没动`;
-  return `${windowLabel}${assetName}为何${direction === 'up' ? '走强' : '走弱'}（${magnitude}）`;
+  /**
+   * 幅度缺失时不写 `（ ）`：审阅在服务失败时看到过「为何走弱（）」。
+   * 宁可只写「为何走弱」，也不留一对空括号冒充完整信息。
+   */
+  const dirText = `${windowLabel}${assetName}为何${direction === 'up' ? '走强' : '走弱'}`;
+  return magnitude ? `${dirText}（${magnitude}）` : dirText;
 }
 
 const WINDOW_LABEL = { session: '过去一个交易时段，', '5d': '最近 5 个交易时段，', '1m': '最近一个月，' };
@@ -37,18 +42,60 @@ export function targetFactOf(explanation) {
   return { direction, magnitude, value: v, unit, window: f.window };
 }
 
-/** 简报：最多两句。有证据才写候选因素，否则写仍待确认 */
+/**
+ * 卡片的解释文案：**一条白话路径 + 本次事实 + 一个重要未知**。
+ *
+ * 外部走查的原话：「写『观测与实际收益率、名义利率方向一致』，但没有回答
+ * 这些因素通常怎样影响黄金、本次缺什么」。原来的两句话只描述了状态码，
+ * 读者还得自己翻译成经济关系。
+ *
+ * 三段各自的边界：
+ *   · 路径：只描述**一般机制**（这条渠道通常怎么传导），不是本次归因；
+ *   · 事实：只写本次窗口的数字与方向，不写原因；
+ *   · 未知：优先用服务端给的 unknowns 原文；没有就按状态码给一句诚实的兜底。
+ */
+export function explainBriefOf(explanation) {
+  if (!explanation) return { path: '', fact: '', unknown: '' };
+  const fact = targetFactOf(explanation);
+  const hypotheses = explanation.hypotheses ?? [];
+
+  // 1) 白话路径：挑一条「本次有观测支持」的渠道；都没有就挑第一条已登记的机制
+  const supported = hypotheses.filter((h) => h.status === 'consistent' || h.status === 'mixed');
+  const pick = supported[0] ?? hypotheses[0] ?? null;
+  const path = pick?.plain
+    ? String(pick.plain).trim()
+    : pick?.label
+      ? `常见路径：${pick.label}。`
+      : '';
+
+  // 2) 本次事实：数字来自 TARGET_CHANGE，不掺原因
+  const dirText = fact.direction === 'up' ? '上升' : fact.direction === 'down' ? '下降' : fact.direction === 'flat' ? '基本持平' : '';
+  const factText = fact.magnitude ? `本时段${dirText} ${fact.magnitude}。` : '';
+
+  // 3) 一个重要未知：优先 unknowns 的原文，其次按状态给一句
+  let unknown = '';
+  const firstUnknown = (explanation.unknowns ?? []).find((u) => u?.text || u?.message);
+  if (firstUnknown) unknown = String(firstUnknown.text ?? firstUnknown.message).trim();
+  else if (pick?.status === 'untested' && pick?.reasons?.includes('OUT_OF_WINDOW')) {
+    unknown = '这次窗口里没有这条渠道的同窗观测，它只能算历史背景。';
+  } else if (pick?.status === 'untested') {
+    unknown = '这条渠道本次缺必要条件，还无法检验。';
+  } else if (!pick) {
+    unknown = '还没有可用的机制记录，暂时说不上常见的传导路径。';
+  } else {
+    unknown = '一致性不等于因果：还有别的因素可能同时起作用，这里没有排除。';
+  }
+
+  return { path, fact: factText, unknown };
+}
+
+/** 简报一句话（保留给旧调用方）：路径 + 事实 + 未知拼成两句以内 */
 export function shortExplainOf(explanation) {
   if (!explanation) return '';
   if (explanation.contentStatus === 'insufficient') return '缺少可比观测，先给不出候选因素。';
-  const consistent = (explanation.hypotheses ?? []).filter((h) => h.status === 'consistent');
-  const mixed = (explanation.hypotheses ?? []).filter((h) => h.status === 'mixed');
-  if (consistent.length) {
-    const labels = consistent.slice(0, 2).map((h) => h.label).join('、');
-    return `观测与「${labels}」方向一致，但只是一致性，不能确认是原因。`;
-  }
-  if (mixed.length) return '支持与反向的证据同时存在，方向尚未确定。';
-  return '已登记的机制这次都没得到支持，具体原因仍待确认。';
+  const { path, fact, unknown } = explainBriefOf(explanation);
+  const head = [fact, path].filter(Boolean).join('');
+  return [head, unknown].filter(Boolean).join(' ');
 }
 
 /** 数据状态文案：截至时间 / 延迟 / 过期 / 部分缺失都要能看见 */
@@ -135,6 +182,7 @@ export function cardFromResponse({ assetId, assetName, windowKey, status, body }
   const phase = status === 200 && explanation ? 'ready' : status === 202 ? 'pending' : 'error';
   const fact = targetFactOf(explanation);
   const brief = shortExplainOf(explanation);
+  const briefParts = explainBriefOf(explanation);
   const dataStatus = dataStatusOf(meta, explanation);
   const question = questionTemplate({
     assetName: assetName ?? assetId,
@@ -154,6 +202,12 @@ export function cardFromResponse({ assetId, assetName, windowKey, status, body }
       ? `${fact.direction === 'up' ? '上升' : fact.direction === 'down' ? '下降' : '基本持平'} ${fact.magnitude}`.trim()
       : null,
     brief: brief || null,
+    // 三段分开给：卡片按「路径 / 事实 / 未知」分行显示，读者不用自己翻译
+    briefParts: {
+      path: briefParts.path || null,
+      fact: briefParts.fact || null,
+      unknown: briefParts.unknown || null,
+    },
     dataStatus,
     movePct: fact.value,
     standardizedMove: null,
@@ -202,16 +256,40 @@ export function questionCardsHTML(cards) {
           <h3>${esc(c.question)}</h3>
           <span class="q-status ${esc(c.dataStatus.tone)}">${esc(c.dataStatus.text)}</span>
         </div>
-        ${c.fact ? `<p class="q-fact"><b>观察事实</b>${esc(c.fact)}</p>` : ''}
-        ${c.brief ? `<p class="q-brief">${esc(c.brief)}</p>` : '<p class="q-brief q-dim">解释仍在准备，稍后会自动补上。</p>'}
+        ${
+          /**
+           * 三段分行：路径 / 事实 / 未知。
+           *
+           * 原来只有一段「观测与…方向一致」，读者得自己翻译成经济关系
+           * （外部走查的原话）。分开写之后每段只承担一件事：
+           * 路径讲一般机制、事实讲本窗口发生了什么、未知讲这次还缺什么。
+           */
+          c.briefParts?.path
+            ? `<p class="q-path"><b>常见路径</b>${esc(c.briefParts.path)}</p>`
+            : ''
+        }
+        ${c.fact ? `<p class="q-fact"><b>本次事实</b>${esc(c.fact)}</p>` : ''}
+        ${
+          c.briefParts?.unknown
+            ? `<p class="q-unknown"><b>还缺什么</b>${esc(c.briefParts.unknown)}</p>`
+            : c.brief
+              ? `<p class="q-brief">${esc(c.brief)}</p>`
+              : '<p class="q-brief q-dim">解释仍在准备，稍后会自动补上。</p>'
+        }
         <div class="q-actions">
-          <a class="q-primary" href="${esc(c.href)}" data-q-path="${esc(c.assetId)}">看影响路径</a>
-          <a class="q-secondary" href="${esc(c.href)}">查看行情</a>
           ${
-            c.explanationId
-              ? `<a class="q-secondary" href="./api/explanations/${esc(c.explanationId)}" target="_blank" rel="noreferrer noopener">查看来源</a>`
-              : ''
+            /**
+             * 三个按钮三个落点（外部走查：前两个原来指向同一个详情地址，
+             * 第三个直接打开 JSON）：
+             *   看影响路径 → 详情页解释卡，自动展开第一条渠道
+             *   查看行情   → 详情页走势图
+             *   看依据     → 详情页解释卡里的证据条目（不是裸 JSON）
+             */
+            ''
           }
+          <a class="q-primary" href="${esc(deepLink(c, 'path'))}" data-q-path="${esc(c.assetId)}">看影响路径</a>
+          <a class="q-secondary" href="${esc(deepLink(c, 'chart'))}">查看行情</a>
+          <a class="q-secondary" href="${esc(deepLink(c, 'evidence'))}">看依据</a>
         </div>
       </li>`,
         )
@@ -222,4 +300,17 @@ export function questionCardsHTML(cards) {
 /** 主操作：跳到该资产详情页，并把窗口带过去（同一解释快照） */
 export function pathHashFor(card) {
   return `${card.href}?window=${encodeURIComponent(card.windowKey)}`;
+}
+
+/**
+ * 三个按钮的深链接：同一个详情页，但**落点不同**。
+ *
+ * `focus` 由详情页消费：
+ *   path     → 展开解释卡的第一条渠道（读者要看的是传导链）
+ *   chart    → 滚到历史走势
+ *   evidence → 滚到解释卡的证据区（带日期与来源，不是裸 JSON）
+ */
+export function deepLink(card, focus) {
+  const base = pathHashFor(card);
+  return `${base}&focus=${encodeURIComponent(focus)}`;
 }

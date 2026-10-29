@@ -189,14 +189,22 @@ describe('首页问题卡：同一套可读性要求', () => {
   const cardOf = (status, body) =>
     cardFromResponse({ assetId: 'gold-intl', assetName: '国际金价', windowKey: 'session', status, body });
 
-  it('有快照时：问题 → 事实 → 简短解释 → 数据状态 → 三个入口', () => {
+  /**
+   * 第 88 轮改判：卡片从「问题 → 事实 → 一段状态描述」改成
+   * 「问题 → 常见路径 → 本次事实 → 还缺什么」，三段各承担一件事。
+   * 外部走查的原话：「没有回答这些因素通常怎样影响黄金、本次缺什么」。
+   */
+  it('有快照时：问题 → 常见路径 → 本次事实 → 还缺什么 → 数据状态 → 三个入口', () => {
     const html = questionCardsHTML([cardOf(200, { explanation: GOLD, meta: META })]);
     const t = text(html);
     expect(t).toContain('为何走弱');
-    expect(t).toContain('观察事实');
-    expect(t).toContain('不能确认是原因');
+    expect(t).toContain('常见路径');
+    expect(t).toContain('本次事实');
+    expect(t).toContain('还缺什么');
     expect(t).toContain('截至 2026-10-28 03:00');
     expect(t).toContain('看影响路径');
+    // 旧的状态描述不该再出现：它把「状态码」当成解释
+    expect(t).not.toContain('方向一致，但只是一致性');
   });
 
   it('准备中时：不编造解释，只说明稍后补上', () => {

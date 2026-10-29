@@ -228,7 +228,8 @@ async function main() {
       return {
         cardCount: cards.length,
         assets: cards.map((c) => (c.textContent.match(/#?(国际|美元|国内)/) ?? [])[0] ?? ''),
-        snapshotIds: [...document.querySelectorAll('#questions a[href*="explanations/exp_"]')].map((a) => a.getAttribute('href')),
+        // 第 88 轮：卡片不再直开 JSON，快照身份改从卡片自身的 data 属性取
+        snapshotIds: cards.map((c) => c.getAttribute('data-q-asset')),
         changes: cards.map((c) => (c.textContent.match(/-?\\d+\\.\\d+%/) ?? [])[0] ?? ''),
         rowsTop: rows ? Math.round(rows.getBoundingClientRect().top) : null,
         rowsCount: rows ? rows.children.length : 0,

@@ -514,16 +514,25 @@
   border-color: rgba(224, 168, 60, 0.4);
 }
 
-.q-fact {
+.q-fact,
+.q-path,
+.q-unknown {
   margin: 0;
   font-size: 12px;
+  line-height: 1.55;
   color: var(--muted);
 }
 
-.q-fact b {
+.q-fact b,
+.q-path b,
+.q-unknown b {
   color: var(--text);
   margin-right: 6px;
 }
+
+/* 三段各给一点视觉区分：路径是背景知识、事实是当期、未知是待补 */
+.q-path { border-left: 2px solid rgba(110, 168, 254, .45); padding-left: 8px; }
+.q-unknown { border-left: 2px solid rgba(224, 168, 60, .45); padding-left: 8px; }
 
 .q-brief {
   margin: 0;
@@ -717,4 +726,48 @@
 @media (max-width: 640px) {
   .tf-row { grid-template-columns: 22px 1fr; grid-template-areas: "idx title" ". time" ". why"; }
   .tf-more { justify-self: start; }
+}
+
+/* ---------- 内外盘对照的「为什么不同步？」卡片（第 87 轮） ---------- *
+ * 这块的类名此前也没有规则：标题、三项分解、残差说明全按默认排版，
+ * 读者只能看到一串数字。 */
+.cmp-card {
+  margin: 10px 0 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .02);
+}
+.cmp-head h3 { margin: 0; font-size: 14px; }
+.cmp-sub { margin: 4px 0 0; font-size: 12px; color: var(--muted, #9aa4b2); }
+.cmp-terms { list-style: none; margin: 10px 0 0; padding: 0; }
+.cmp-term {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-top: 1px solid rgba(255, 255, 255, .06);
+  font-size: 13px;
+}
+.cmp-term:first-child { border-top: 0; }
+.cmp-term-label { color: var(--fg, #e6e8eb); }
+.cmp-term-change { font-variant-numeric: tabular-nums; }
+.cmp-term-contrib { font-size: 12px; color: var(--muted, #9aa4b2); font-variant-numeric: tabular-nums; }
+.cmp-reasons, .cmp-notes { margin: 10px 0 0; padding-left: 18px; font-size: 12px; color: var(--muted, #9aa4b2); }
+.cmp-empty, .cmp-loading { margin: 8px 0 0; font-size: 13px; color: var(--muted, #9aa4b2); }
+.cmp-open {
+  margin-left: 10px;
+  font-size: 12px;
+  color: var(--accent, #6ea8fe);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.cmp-card--error { border-color: rgba(217, 84, 89, .35); }
+@media (max-width: 640px) {
+  .cmp-term { grid-template-columns: 1fr auto; }
+  .cmp-term-contrib { grid-column: 1 / -1; }
 }

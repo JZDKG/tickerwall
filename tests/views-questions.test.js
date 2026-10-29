@@ -83,16 +83,43 @@ describe('事实与简报', () => {
     expect(targetFactOf(null).value).toBeNull();
   });
 
-  it('简报最多两句，且带限定词', () => {
-    const s = shortExplainOf(baseExplanation());
-    expect(s).toContain('一致');
-    expect(s).toContain('不能确认是原因');
-    expect(s.split('。').filter(Boolean).length).toBeLessThanOrEqual(2);
+  /**
+   * 第 88 轮改判：简报不再是「观测与…方向一致」这种状态描述。
+   * 外部走查的原话是「没有回答这些因素通常怎样影响黄金、本次缺什么」，
+   * 所以改成三段：白话路径 + 本次事实 + 一个重要未知。
+   */
+  it('三段齐全：路径 / 事实 / 未知', async () => {
+    const { explainBriefOf } = await import('../src/client/views/explanations/questions.js');
+    const parts = explainBriefOf(baseExplanation());
+    expect(parts.path).toContain('常见路径');
+    expect(parts.fact).toContain('本时段');
+    expect(parts.unknown.length).toBeGreaterThan(0);
   });
 
-  it('只有冲突证据时说方向未定', () => {
-    const s = shortExplainOf(baseExplanation({ hypotheses: [{ label: 'x', status: 'mixed' }] }));
-    expect(s).toContain('方向尚未确定');
+  it('事实段只写数字与方向，不写原因', async () => {
+    const { explainBriefOf } = await import('../src/client/views/explanations/questions.js');
+    const { fact } = explainBriefOf(baseExplanation());
+    expect(fact).toMatch(/本时段(上升|下降|基本持平)/);
+    expect(fact).not.toMatch(/因为|由于|原因是/);
+  });
+
+  it('路径段描述一般机制，不是本次归因', async () => {
+    const { explainBriefOf } = await import('../src/client/views/explanations/questions.js');
+    const { path } = explainBriefOf(baseExplanation());
+    expect(path).not.toContain('本次');
+    expect(path).not.toContain('就是原因');
+  });
+
+  it('只有冲突证据时，未知段说明还排除不了别的因素', async () => {
+    const { explainBriefOf } = await import('../src/client/views/explanations/questions.js');
+    const parts = explainBriefOf(baseExplanation({ hypotheses: [{ label: 'x', status: 'mixed', mechanism: 'm' }], unknowns: [] }));
+    expect(parts.unknown).toContain('一致性不等于因果');
+  });
+
+  it('窗口外证据要说清「只能算历史背景」', async () => {
+    const { explainBriefOf } = await import('../src/client/views/explanations/questions.js');
+    const parts = explainBriefOf(baseExplanation({ hypotheses: [{ label: 'x', status: 'untested', reasons: ['OUT_OF_WINDOW'] }], unknowns: [] }));
+    expect(parts.unknown).toContain('历史背景');
   });
 
   it('证据不足时说给不出候选因素', () => {
@@ -182,8 +209,16 @@ describe('卡片与渲染', () => {
     const htmlText = questionCardsHTML([card]);
     expect(htmlText).toContain('看影响路径');
     expect(htmlText).toContain('查看行情');
-    expect(htmlText).toContain('查看来源');
-    expect(htmlText).toContain('/api/explanations/exp-a');
+    /**
+     * 第 88 轮改判：三个按钮三个落点。
+     * 原来前两个都指向同一个详情地址，第三个直接打开 JSON —— 外部走查指出
+     * 「查看来源」应该是可读的证据（日期、来源、原文），不是原始响应。
+     */
+    expect(htmlText).toContain('看依据');
+    expect(htmlText).not.toContain('/api/explanations/exp-a'); // 不再直开 JSON
+    expect(htmlText).toContain('focus=path');
+    expect(htmlText).toContain('focus=chart');
+    expect(htmlText).toContain('focus=evidence');
   });
 
   it('202 响应生成 pending 卡，不显示编造的解释', () => {
@@ -269,5 +304,50 @@ describe('取数：只读快照，功能开关可关掉', () => {
     const cards = await loadQuestionCards({ assets: [{ assetId: 'gold-intl', name: '国际金价' }], fetchImpl });
     expect(cards[0].phase).toBe('error');
     expect(questionCardsHTML(cards)).toContain('正在准备');
+  });
+});
+
+describe('深链接与三段兜底', () => {
+  it('deepLink 三个落点各自可辨', async () => {
+    const { deepLink } = await import('../src/client/views/explanations/questions.js');
+    const card = { href: '#/d/gold-intl', windowKey: 'session' };
+    expect(deepLink(card, 'path')).toContain('focus=path');
+    expect(deepLink(card, 'chart')).toContain('focus=chart');
+    expect(deepLink(card, 'evidence')).toContain('focus=evidence');
+    expect(deepLink(card, 'path')).toContain('window=session');
+  });
+
+  it('没有任何机制记录时，未知段说实话（不编传导路径）', async () => {
+    const { explainBriefOf } = await import('../src/client/views/explanations/questions.js');
+    const parts = explainBriefOf({ contentStatus: 'ready', facts: [], hypotheses: [], unknowns: [] });
+    expect(parts.path).toBe('');
+    expect(parts.unknown).toContain('还没有可用的机制记录');
+  });
+
+  it('机制只有 label 没有 plain 时用 label 组装路径', async () => {
+    const { explainBriefOf } = await import('../src/client/views/explanations/questions.js');
+    const parts = explainBriefOf({ contentStatus: 'ready', facts: [], hypotheses: [{ label: '避险需求', status: 'consistent' }], unknowns: [] });
+    expect(parts.path).toContain('避险需求');
+  });
+});
+
+describe('剩余分支：未知段的两句兜底与排序原因', () => {
+  it('untested 但没有 OUT_OF_WINDOW → 说「缺必要条件」', async () => {
+    const { explainBriefOf } = await import('../src/client/views/explanations/questions.js');
+    const parts = explainBriefOf({ contentStatus: 'ready', facts: [], hypotheses: [{ label: 'x', status: 'untested', reasons: ['NO_EVENT_EVIDENCE'] }], unknowns: [] });
+    expect(parts.unknown).toContain('缺必要条件');
+  });
+
+  it('排到后面的卡要写清「数据不可用」而不是留空', async () => {
+    const { rankQuestions } = await import('../src/client/views/explanations/questions.js');
+    const ranked = rankQuestions([
+      { assetId: 'a', phase: 'error', freshness: null, movePct: -1, standardizedMove: null, windowKey: 'session' },
+      { assetId: 'b', phase: 'pending', freshness: null, movePct: -1, standardizedMove: null, windowKey: 'session' },
+      { assetId: 'c', phase: 'ready', freshness: 'fresh', movePct: -1, standardizedMove: null, windowKey: 'session' },
+    ]);
+    const reasons = ranked.flatMap((r) => r.reasons);
+    expect(reasons).toContain('DATA_UNAVAILABLE');
+    expect(reasons).toContain('DATA_PENDING');
+    expect(reasons).toContain('DATA_READY');
   });
 });

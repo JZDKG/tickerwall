@@ -80,3 +80,14 @@ describe('今天重点的类名有样式', () => {
     });
   }
 });
+
+describe('内外盘对照的类名有样式', () => {
+  const css = ['public/app.css', 'public/styles/detail.css', 'public/styles/explanations.css']
+    .map((f) => readFileSync(f, 'utf8'))
+    .join('\n');
+  for (const cls of ['.cmp-card', '.cmp-term', '.cmp-sub', '.cmp-open', '.cmp-reasons', '.cmp-empty']) {
+    it(`${cls} 在样式表里有规则`, () => {
+      expect(css.includes(cls)).toBe(true);
+    });
+  }
+});

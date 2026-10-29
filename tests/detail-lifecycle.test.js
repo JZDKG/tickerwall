@@ -285,3 +285,112 @@ describe('夹具隔离', () => {
     expect(detailEl.innerHTML.length).toBeGreaterThan(0);
   });
 });
+
+/* ================================================================== *
+ * 交错请求：慢的旧资产响应不许覆盖新资产（审阅复现）
+ *
+ * 只比 `seq` 不够：切资产时 seq 归零，「黄金第 1 次」与「原油第 1 次」
+ * 相等，黄金的慢响应因此能通过校验。epoch 每次重建状态递增，旧的一律作废。
+ * ================================================================== */
+describe('切资产时的请求身份', () => {
+  const explanation = (asset) => ({
+    ok: true,
+    status: 200,
+    explanation: {
+      id: `exp_${asset}`,
+      assetId: asset,
+      asOf: '2026-10-28T12:00:00.000Z',
+      generatedAt: '2026-10-28T12:00:00.000Z',
+      window: { key: 'session', start: '2026-10-27', end: '2026-10-28' },
+      contentStatus: 'ready',
+      summary: `${asset} 的摘要`,
+      facts: [],
+      hypotheses: [],
+      unknowns: [],
+      nextChecks: [],
+    },
+    meta: { freshness: 'fresh', refreshStatus: 'idle' },
+  });
+
+  it('黄金的慢响应在切到原油之后返回 → 丢弃，页面仍是原油', async () => {
+    const pending = [];
+    vi.stubGlobal('fetch', vi.fn(async (url) => {
+      const u = String(url);
+      if (u.includes('api/explanation')) {
+        // 黄金：挂起，稍后手动 resolve；原油：立即返回
+        if (u.includes('gold')) {
+          return new Promise((resolve) => pending.push(() => resolve({ ok: true, status: 200, json: async () => explanation('gold-intl') })));
+        }
+        return { ok: true, status: 200, json: async () => explanation('oil') };
+      }
+      if (u.includes('api/detail/gold')) return { ok: true, status: 200, json: async () => detailData({ id: 'gold-intl', name: '国际金价' }) };
+      if (u.includes('api/detail/oil')) return { ok: true, status: 200, json: async () => detailData({ id: 'oil', name: '国际原油' }) };
+      return { ok: true, status: 200, json: async () => ({}) };
+    }));
+
+    await d.loadDetail('gold-intl');
+    // 切到原油：新的一代状态
+    d.ensureExplainState('oil');
+    await d.hydrateExplanation();
+    const oilSummary = d.currentExplainState()?.explanation?.summary;
+
+    // 现在让黄金的慢响应回来
+    for (const resolve of pending) resolve();
+    await new Promise((r) => setTimeout(r, 30));
+
+    const after = d.currentExplainState();
+    expect(after?.assetId).toBe('oil');
+    expect(after?.explanation?.summary).toBe(oilSummary);
+    expect(after?.explanation?.summary).not.toContain('gold-intl');
+  });
+});
+
+/* ================================================================== *
+ * 深链接落点（第 88 轮）：卡片三个按钮不再都落在页面顶部
+ * ================================================================== */
+describe('focus 参数', () => {
+  it('识别 path / chart / evidence，其余一律 null', () => {
+    expect(d.focusTargetFromHash('#/d/gold-intl?window=session&focus=path')).toBe('path');
+    expect(d.focusTargetFromHash('#/d/gold-intl?window=session&focus=chart')).toBe('chart');
+    expect(d.focusTargetFromHash('#/d/gold-intl?window=session&focus=evidence')).toBe('evidence');
+    expect(d.focusTargetFromHash('#/d/gold-intl?window=session&focus=bogus')).toBeNull();
+    expect(d.focusTargetFromHash('#/d/gold-intl')).toBeNull();
+  });
+
+  it('focus=path 时展开第一条渠道并滚到解释卡', () => {
+    document.body.innerHTML = `
+      <div id="d-explain">
+        <button type="button" data-explain-toggle="A" aria-expanded="false">A</button>
+        <button type="button" data-explain-toggle="B" aria-expanded="false">B</button>
+      </div>`;
+    let clicked = 0;
+    document.querySelectorAll('[data-explain-toggle]').forEach((btn) => {
+      btn.addEventListener('click', () => { clicked += 1; btn.setAttribute('aria-expanded', 'true'); });
+    });
+    const ok = d.applyFocus('path');
+    expect(ok).toBe(true);
+    expect(clicked).toBe(1); // 只展开第一条，不全展开
+    expect(document.querySelector('[data-explain-toggle]').getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('未知 focus 不做任何事', () => {
+    expect(d.applyFocus('bogus')).toBe(false);
+  });
+});
+
+describe('focus 的另外两个落点', () => {
+  it('focus=chart 滚到走势图', () => {
+    document.body.innerHTML = '<div class="chart-head">走势</div>';
+    expect(d.applyFocus('chart')).toBe(true);
+  });
+
+  it('focus=evidence 滚到证据条目（不是裸 JSON）', () => {
+    document.body.innerHTML = '<div id="d-explain"><div class="ex-evidence">证据</div></div>';
+    expect(d.applyFocus('evidence')).toBe(true);
+  });
+
+  it('没有解释卡时 focus=path 返回 false（不假装成功）', () => {
+    document.body.innerHTML = '<div></div>';
+    expect(d.applyFocus('path')).toBe(false);
+  });
+});
