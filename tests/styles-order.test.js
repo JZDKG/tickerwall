@@ -116,7 +116,12 @@ describe('样式分片：层叠前提', () => {
     // 与 ≤720px 的窄屏排版 —— 这个数字只会因为真的新增响应式规则而变。
     // 其中含解释卡的 prefers-reduced-motion / ≤720px 两条，以及首页问题卡
     // 的窄屏单列（2026-10-28）。
-    expect((all.match(/@media/g) ?? []).length).toBe(19);
+    /**
+     * 2026-10-29 第 20 条：事件中心「今天重点」的窄屏单列
+     * （`.tf-row` 在 ≤640px 把时间与 why 折到标题下面）。
+     * 改这个数字时请确认是「新增响应式规则」，不是「拆分时丢了又补回来」。
+     */
+    expect((all.match(/@media/g) ?? []).length).toBe(20);
     // @keyframes：拆分时 16 个。地图 v2 加了 sunPulse（太阳直射点呼吸）、
     // maBreath（城市锚点开市呼吸）、bcPulse/bcProgress（播报台呼吸灯与 6s
     // 进度条），所以是 20。改这个数字时请确认是「新增动画」而不是

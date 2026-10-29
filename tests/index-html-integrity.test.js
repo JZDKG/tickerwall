@@ -62,3 +62,21 @@ describe('首页区块顺序（看板核心不该被挤到两屏外）', () => {
     expect(brief).toBeLessThan(rows);
   });
 });
+
+/* ================================================================== *
+ * 类名必须有样式（外部走查：今天重点呈现为「普通文本列表」）
+ *
+ * 只有类名、没有规则的写法不会报错，只会看起来没有层级 ——
+ * 只能靠静态检查守住。
+ * ================================================================== */
+describe('今天重点的类名有样式', () => {
+  const css = ['public/app.css', 'public/styles/base.css', 'public/styles/explanations.css', 'public/styles/events.css']
+    .map((f) => readFileSync(f, 'utf8'))
+    .join('\n');
+
+  for (const cls of ['.tf-card', '.tf-list', '.tf-row', '.tf-idx', '.tf-title', '.tf-time', '.tf-why', '.tf-next']) {
+    it(`${cls} 在样式表里有规则`, () => {
+      expect(css.includes(cls)).toBe(true);
+    });
+  }
+});

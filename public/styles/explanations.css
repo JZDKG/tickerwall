@@ -669,3 +669,52 @@
   margin-left: auto;
   color: var(--down);
 }
+
+/* ---------- 事件中心顶部「今天重点」（第 86 轮补样式） ---------- *
+ * 之前这些类名一条规则都没有：卡片、序号、时间、为什么通通按浏览器默认
+ * 排版，看起来就是一段普通文本列表，层级完全不清。 */
+.tf-card { margin: 0 0 14px; }
+.tf-card > h3 { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.tf-list { list-style: none; margin: 8px 0 0; padding: 0; }
+.tf-row {
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  grid-template-areas:
+    "idx title time"
+    ".   why   more";
+  gap: 4px 10px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(255, 255, 255, .06);
+}
+.tf-row:first-child { border-top: 0; }
+.tf-idx {
+  grid-area: idx;
+  width: 22px; height: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .08);
+  font-size: 12px;
+  color: var(--muted, #9aa4b2);
+}
+.tf-title { grid-area: title; font-size: 14px; line-height: 1.5; color: var(--fg, #e6e8eb); }
+.tf-lang { margin-left: 6px; font-size: 11px; color: var(--warn, #d9a441); }
+.tf-time { grid-area: time; font-size: 12px; color: var(--muted, #9aa4b2); font-variant-numeric: tabular-nums; }
+.tf-more { grid-area: more; justify-self: end; font-size: 11px; color: var(--muted, #9aa4b2); }
+.tf-why { grid-area: why; font-size: 12px; color: var(--muted, #9aa4b2); }
+.tf-short { margin: 6px 0 0; font-size: 13px; color: var(--muted, #9aa4b2); }
+.tf-rule { margin: 10px 0 0; font-size: 11px; color: var(--muted, #6b7480); }
+.tf-empty { margin: 8px 0 0; font-size: 13px; color: var(--muted, #9aa4b2); }
+.tf-next {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  margin-top: 12px; padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(110, 168, 254, .08);
+  border: 1px solid rgba(110, 168, 254, .18);
+}
+.tf-next-label { font-size: 12px; color: var(--accent, #6ea8fe); }
+.tf-next-title { font-size: 14px; color: var(--fg, #e6e8eb); }
+.tf-next-when { font-size: 12px; color: var(--muted, #9aa4b2); font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) {
+  .tf-row { grid-template-columns: 22px 1fr; grid-template-areas: "idx title" ". time" ". why"; }
+  .tf-more { justify-self: start; }
+}

@@ -30,6 +30,32 @@ export function titleKey(title) {
 
 const EXPLAINABLE = new Set(['gold-intl', 'gold-cn', 'oil', 'us10y', 'dxy', 'usdcny', 'sp500', 'vix']);
 
+/**
+ * 内部代码 → 读者看得懂的名字。
+ *
+ * `why` 里曾经直接印 `关联可解释标的（us10y）` —— 内部字段漏到了界面。
+ */
+export const ASSET_LABEL = {
+  'gold-intl': '国际金价',
+  'gold-cn': '国内金价',
+  oil: '国际原油',
+  us10y: '美国 10 年期国债收益率',
+  dxy: '美元指数',
+  usdcny: '美元兑人民币',
+  sp500: '标普 500',
+  vix: 'VIX 波动率',
+};
+
+/** 文字体系：只用来提示「这条是原文」，不做机器翻译（翻了就成了我编的内容） */
+export function scriptOf(text) {
+  const s = String(text ?? '');
+  if (/[\u4e00-\u9fff]/.test(s)) return 'han';
+  if (/[\uac00-\ud7af]/.test(s)) return 'hangul';
+  if (/[\u0400-\u04ff]/.test(s)) return 'cyrillic';
+  if (/[a-zA-Z]/.test(s)) return 'latin';
+  return 'other';
+}
+
 const dayOf = (time) => String(time ?? '').slice(0, 10);
 
 /**
@@ -63,14 +89,23 @@ export function pickTodayFocus({ items = [], day, explainable = EXPLAINABLE, lim
     };
     row.why = [
       ev.level === 'high' ? '高等级' : null,
-      hits.length ? `关联可解释标的（${hits.join('、')}）` : null,
+      hits.length ? `关联到${hits.map((id) => ASSET_LABEL[id] ?? id).join('、')}` : null,
     ].filter(Boolean).join(' · ') || '当天事件';
+    // 原文提示：非中文报道不在界面上冒充「已翻译」，只标出来
+    row.script = scriptOf(ev.title);
     seen.set(key, row);
     rows.push(row);
   }
 
+  /**
+   * 排序第三项是**语言**：同一等级下优先中文报道。
+   *
+   * 理由很实际：今天重点只有三格，读者点进来是要读懂的。把德语、韩语、
+   * 意大利语的标题放在这里，等于占了位置又读不了（外部走查拍到的就是这个）。
+   * 非中文不是剔除 —— 中文不够时它们仍然会进来，并标出「原文」。
+   */
   const rank = (r) =>
-    (r.level === 'high' ? 0 : 1) * 10 + (r.symbols.length ? 0 : 1) * 1;
+    (r.level === 'high' ? 0 : 1) * 10 + (r.symbols.length ? 0 : 1) * 2 + (r.script === 'han' ? 0 : 1);
   rows.sort((a, b) => rank(a) - rank(b) || String(b.time).localeCompare(String(a.time)));
 
   return rows.slice(0, limit);
@@ -98,6 +133,17 @@ function rankOf(value) {
   return IMPORTANCE_RANK[value] ?? 2;
 }
 
+/** UTC 毫秒 → 北京时间的两段字符串（界面要显示、也要能标注时区） */
+export function beijingParts(ms) {
+  if (!Number.isFinite(Number(ms))) return null;
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(new Date(Number(ms))).map((p) => [p.type, p.value]));
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour}:${parts.minute}`, zone: 'Asia/Shanghai' };
+}
+
 export function nextKeyRelease({ calendar, nowMs = Date.now(), minImportance = 'medium' } = {}) {
   const upcoming = Array.isArray(calendar?.upcoming) ? calendar.upcoming : [];
   const floor = rankOf(minImportance);
@@ -114,6 +160,8 @@ export function nextKeyRelease({ calendar, nowMs = Date.now(), minImportance = '
       country: ev.country ?? null,
       importance: ev.importance ?? null,
       releaseAt: ev.releaseAt,
+      // 日历给的是 UTC ISO；界面直接用会显示成 UTC 时间（13:30 而非 21:30）
+      releaseLocal: beijingParts(at),
       inMs: at - nowMs,
     });
   }

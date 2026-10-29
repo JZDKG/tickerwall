@@ -123,3 +123,54 @@ describe('空态与异常', () => {
     expect(focusRowHTML({}, 0)).not.toContain('undefined');
   });
 });
+
+/* ================================================================== *
+ * 第 86 轮：事件中心的时区、语言与序号（外部走查）
+ *
+ * 三个具体错：
+ *   1. 「下一件发布」显示 13:30，而日历显示 21:30 —— 因为切的是 UTC ISO 字符；
+ *   2. 今天重点里混进德语/韩语/意大利语标题，占位却读不懂；
+ *   3. `<ol>` 自带编号 + `.tf-idx` 叠成「1 1」，看起来像重复序号。
+ * ================================================================== */
+describe('时区与语言', () => {
+  it('下一件发布按北京时间显示，并标注时区', async () => {
+    const { nextWhenText } = await import('../src/client/views/today-focus.js');
+    // 13:30Z = 21:30 北京时间
+    expect(nextWhenText({ releaseAt: '2026-11-06T13:30:00.000Z', releaseLocal: { date: '2026-11-06', time: '21:30' } }))
+      .toBe('2026-11-06 21:30（北京时间）');
+  });
+
+  it('没有 releaseLocal 时按 ISO 换算，不直接切字符', async () => {
+    const { nextWhenText } = await import('../src/client/views/today-focus.js');
+    const text = nextWhenText({ releaseAt: '2026-11-06T13:30:00.000Z' });
+    expect(text).toContain('21:30');
+    expect(text).not.toContain('13:30');
+    expect(text).toContain('北京时间');
+  });
+
+  it('时间无法解析时明说「时间待确认」，不显示空串', async () => {
+    const { nextWhenText } = await import('../src/client/views/today-focus.js');
+    expect(nextWhenText({ releaseAt: 'nonsense' })).toBe('时间待确认');
+  });
+
+  it('非中文报道标「原文」，不冒充译文', async () => {
+    const { focusRowHTML } = await import('../src/client/views/today-focus.js');
+    const html = focusRowHTML({ id: 'e1', title: 'DAX dürfte zulegen', time: '2026-10-29 14:26:00', script: 'latin', why: '高等级' }, 0);
+    expect(html).toContain('原文（非中文）');
+    const zh = focusRowHTML({ id: 'e2', title: '美国非农就业报告', time: '2026-10-29 14:26:00', script: 'han', why: '高等级' }, 0);
+    expect(zh).not.toContain('原文');
+  });
+
+  it('列表用 ul（避免与 .tf-idx 叠成重复序号）', async () => {
+    const { todayFocusHTML } = await import('../src/client/views/today-focus.js');
+    const html = todayFocusHTML({ count: 1, short: true, focus: [{ id: 'e1', title: 'x', time: '2026-10-29 10:00:00', why: '当天事件' }], rule: 'r' });
+    expect(html).toContain('<ul class="tf-list">');
+    expect(html).not.toContain('<ol class="tf-list">');
+  });
+
+  it('表头标注「时间为北京时间」', async () => {
+    const { todayFocusHTML } = await import('../src/client/views/today-focus.js');
+    const html = todayFocusHTML({ count: 1, short: true, focus: [{ id: 'e1', title: 'x', time: '2026-10-29 10:00:00', why: '当天事件' }], rule: 'r' });
+    expect(html).toContain('北京时间');
+  });
+});

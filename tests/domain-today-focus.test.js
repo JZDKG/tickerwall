@@ -48,7 +48,9 @@ describe('排序规则可解释', () => {
   it('每条都写清为什么在前面', () => {
     const rows = pickTodayFocus({ day: DAY, items: [ev({ level: 'high', symbols: ['oil'] })] });
     expect(rows[0].why).toContain('高等级');
-    expect(rows[0].why).toContain('oil');
+    // 第 86 轮：why 里写中文名，不写内部代码（曾经直接印 oil / us10y）
+    expect(rows[0].why).toContain('国际原油');
+    expect(rows[0].why).not.toMatch(/\boil\b/);
   });
 
   it('什么都不是时也给一句可读的依据（不空着）', () => {

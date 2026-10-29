@@ -259,10 +259,21 @@ async function main() {
     const ev = await cdp.evaluate(`(() => {
       const slot = document.getElementById('today-focus-slot');
       const card = slot?.querySelector('.tf-card');
-      return { hasSlot: Boolean(slot), count: card?.dataset?.count ?? null, text: (slot?.textContent ?? '').slice(0, 40) };
+      const row = slot?.querySelector('.tf-row');
+      return {
+        hasSlot: Boolean(slot),
+        count: card?.dataset?.count ?? null,
+        text: (slot?.textContent ?? '').slice(0, 40),
+        rowDisplay: row ? getComputedStyle(row).display : null,
+        nextWhen: slot?.querySelector('.tf-next-when')?.textContent ?? '',
+      };
     })()`);
     record(ev.value?.hasSlot === true, '事件中心有今天重点槽位');
     record(Boolean(ev.value?.count), '今天重点槽位不是空的', `count=${ev.value?.count}`);
+    // 第 86 轮：样式必须真的生效（曾经只有类名没有规则，呈现为普通文本列表）
+    record(ev.value?.rowDisplay === 'grid', '今天重点的行是排过版的（不是纯文本列表）', `display=${ev.value?.rowDisplay}`);
+    // 时区必须标注：下一件发布显示 UTC 会与日历差 8 小时
+    record(String(ev.value?.nextWhen ?? '').includes('北京时间'), '下一件发布标注北京时间', String(ev.value?.nextWhen ?? '').slice(0, 40));
 
     /* ---------------- 详情：解释卡 ---------------- */
     await cdp.send('Page.navigate', { url: `${base}/#/d/gold-intl` });
