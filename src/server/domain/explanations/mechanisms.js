@@ -154,6 +154,12 @@ export const MECHANISMS = [
       '缺少可核实的供给事件，只有价格方向',
     ],
     needsEventEvidence: true,
+    /**
+     * 事件前提：这条渠道讲的是「供给受阻推高能源成本」，
+     * 所以支持它的报道必须是**供给减少**。需求增加同样能推高油价，
+     * 但那是另一条故事，不能拿来支持这一条。
+     */
+    eventPremise: { shockType: 'supply', direction: 'decrease' },
     horizon: 'unknown',
     sources: [NY_FED, FRED_T10YIE],
   },

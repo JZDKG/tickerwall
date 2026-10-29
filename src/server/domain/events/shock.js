@@ -24,6 +24,27 @@ export const SUPPLY_TOKENS = [
   'opec+减产', 'opec 减产', '增产', '释放储备', '抛储',
 ];
 
+/**
+ * 方向词：先判「供给/需求」，再判「增加/减少」。
+ *
+ * 只在词本身带方向时给方向；`开工率`、`库存增加` 这类可以有两种解读的
+ * 单独出现时**不给方向**（宁可未知，不要猜）。
+ */
+export const SUPPLY_DECREASE_TOKENS = [
+  '减产', '限产', '停产', '中断', '断供', '供应中断', '供给中断', '产量下降',
+  '关闭油田', '油田停产', '出口受阻', '出口禁令', '禁运', '制裁', '袭击',
+  '无人机', '封锁', '海峡', '航道', '管道泄漏', '罢工', '飓风', '不可抗力',
+  'opec+减产', 'opec 减产',
+];
+export const SUPPLY_INCREASE_TOKENS = ['增产', '释放储备', '抛储', '产量增加'];
+export const DEMAND_INCREASE_TOKENS = [
+  '需求复苏', '需求回暖', '需求强劲', '开工回升', '出行增加', '旺季', '补库',
+  '订单增加', '进口增加',
+];
+export const DEMAND_DECREASE_TOKENS = [
+  '需求疲弱', '需求疲软', '需求下降', '去库', '订单减少', '进口下降',
+];
+
 /** 需求侧：消费与开工 */
 export const DEMAND_TOKENS = [
   '需求复苏', '需求回暖', '需求强劲', '需求疲弱', '需求疲软', '需求下降',
@@ -42,17 +63,34 @@ export function classifyShockType(article) {
   const text = `${article?.title ?? ''} ${article?.body ?? ''}`.toLowerCase();
   const supply = SUPPLY_TOKENS.filter((t) => text.includes(t.toLowerCase()));
   const demand = DEMAND_TOKENS.filter((t) => text.includes(t.toLowerCase()));
+  const supplyDown = SUPPLY_DECREASE_TOKENS.filter((t) => text.includes(t.toLowerCase()));
+  const supplyUp = SUPPLY_INCREASE_TOKENS.filter((t) => text.includes(t.toLowerCase()));
+  const demandUp = DEMAND_INCREASE_TOKENS.filter((t) => text.includes(t.toLowerCase()));
+  const demandDown = DEMAND_DECREASE_TOKENS.filter((t) => text.includes(t.toLowerCase()));
+
+  // 同一侧既有增加又有减少的表述 → 方向未知（例如「先减产后又增产」）
+  const directionOf = (up, down) => {
+    if (up.length && down.length) return null;
+    if (up.length) return 'increase';
+    if (down.length) return 'decrease';
+    return null;
+  };
 
   if (supply.length && demand.length) {
     return {
       shockType: null,
+      direction: null,
       evidence: [...supply, ...demand],
       reason: 'BOTH_SIDES_MENTIONED',
     };
   }
-  if (supply.length) return { shockType: 'supply', evidence: supply, reason: 'SUPPLY_TOKENS' };
-  if (demand.length) return { shockType: 'demand', evidence: demand, reason: 'DEMAND_TOKENS' };
-  return { shockType: null, evidence: [], reason: 'NO_SHOCK_TOKENS' };
+  if (supply.length) {
+    return { shockType: 'supply', direction: directionOf(supplyUp, supplyDown), evidence: supply, reason: 'SUPPLY_TOKENS' };
+  }
+  if (demand.length) {
+    return { shockType: 'demand', direction: directionOf(demandUp, demandDown), evidence: demand, reason: 'DEMAND_TOKENS' };
+  }
+  return { shockType: null, direction: null, evidence: [], reason: 'NO_SHOCK_TOKENS' };
 }
 
 /** 资产相关性词：只统计确实在讲这个品种的报道 */
@@ -92,6 +130,8 @@ export function toEventEvidence(events, { sinceMs, nowMs, assetId = null } = {})
       eventId: String(id),
       revision: Number(ev.revision ?? 1) || 1,
       shockType: cls.shockType,
+      // 方向未知就是 null：解释层据此保持「尚未确认」，不替用户猜
+      direction: cls.direction ?? null,
       evidence: cls.evidence.slice(0, 3),
       at: Number.isFinite(ts) ? new Date(ts).toISOString() : null,
     });

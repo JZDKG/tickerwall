@@ -39,13 +39,29 @@ fact us10y    2026-10-28 → 2026-10-29 aligned true
 **测试**：`tests/comparison-service.test.js` 增 4 条（交集取窗口、交集不足、无交集、
 缺端点），并加 1 条端到端：缺一天 + 溢价恒为 0 → 溢价变化 ≈ 0 且 `residualPct` ≈ 0。
 
-## P0 三：机制适用条件（未修，待办）
+## P0 三：机制适用条件（已修，第 85 轮）
 
 - 名义收益率上升、实际收益率下降时，名义利率渠道仍可能判为「观测一致」——
   需要在渠道评估里检查**中间变量方向**（如 `t10yie` 与 `dfii10` 的关系）。
 - 「原油需求下降」的新闻可能被归入需求类，再支持「需求增强」——
   `shock.js` 的事件方向分类需要与机制方向对齐（`demandDown` 不能支持 `sign>0` 的需求渠道）。
-- 现状：`evidence.js` 已按 `requires` 检查**存在性**，未检查**方向一致性**。
+- 现状：已按 `requires` + 方向与事件前提校验，见下。
+
+**已修（第 85 轮）**：
+
+1. **事件前提**（`mechanisms.js` 的 `eventPremise` + `evidence.js`）：
+   `M-GOLD-OIL-POLICY` 声明 `{ shockType:'supply', direction:'decrease' }`。
+   「需求增加」的报道不再进入这条渠道 → `untested / SHOCK_DIRECTION_MISMATCH`；
+   报道方向没写清 → `untested / SHOCK_DIRECTION_UNKNOWN`（不猜）。
+2. **方向分类**（`shock.js`）：从「只分供给/需求」扩到「供给/需求 × 增加/减少」，
+   双向表述或词本身不带方向（如单独出现「开工率」）→ `direction: null`。
+3. **名义渠道前提**（`NEEDS_REAL_YIELD_CONFIRMATION`）：名义上行而实际下行时
+   判 `untested`——那条渠道讲的是真实回报上升，前提不成立
+   （与机制自己的 exclusions 一致）。
+   **不要求 t10yie 与 dfii10 同向**：名义上行 + 实际下行（通胀补偿涨更多）是正常组合。
+4. **算术一致性只作护栏**：`|名义 − 实际 − 通胀补偿| > 5bp` → `untested / RATE_IDENTITY_MISMATCH`。
+   代码里写明：T10YIE 由名义与实际算出，同源自洽是应该的，**不能当独立证据、
+   也不提升结论等级**（有专门的用例钉住「自洽但没有价格支持时仍 not_supported」）。
 
 ## P0 四：修订引用（部分修）
 
@@ -53,8 +69,13 @@ fact us10y    2026-10-28 → 2026-10-29 aligned true
 - 指纹现在覆盖**窗口起止日期及其值**（以前只有「最后一格」），起点被修订会让旧快照失效；
 - 指纹纳入观测的 `revision`（同 id 不同修订 = 不同事实）。
 
+已修（第 85 轮）：
+- `observationIdOf(id, date, revision)`：修订号 > 1 时输出 `资产@日期#rN`
+  （r1 保持人类可读的原样），证据引用带上观测的修订号。
+
 未修：
-- 观测标识 `资产@日期` 仍不带修订号，历史回看可能显示「新结论 + 旧证据」。
+- 载入层还没有把 `revision` 挂到 `observations` 上，所以线上 id 目前仍是 `资产@日期`
+  形式；一旦采集侧提供修订号，引用会自动带上 `#rN`。这条要在采集/存储接线时补。
   需要 `observationIdOf(id, date, revision)` 与库表 `logical_key/revision` 对齐，
   并迁移已存快照里的引用（或按 `logical_key` 反查当前修订）。
 

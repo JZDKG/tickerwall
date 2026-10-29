@@ -188,7 +188,7 @@ describe('油价上涨但冲击类型不同：条件集必须不同', () => {
   it('可核实的供给冲击 → 进入实际检验（consistent / not_supported）', () => {
     const h = evaluateMechanism(mech, oilObservations(), {
       windowKey: '5d',
-      eventEvidence: [{ eventId: 'e1', revision: 2, shockType: 'supply' }],
+      eventEvidence: [{ eventId: 'e1', revision: 2, shockType: 'supply', direction: 'decrease' }],
     });
     expect(['consistent', 'not_supported']).toContain(h.status);
     expect(h.eventRefs).toEqual([{ eventId: 'e1', revision: 2 }]);
@@ -197,16 +197,22 @@ describe('油价上涨但冲击类型不同：条件集必须不同', () => {
   it('需求驱动不会自动套用供给链条的结论（类型不同，事件集不同）', () => {
     const supply = evaluateMechanism(mech, oilObservations(), {
       windowKey: '5d',
-      eventEvidence: [{ eventId: 'e1', revision: 1, shockType: 'supply' }],
+      eventEvidence: [{ eventId: 'e1', revision: 1, shockType: 'supply', direction: 'decrease' }],
     });
     const demand = evaluateMechanism(mech, oilObservations(), {
       windowKey: '5d',
-      eventEvidence: [{ eventId: 'e2', revision: 1, shockType: 'demand' }],
+      eventEvidence: [{ eventId: 'e2', revision: 1, shockType: 'demand', direction: 'increase' }],
     });
-    // 两者可以都通过方向检验，但引用的证据不同 —— 结论不能被当成同一件事
+    /**
+     * 第 85 轮改判：需求事件**根本不该进入**供给渠道的检验。
+     * 供给渠道的前提是「供给减少」；拿需求增加的报道去支持它，是两套故事。
+     * 所以：供给事件 → 进入价格方向检验；需求事件 → untested + 前提不符。
+     */
     expect(supply.eventRefs).not.toEqual(demand.eventRefs);
-    expect(supply.status).toBe(demand.status);
-    // 本例里油价上涨而金价下跌，两条都判「方向不符」—— 关键是没有被悄悄合并成同一个事件
+    expect(demand.status).toBe('untested');
+    expect(demand.reasons).toContain('SHOCK_DIRECTION_MISMATCH');
+    // 供给事件继续走价格方向检验（本例油价上涨而金价下跌 → 方向不符）
+    expect(['consistent', 'not_supported']).toContain(supply.status);
     expect(supply.reasons).toContain('SIGN_MISMATCH');
   });
 });
@@ -421,11 +427,18 @@ describe('新闻正文只能当数据，不能变成指令', () => {
     expect(serialized).not.toContain('忽略以上');
     expect(serialized).not.toContain('必然上涨');
     expect(built.summary).not.toContain('必然');
-    // 事件只以 {eventId, revision} 的形式进入证据
+    /**
+     * 事件只以「身份 + 分类」的形式进入证据：eventId / revision /
+     * shockType / direction。注入文字本身一个字都不进来。
+     * （`direction` 是第 85 轮加的：渠道前提不符时要能说清「为什么不算依据」。）
+     */
+    const allowed = ['eventId', 'revision', 'shockType', 'direction'];
     const withRefs = built.hypotheses.filter((h) => h.eventRefs.length);
     for (const h of withRefs) {
       for (const ref of h.eventRefs) {
-        expect(Object.keys(ref).sort()).toEqual(['eventId', 'revision']);
+        expect(Object.keys(ref).every((k) => allowed.includes(k))).toBe(true);
+        expect(typeof ref.eventId).toBe('string');
+        expect(Number.isFinite(ref.revision)).toBe(true);
       }
     }
   });
@@ -753,7 +766,7 @@ describe('原油：事件型机制（供给 / 需求）', () => {
       asset: 'oil',
       windowKey: '5d',
       observations: oilObservations({ oilFrom: 70, oilTo: 72 }),
-      eventEvidence: [{ eventId: 'evt-2', revision: 1, shockType: 'demand' }],
+      eventEvidence: [{ eventId: 'evt-2', revision: 1, shockType: 'demand', direction: 'increase' }],
     });
     const supply = out.body.explanation.hypotheses.find((x) => x.mechanismId === 'M-OIL-SUPPLY-SHOCK');
     const demand = out.body.explanation.hypotheses.find((x) => x.mechanismId === 'M-OIL-DEMAND-SHOCK');
@@ -931,7 +944,7 @@ describe('事件证据与快照', () => {
       asset: 'oil',
       windowKey: '5d',
       observations: obsMapOil(),
-      eventEvidence: [{ eventId: 'evt-9', revision: 1, shockType: 'supply' }],
+      eventEvidence: [{ eventId: 'evt-9', revision: 1, shockType: 'supply', direction: 'decrease' }],
     });
     expect(a.body.explanation.id).not.toBe(b.body.explanation.id);
     expect(b.body.explanation.hypotheses.find((h) => h.mechanismId === 'M-OIL-SUPPLY-SHOCK').eventRefs).toEqual([
@@ -953,7 +966,7 @@ describe('事件证据与快照', () => {
   });
 
   it('价格型渠道不再把所有窗口事件挂到自己身上', () => {
-    const many = Array.from({ length: 20 }, (_, i) => ({ eventId: `e${i}`, revision: 1, shockType: 'supply' }));
+    const many = Array.from({ length: 20 }, (_, i) => ({ eventId: `e${i}`, revision: 1, shockType: 'supply', direction: 'decrease' }));
     const h = evaluateMechanism(mechanismById('M-OIL-USD'), obsMapOil(), { windowKey: '5d', eventEvidence: many });
     expect(h.eventRefs).toEqual([]);
   });
@@ -1028,5 +1041,154 @@ describe('同窗证据（anchor）', () => {
     const to = out.evidence.find((e) => e.instrumentId === 'gold-intl');
     expect(to.window.start).toBe('2026-10-28');
     expect(to.window.end).toBe('2026-10-29');
+  });
+});
+
+/* ================================================================== *
+ * 第 85 轮：机制方向校验 + 观测不可变 ID
+ *
+ * 审阅的两个反例：
+ *   1. 名义收益率上升、实际收益率下降时，名义利率渠道仍被判「观测一致」；
+ *   2. 「原油需求下降」的新闻被归入需求类，再支持「需求增强」的机制。
+ * 以及一条纪律：T10YIE 由名义与实际算出，同源数据的一致性检查只能发现
+ * 对齐/处理错误，不能当独立证据。
+ * ================================================================== */
+describe('事件前提与方向', () => {
+  const oilMech = {
+    id: 'M-TEST-OIL', version: 'v1', relationType: 'mechanism',
+    from: 'oil', to: 'gold-intl', sign: 1, label: '油价→政策预期',
+    mechanism: '供给受阻推高能源成本',
+    requires: [{ instrument: 'oil', label: '原油价格' }],
+    needsEventEvidence: true,
+    eventPremise: { shockType: 'supply', direction: 'decrease' },
+  };
+  const obs = new Map([
+    ['oil', { definition: { short: '原油', unit: 'usd', comparisonPolicy: 'log-return' },
+      series: { dates: ['2026-10-27', '2026-10-28', '2026-10-29'], values: [100, 103, 106] } }],
+    ['gold-intl', { definition: { short: '黄金', unit: 'usd', comparisonPolicy: 'log-return' },
+      series: { dates: ['2026-10-27', '2026-10-28', '2026-10-29'], values: [2000, 1995, 1990] } }],
+  ]);
+
+  it('需求增加的事件不能支持「供给受阻」渠道（前提不符）', () => {
+    const h = evaluateMechanism(oilMech, obs, {
+      windowKey: 'session',
+      eventEvidence: [{ eventId: 'e-dem', revision: 1, shockType: 'demand', direction: 'increase' }],
+      anchor: { start: '2026-10-28', end: '2026-10-29' },
+    });
+    expect(h.status).toBe('untested');
+    expect(h.reasons).toContain('SHOCK_DIRECTION_MISMATCH');
+    expect(h.eventRefs[0]).toMatchObject({ eventId: 'e-dem', shockType: 'demand', direction: 'increase' });
+  });
+
+  it('方向未写清时保持未确认（不猜成供给减少）', () => {
+    const h = evaluateMechanism(oilMech, obs, {
+      windowKey: 'session',
+      eventEvidence: [{ eventId: 'e-unk', revision: 1, shockType: 'supply', direction: null }],
+      anchor: { start: '2026-10-28', end: '2026-10-29' },
+    });
+    expect(h.status).toBe('untested');
+    expect(h.reasons).toContain('SHOCK_DIRECTION_UNKNOWN');
+  });
+
+  it('供给减少 + 同窗价格 → 进入实际检验', () => {
+    const h = evaluateMechanism(oilMech, obs, {
+      windowKey: 'session',
+      eventEvidence: [{ eventId: 'e-sup', revision: 2, shockType: 'supply', direction: 'decrease' }],
+      anchor: { start: '2026-10-28', end: '2026-10-29' },
+    });
+    expect(['consistent', 'not_supported']).toContain(h.status);
+  });
+
+  it('分类器：供给减少 / 需求增加 / 双向模糊分别给出正确方向', async () => {
+    const { classifyShockType } = await import('../src/server/domain/events/shock.js');
+    expect(classifyShockType({ title: 'OPEC+ 宣布减产 100 万桶/日' })).toMatchObject({ shockType: 'supply', direction: 'decrease' });
+    expect(classifyShockType({ title: '炼厂开工回升，需求回暖' })).toMatchObject({ shockType: 'demand', direction: 'increase' });
+    expect(classifyShockType({ title: '需求疲弱，但 OPEC 减产' })).toMatchObject({ shockType: null, direction: null });
+    // 只提「开工率」不给方向
+    expect(classifyShockType({ title: '炼厂开工率变化' }).direction).toBeNull();
+  });
+});
+
+describe('观测不可变 ID（修订号）', () => {
+  it('r1 保持可读形式，r2 起带 #rN，两者不相等', async () => {
+    const { observationIdOf } = await import('../src/server/domain/explanations/evidence.js');
+    expect(observationIdOf('gold-intl', '2026-10-29')).toBe('gold-intl@2026-10-29');
+    expect(observationIdOf('gold-intl', '2026-10-29', 1)).toBe('gold-intl@2026-10-29');
+    expect(observationIdOf('gold-intl', '2026-10-29', 2)).toBe('gold-intl@2026-10-29#r2');
+    expect(observationIdOf('gold-intl', '2026-10-29', 2)).not.toBe(observationIdOf('gold-intl', '2026-10-29', 1));
+  });
+
+  it('证据引用带上观测修订号（否则历史回看是「新结论 + 旧证据」）', () => {
+    const mech = {
+      id: 'M-R', version: 'v1', relationType: 'mechanism',
+      from: 'dfii10', to: 'gold-intl', sign: -1, label: '实际收益率 → 黄金',
+      mechanism: '机会成本渠道',
+    };
+    const m = new Map([
+      ['gold-intl', { definition: { short: '黄金', unit: 'usd', comparisonPolicy: 'log-return' }, revision: 3,
+        series: { dates: ['2026-10-28', '2026-10-29'], values: [2010, 2007] } }],
+      ['dfii10', { definition: { short: '实际收益率', unit: 'pct', comparisonPolicy: 'pp-difference' }, revision: 2,
+        series: { dates: ['2026-10-28', '2026-10-29'], values: [1.93, 1.90] } }],
+    ]);
+    const h = evaluateMechanism(mech, m, { windowKey: 'session', anchor: { start: '2026-10-28', end: '2026-10-29' } });
+    const ids = h.evidence.flatMap((e) => e.observationIds);
+    expect(ids).toContain('gold-intl@2026-10-29#r3');
+    expect(ids).toContain('dfii10@2026-10-29#r2');
+  });
+});
+
+/* ================================================================== *
+ * 名义利率渠道的两个边界（审阅纠正过写法）
+ *
+ * 1. **不能要求 t10yie 与 dfii10 同向** —— 名义上升 + 实际下降是正常组合；
+ * 2. 同源数据的一致性检查只能发现对齐/处理错误，**不是独立证据**。
+ * ================================================================== */
+describe('名义利率渠道：前提与算术一致性', () => {
+  const mech = {
+    id: 'M-NOM', version: 'v1', relationType: 'mechanism',
+    from: 'us10y', to: 'gold-intl', sign: -1, label: '名义利率 → 黄金',
+    mechanism: '名义收益率上行抬高机会成本',
+    conditionCodes: ['SAME_WINDOW', 'NEEDS_REAL_YIELD_CONFIRMATION'],
+  };
+  const mk = (nominal, real, be) => new Map([
+    ['us10y', { definition: { short: '名义收益率', unit: 'pct', comparisonPolicy: 'pp-difference' },
+      series: { dates: ['2026-10-28', '2026-10-29'], values: nominal } }],
+    ['dfii10', { definition: { short: '实际收益率', unit: 'pct', comparisonPolicy: 'pp-difference' },
+      series: { dates: ['2026-10-28', '2026-10-29'], values: real } }],
+    ['t10yie', { definition: { short: '通胀补偿', unit: 'pct', comparisonPolicy: 'pp-difference' },
+      series: { dates: ['2026-10-28', '2026-10-29'], values: be } }],
+    ['gold-intl', { definition: { short: '黄金', unit: 'usd', comparisonPolicy: 'log-return' },
+      series: { dates: ['2026-10-28', '2026-10-29'], values: [2010, 2000] } }],
+  ]);
+  const anchor = { start: '2026-10-28', end: '2026-10-29' };
+
+  it('名义上行 + 实际下行 → 前提不成立（untested），不判「观测一致」', () => {
+    // 名义 +8bp，实际 −4bp，通胀补偿 +12bp：算术自洽，但故事是通胀不是真实回报
+    const h = evaluateMechanism(mech, mk([4.0, 4.08], [1.95, 1.91], [2.05, 2.17]), { windowKey: 'session', anchor });
+    expect(h.status).toBe('untested');
+    expect(h.reasons).toContain('NEEDS_REAL_YIELD_CONFIRMATION');
+  });
+
+  it('名义与实际同向上行 → 进入方向检验（同向是结果，不是准入条件）', () => {
+    const h = evaluateMechanism(mech, mk([4.0, 4.08], [1.90, 1.96], [2.10, 2.12]), { windowKey: 'session', anchor });
+    expect(h.reasons).not.toContain('NEEDS_REAL_YIELD_CONFIRMATION');
+    expect(['consistent', 'not_supported']).toContain(h.status);
+  });
+
+  it('三项算术不一致 → 判 untested + RATE_IDENTITY_MISMATCH（说明是处理错误）', () => {
+    // 名义 +8bp，实际 +6bp，补偿 −5bp → 8 − 6 − (−5) = 7bp，超出 5bp 容差
+    const h = evaluateMechanism(mech, mk([4.0, 4.08], [1.90, 1.96], [2.10, 2.05]), { windowKey: 'session', anchor });
+    expect(h.status).toBe('untested');
+    expect(h.reasons).toContain('RATE_IDENTITY_MISMATCH');
+  });
+
+  it('算术一致本身不提升结论：自洽但没有价格支持时仍是 not_supported', () => {
+    // 名义下行（−8bp）、实际下行、补偿 −2bp：三项自洽；但金价也下跌 → 与 sign=-1 不符
+    const gold = new Map(mk([4.08, 4.00], [1.96, 1.90], [2.12, 2.10]));
+    gold.set('gold-intl', { definition: { short: '黄金', unit: 'usd', comparisonPolicy: 'log-return' },
+      series: { dates: ['2026-10-28', '2026-10-29'], values: [2000, 1990] } });
+    const h = evaluateMechanism(mech, gold, { windowKey: 'session', anchor });
+    expect(h.reasons).not.toContain('RATE_IDENTITY_MISMATCH');
+    expect(h.status).toBe('not_supported');
   });
 });

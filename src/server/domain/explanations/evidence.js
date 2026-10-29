@@ -19,8 +19,16 @@ import { changeBetween, computeChange, presentChange, alignCommon, windowSpec } 
 import { CHANNEL_STATUS } from './mechanisms.js';
 
 /** 稳定的观测标识：同一来源 + 指标 + 观测期 = 同一 logicalKey */
-export function observationIdOf(instrumentId, date) {
-  return `${instrumentId}@${date}`;
+/**
+ * 观测的不可变标识。
+ *
+ * `资产@日期` 只是 logical key —— 同一个日子被修订后，旧结论文档里的引用
+ * 仍指向它，于是「新结论 + 旧证据」。修订号 > 1 时加上 `#rN`，
+ * 让不同修订成为不同事实（r1 保持人类可读的原样，避免全站链接变丑）。
+ */
+export function observationIdOf(instrumentId, date, revision = null) {
+  const rev = Number(revision);
+  return Number.isFinite(rev) && rev > 1 ? `${instrumentId}@${date}#r${rev}` : `${instrumentId}@${date}`;
 }
 
 /** 变化是否小到无法判断方向 —— 阈值按单位区分，避免把 0.001bp 当成「上行」 */
@@ -32,7 +40,7 @@ export function isMaterialChange(change, minAbs) {
   return Math.abs(shown.value) >= threshold;
 }
 
-function evidenceEntry({ role, instrumentId, definition, change, note }) {
+function evidenceEntry({ role, instrumentId, definition, change, note, revision = null }) {
   const shown = presentChange(change);
   return {
     role,
@@ -42,7 +50,9 @@ function evidenceEntry({ role, instrumentId, definition, change, note }) {
     window: { start: change?.start ?? null, end: change?.end ?? null },
     level: { from: change?.from ?? null, to: change?.to ?? null },
     change: shown ? { value: Number(shown.value.toFixed(6)), unit: shown.unit } : null,
-    observationIds: change ? [observationIdOf(instrumentId, change.start), observationIdOf(instrumentId, change.end)] : [],
+    observationIds: change
+      ? [observationIdOf(instrumentId, change.start, revision), observationIdOf(instrumentId, change.end, revision)]
+      : [],
     note: note ?? null,
   };
 }
@@ -58,7 +68,7 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
   const windowKey = opts.windowKey ?? 'session';
   const spec = windowSpec(windowKey) ?? windowSpec('session');
   const observationsCount = spec.observations;
-  const events = Array.isArray(opts.eventEvidence) ? opts.eventEvidence : [];
+  let events = Array.isArray(opts.eventEvidence) ? opts.eventEvidence : [];
 
   const base = {
     mechanismId: mechanism.id,
@@ -111,6 +121,34 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
   }
 
   /**
+   * **事件方向必须与渠道前提一致**（审阅复现：需求下降的新闻被拿去支持
+   * 「需求增强」的渠道）。
+   *
+   * 规则：先看机制是否声明了 `eventPremise`（供给/需求 + 增加/减少）；
+   *   · 有声明：只有 (shockType, direction) 都对得上的事件才算依据；
+   *   · 方向未知（报道没写清）：该渠道**保持未确认**，而不是当成没发生；
+   *   · 方向相反：渠道前提这次不成立 → untested + SHOCK_DIRECTION_MISMATCH，
+   *     并把不匹配的事件列出来，让读者自己看为什么。
+   */
+  if (mechanism.eventPremise) {
+    const want = mechanism.eventPremise;
+    const matched = events.filter((e) => e.shockType === want.shockType && e.direction === want.direction);
+    const wrongType = events.filter((e) => e.shockType !== want.shockType);
+    const unknownDir = events.filter((e) => e.shockType === want.shockType && !e.direction);
+    if (!matched.length) {
+      return {
+        ...base,
+        missing,
+        status: 'untested',
+        reasons: [wrongType.length && !unknownDir.length ? 'SHOCK_DIRECTION_MISMATCH' : 'SHOCK_DIRECTION_UNKNOWN'],
+        eventRefs: [...wrongType, ...unknownDir].slice(0, 3).map((e) => ({ eventId: e.eventId, revision: e.revision, shockType: e.shockType, direction: e.direction ?? null })),
+      };
+    }
+    // 只把匹配的事件带下去
+    events = matched;
+  }
+
+  /**
    * 价格型但「需要事件才能检验」的机制（例如油价→政策预期）要引用什么事件？
    *
    * 只引用**已分类**的冲击事件，最多 3 条：未分类事件只是「有新闻」，
@@ -160,7 +198,7 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
         reasons: ['NO_MATERIAL_TARGET_CHANGE'],
         eventRefs: matched.map((e) => ({ eventId: e.eventId, revision: e.revision })),
         eventMatchCount: matchedAll.length,
-        evidence: [evidenceEntry({ role: 'support', instrumentId: mechanism.to, definition: targetObs?.definition, change: chTo })].filter(
+        evidence: [evidenceEntry({ role: 'support', instrumentId: mechanism.to, definition: targetObs?.definition, change: chTo, revision: targetObs?.revision ?? null })].filter(
           (e) => e.change,
         ),
       };
@@ -178,7 +216,7 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
       missing,
       window: { key: windowKey, start: chTo.start, end: chTo.end, observations: targetObs?.series?.dates?.length ?? 0 },
       evidence: [
-        evidenceEntry({ role: ok ? 'support' : 'contrary', instrumentId: mechanism.to, definition: targetObs?.definition, change: chTo }),
+        evidenceEntry({ role: ok ? 'support' : 'contrary', instrumentId: mechanism.to, definition: targetObs?.definition, change: chTo, revision: targetObs?.revision ?? null }),
       ].filter((e) => e.change),
       eventRefs: matched.map((e) => ({ eventId: e.eventId, revision: e.revision })),
       eventMatchCount: matchedAll.length,
@@ -199,8 +237,8 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
       missing,
       window: { key: windowKey, start: chTo?.start ?? null, end: chTo?.end ?? null, observations: aligned.n },
       evidence: [
-        evidenceEntry({ role: 'background', instrumentId: mechanism.from, definition: fromObs?.definition, change: chFrom }),
-        evidenceEntry({ role: 'background', instrumentId: mechanism.to, definition: toObs?.definition, change: chTo }),
+        evidenceEntry({ role: 'background', instrumentId: mechanism.from, definition: fromObs?.definition, change: chFrom, revision: fromObs?.revision ?? null }),
+        evidenceEntry({ role: 'background', instrumentId: mechanism.to, definition: toObs?.definition, change: chTo, revision: toObs?.revision ?? null }),
       ].filter((e) => e.change),
     };
   }
@@ -261,6 +299,7 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
           instrumentId: mechanism.from,
           definition: fromObs.definition,
           change: chFromRaw,
+          revision: fromObs?.revision ?? null,
           note: `历史背景：${chFromRaw?.start ?? '?'} → ${chFromRaw?.end ?? '?'}，不在本次窗口内`,
         }),
         evidenceEntry({
@@ -268,6 +307,7 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
           instrumentId: mechanism.to,
           definition: toObs.definition,
           change: chToRaw,
+          revision: toObs?.revision ?? null,
           note: `历史背景：${chToRaw?.start ?? '?'} → ${chToRaw?.end ?? '?'}，不在本次窗口内`,
         }),
       ].filter((e) => e.change),
@@ -294,10 +334,68 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
       reasons: ['NO_MATERIAL_DRIVER_CHANGE'],
       window: { key: windowKey, start: chFrom.start, end: chFrom.end, observations: aligned.n },
       evidence: [
-        evidenceEntry({ role: 'background', instrumentId: mechanism.from, definition: fromObs.definition, change: chFrom }),
-        evidenceEntry({ role: 'background', instrumentId: mechanism.to, definition: toObs.definition, change: chTo }),
+        evidenceEntry({ role: 'background', instrumentId: mechanism.from, definition: fromObs.definition, change: chFrom, revision: fromObs?.revision ?? null }),
+        evidenceEntry({ role: 'background', instrumentId: mechanism.to, definition: toObs.definition, change: chTo, revision: toObs?.revision ?? null }),
       ].filter((e) => e.change),
     };
+  }
+
+  /**
+   * 名义利率渠道的前提：这次名义变动**不是**全部由通胀补偿推动。
+   *
+   * 审阅的原始要求是「检查中间变量与方向」，但他也纠正了一个容易做错的写法：
+   * **不能要求 t10yie 与 dfii10 同向** —— 名义上升 + 实际下降（通胀补偿涨更多）
+   * 是正常组合。所以这里只做两件事：
+   *   1. 前提检查：名义上行而实际下行 → 这条渠道讲的是「真实回报上升」，
+   *      前提不成立，判 untested（与该机制自己的 exclusions 一致）；
+   *   2. 算术一致性：名义 ≈ 实际 + 通胀补偿（同期限、同窗口）。
+   *      **它只能发现对齐/处理错误，不能当独立证据** —— T10YIE 本身由名义与
+   *      实际算出，同源数据自洽是应该的；自洽也不提升结论等级。
+   */
+  if ((mechanism.conditionCodes ?? []).includes('NEEDS_REAL_YIELD_CONFIRMATION')) {
+    const realObs = observations.get('dfii10');
+    const beObs = observations.get('t10yie');
+    const windowDates = anchor?.start && anchor?.end ? [anchor.start, anchor.end] : [chFrom.start, chFrom.end];
+    const at = (obs) => {
+      if (!obs?.series?.dates?.length) return null;
+      const [a, b] = windowDates;
+      const i = obs.series.dates.indexOf(a);
+      const j = obs.series.dates.indexOf(b);
+      if (i < 0 || j < 0) return null;
+      // 换算成 bp：presentChange 对 pp-difference 也是 ×100 后给 bp
+      return (obs.series.values[j] - obs.series.values[i]) * 100;
+    };
+    const dNominal = presentChange(chFrom)?.value ?? null;
+    const dReal = at(realObs);
+    const dBe = at(beObs);
+
+    if (dNominal != null && dReal != null) {
+      // 前提：名义上行必须伴随实际也上行，否则「真实回报上升」这个故事不成立
+      if (Math.sign(dNominal) !== Math.sign(dReal)) {
+        return {
+          ...base,
+          missing,
+          status: 'untested',
+          reasons: ['NEEDS_REAL_YIELD_CONFIRMATION'],
+          window: { key: windowKey, start: windowDates[0], end: windowDates[1], observations: aligned.n },
+          evidence: [
+            evidenceEntry({ role: 'background', instrumentId: mechanism.from, definition: fromObs.definition, change: chFrom, revision: fromObs?.revision ?? null }),
+            evidenceEntry({ role: 'background', instrumentId: 'dfii10', definition: realObs.definition, change: { start: windowDates[0], end: windowDates[1], change: dReal / 100, changeUnit: 'pp' }, revision: realObs?.revision ?? null }),
+          ].filter((e) => e.change),
+        };
+      }
+      // 算术一致性（只作为处理错误的护栏）：口径是「百分点」，容差 5bp
+      if (dReal != null && dBe != null && Math.abs(dNominal - dReal - dBe) > 5) {
+        return {
+          ...base,
+          missing,
+          status: 'untested',
+          reasons: ['RATE_IDENTITY_MISMATCH'],
+          window: { key: windowKey, start: windowDates[0], end: windowDates[1], observations: aligned.n },
+          evidence: [],
+        };
+      }
+    }
   }
   if (!isMaterialChange(chTo)) {
     return {
@@ -307,8 +405,8 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
       reasons: ['NO_MATERIAL_TARGET_CHANGE'],
       window: { key: windowKey, start: chFrom.start, end: chFrom.end, observations: aligned.n },
       evidence: [
-        evidenceEntry({ role: 'background', instrumentId: mechanism.from, definition: fromObs.definition, change: chFrom }),
-        evidenceEntry({ role: 'background', instrumentId: mechanism.to, definition: toObs.definition, change: chTo }),
+        evidenceEntry({ role: 'background', instrumentId: mechanism.from, definition: fromObs.definition, change: chFrom, revision: fromObs?.revision ?? null }),
+        evidenceEntry({ role: 'background', instrumentId: mechanism.to, definition: toObs.definition, change: chTo, revision: toObs?.revision ?? null }),
       ].filter((e) => e.change),
     };
   }
@@ -330,8 +428,8 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
         reasons: ['SHOCK_TYPE_UNCLASSIFIED'],
         window: { key: windowKey, start: chFrom.start, end: chFrom.end, observations: aligned.n },
         evidence: [
-          evidenceEntry({ role: 'background', instrumentId: mechanism.from, definition: fromObs.definition, change: chFrom }),
-          evidenceEntry({ role: 'background', instrumentId: mechanism.to, definition: toObs.definition, change: chTo }),
+          evidenceEntry({ role: 'background', instrumentId: mechanism.from, definition: fromObs.definition, change: chFrom, revision: fromObs?.revision ?? null }),
+          evidenceEntry({ role: 'background', instrumentId: mechanism.to, definition: toObs.definition, change: chTo, revision: toObs?.revision ?? null }),
         ].filter((e) => e.change),
       };
     }
@@ -350,8 +448,8 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
         reasons: ['MISSING_INSTRUMENT:dfii10', 'NEEDS_REAL_YIELD_CONFIRMATION'],
         window: { key: windowKey, start: chFrom.start, end: chFrom.end, observations: aligned.n },
         evidence: [
-          evidenceEntry({ role: 'background', instrumentId: mechanism.from, definition: fromObs.definition, change: chFrom }),
-          evidenceEntry({ role: 'background', instrumentId: mechanism.to, definition: toObs.definition, change: chTo }),
+          evidenceEntry({ role: 'background', instrumentId: mechanism.from, definition: fromObs.definition, change: chFrom, revision: fromObs?.revision ?? null }),
+          evidenceEntry({ role: 'background', instrumentId: mechanism.to, definition: toObs.definition, change: chTo, revision: toObs?.revision ?? null }),
         ].filter((e) => e.change),
       };
     }
@@ -382,12 +480,14 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
         instrumentId: mechanism.from,
         definition: fromObs.definition,
         change: chFrom,
+        revision: fromObs?.revision ?? null,
       }),
       evidenceEntry({
         role: consistent ? 'support' : 'contrary',
         instrumentId: mechanism.to,
         definition: toObs.definition,
         change: chTo,
+        revision: toObs?.revision ?? null,
       }),
     ].filter((e) => e.change),
   };
