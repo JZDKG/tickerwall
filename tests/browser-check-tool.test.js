@@ -68,6 +68,23 @@ describe('不许用固定 sleep 当同步手段（会偶发闪红）', () => {
   });
 });
 
+describe('收尾不许把检查拖红（Ubuntu 上的 ENOTEMPTY）', () => {
+  it('先等进程退出再删目录（不假设信号立即生效）', () => {
+    expect(src).toContain('waitExit');
+    expect(src).toMatch(/await Promise\.all\(\[waitExit/);
+  });
+
+  it('删目录带重试退避，且失败只打印不抛', () => {
+    expect(src).toContain('maxRetries');
+    expect(src).toMatch(/removeDir[\s\S]{0,200}catch/);
+  });
+
+  it('cleanup 是 async 且被 await（收尾不阻塞结论但是有序的）', () => {
+    expect(src).toContain('const cleanup = async');
+    expect(src).toContain('await cleanup()');
+  });
+});
+
 describe('隔离与清理', () => {
   it('服务用 KANBAN_DATA_DIR 指向临时目录', () => {
     expect(src).toContain('KANBAN_DATA_DIR: dataDir');
@@ -79,7 +96,9 @@ describe('隔离与清理', () => {
   });
 
   it('结束时会清理进程与临时目录', () => {
-    expect(src).toContain('rmSync(dataDir');
+    // 清理走 removeDir 包装（带重试、失败不抛），不是裸 rmSync
+    expect(src).toContain('removeDir(dataDir)');
+    expect(src).toContain('removeDir(profile)');
     expect(src).toContain("kill('SIGKILL')");
   });
 });

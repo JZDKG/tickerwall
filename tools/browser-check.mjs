@@ -135,13 +135,45 @@ async function main() {
   let server = null;
   let browser = null;
 
-  const cleanup = () => {
-    if (!KEEP) {
-      browser?.kill('SIGKILL');
-      server?.kill('SIGKILL');
-      rmSync(dataDir, { recursive: true, force: true });
-      rmSync(profile, { recursive: true, force: true });
+  /**
+   * 收尾：先等进程真的退出，再删目录。
+   *
+   * 事故（Ubuntu CI）：`kill('SIGKILL')` 之后立刻 `rmSync`，而 Chrome 还在写
+   * profile（SingletonLock / Cache）→ `ENOTEMPTY`，把整个检查拖成红。
+   * 本地 macOS 上 Chrome 死得快，恰好没撞上。
+   *
+   * 三条纪律：
+   *   1. 等 exit 事件（带超时），不假设信号立即生效；
+   *   2. `rmSync` 给重试退避（`maxRetries/retryDelay`）；
+   *   3. **收尾失败不改变结论** —— 它是清理，不是断言。
+   */
+  const waitExit = (child, timeoutMs = 5000) =>
+    new Promise((resolve) => {
+      if (!child || child.exitCode != null || child.signalCode != null) return resolve(true);
+      const timer = setTimeout(() => resolve(false), timeoutMs);
+      child.once('exit', () => {
+        clearTimeout(timer);
+        resolve(true);
+      });
+    });
+
+  const removeDir = (dir) => {
+    try {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      return true;
+    } catch (err) {
+      console.log(`（收尾）临时目录未能删除：${err?.code ?? err}`);
+      return false;
     }
+  };
+
+  const cleanup = async () => {
+    if (KEEP) return;
+    browser?.kill('SIGKILL');
+    server?.kill('SIGKILL');
+    await Promise.all([waitExit(browser), waitExit(server)]);
+    removeDir(dataDir);
+    removeDir(profile);
   };
 
   try {
@@ -258,7 +290,7 @@ async function main() {
   } catch (err) {
     record(false, '执行过程未抛错', String(err?.message ?? err));
   } finally {
-    cleanup();
+    await cleanup();
   }
 
   const failed = findings.filter((f) => !f.ok);
