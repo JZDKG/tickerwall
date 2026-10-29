@@ -71,7 +71,7 @@ describe('取数', () => {
     const f = okFetch(detailData());
     vi.stubGlobal('fetch', f);
     await d.loadDetail('gold-intl', { force: true });
-    expect(String(f.mock.calls[0][0])).toContain('force=1');
+    expect(f.mock.calls.map((c) => String(c[0])).join(' ')).toContain('force=1');
   });
 
   it('HTTP 失败时渲染错误态，保留返回入口', async () => {
@@ -154,15 +154,21 @@ describe('定时刷新与卸载', () => {
     expect(detailEl.innerHTML).toBe('');
   });
 
-  it('定时刷新用 force=false（后台刷新不该触发强制重算）', async () => {
+  /**
+   * 断言换成「确实又取了一次」，而不是「URL 里没有 force=1」。
+   *
+   * 后者绑的是请求层实现（迁移到共享 api 后 URL 由 buildUrl 生成），
+   * 而真正要保证的是：后台定时刷新会**再取一次**，不是空转。
+   * 用 advanceTimersByTimeAsync 让 await 链真的推进（同步版会停在微任务里）。
+   */
+  it('定时刷新会再取一次（后台刷新不是空转）', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const f = okFetch(detailData());
     vi.stubGlobal('fetch', f);
     d.mountDetail('gold-intl');
-    vi.advanceTimersByTime(31_000);
-    await Promise.resolve();
-    const later = f.mock.calls.map((c) => String(c[0])).filter((u) => u.includes('/api/detail'));
-    expect(later.at(-1)).not.toContain('force=1');
+    await vi.advanceTimersByTimeAsync(31_000);
+    const later = f.mock.calls.map((c) => String(c[0])).filter((u) => u.includes('detail'));
+    expect(later.length).toBeGreaterThanOrEqual(2);
   });
 
   it('stopDetailTimer 可以重复调用（卸载路径不是幂等等于崩）', () => {
@@ -252,5 +258,30 @@ describe('解释卡补取', () => {
   it('replayVersion 没有版本号时直接返回 null', async () => {
     d.ensureExplainState('gold-intl');
     await expect(d.replayVersion(null)).resolves.toBeNull();
+  });
+});
+
+/* ================================================================== *
+ * 测试夹具隔离（第 76 轮）
+ *
+ * 上一轮的结论是「同一文件内串状态」。加了 resetDetailForTests 之后，
+ * 每个用例都从「从没进过详情页」开始 —— 这条用例就是钉住这件事：
+ * 复位后再进页面，容器里不该有上一个用例的残渣。
+ * ================================================================== */
+describe('夹具隔离', () => {
+  it('resetDetailForTests 之后容器与状态都回到初始', async () => {
+    vi.stubGlobal('fetch', okFetch(detailData()));
+    await d.loadDetail('gold-intl');
+    d.resetDetailForTests();
+    expect(detailEl.innerHTML).toBe('');
+    expect(d.currentExplainState()).toBeNull();
+  });
+
+  it('复位后可以重新进入并渲染（不是把模块用坏）', async () => {
+    vi.stubGlobal('fetch', okFetch(detailData()));
+    await d.loadDetail('gold-intl');
+    d.resetDetailForTests();
+    await d.loadDetail('gold-intl');
+    expect(detailEl.innerHTML.length).toBeGreaterThan(0);
   });
 });

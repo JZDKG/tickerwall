@@ -20,7 +20,7 @@ import {
 } from './explanations/state.js';
 import { clockText, dirOf, esc, fmtPct, fmtPrice, fmtSigned, html, prettySource, raw } from '../shared/format.js';
 import { store } from '../shared/store.js';
-import { createApi } from '../shared/api.js';
+import { api, createApi } from '../shared/api.js';
 import { createQueryCache, describeRefresh } from '../shared/query-cache.js';
 import { comparisonCardHTML } from './comparison.js';
 import { attachGlossary, termHTML } from '../shared/glossary.js';
@@ -1323,11 +1323,9 @@ export async function loadDetail(id, { force = false } = {}) {
   try {
     // 日历与详情并行取，失败也不影响详情渲染
     const calPromise = loadCalendarCached();
-    const res = await fetch(`./api/detail/${encodeURIComponent(id)}${force ? '?force=1' : ''}`, {
-      cache: 'no-store',
+    const { data } = await api.get(`api/detail/${encodeURIComponent(id)}`, {
+      params: force ? { force: 1 } : null,
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
     await calPromise;
     if (!detailState || detailState.id !== id) {
       detailState = { id, data, period: 'day', range: 'all', scale: 'lin', ma: true, type: 'line', tableRows: 30 };
@@ -1372,6 +1370,14 @@ export function mountDetail(id) {
   loadDetail(id, { force: true });
   stopDetailTimer();
   detailTimer = setInterval(() => loadDetail(id, { force: false }), 30000);
+}
+
+/** 测试专用：把模块单例复位到「从没进过详情页」的状态 */
+export function resetDetailForTests() {
+  stopDetailTimer();
+  detailState = null;
+  explainState = null;
+  if (typeof document !== 'undefined' && detailEl) detailEl.innerHTML = '';
 }
 
 /** 离开详情页：停表 + 清空容器（清空是为了下次进来重新渲染，也放掉旧 DOM） */
