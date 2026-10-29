@@ -401,6 +401,9 @@ export function renderEvents(opts = {}) {
     });
   });
 
+  // 顶部槽位是这次重建里被清掉的那一块：用缓存补回来（没有缓存才发请求）
+  paintTodayFocus();
+
   if (keepScroll != null) window.scrollTo(0, keepScroll);
 }
 
@@ -607,6 +610,20 @@ export async function loadEventStudy(force = false) {
  * 单独一路取数：它与事件流不是同一份数据（要用日历的下一件发布），
  * 而且**取不到就不显示这一块**，不能让顶部结构挡住事件流。
  */
+/** 上一次取到的「今天重点」：重绘时用它把槽位补回来，不重复请求 */
+let todayFocusCache = null;
+
+/** 把缓存写进槽位（重绘后调用）；没有缓存就发一次请求 */
+function paintTodayFocus() {
+  const slot = typeof document !== 'undefined' ? document.getElementById('today-focus-slot') : null;
+  if (!slot) return;
+  if (todayFocusCache) {
+    slot.innerHTML = todayFocusHTML(todayFocusCache).toString();
+    return;
+  }
+  void hydrateTodayFocus();
+}
+
 export async function hydrateTodayFocus({ fetchImpl = null } = {}) {
   const slot = document.getElementById('today-focus-slot');
   if (!slot) return null;
@@ -616,6 +633,7 @@ export async function hydrateTodayFocus({ fetchImpl = null } = {}) {
     const res = await f('./api/today-focus', { cache: 'no-store' });
     const body = await res.json().catch(() => null);
     if (!body) return null;
+    todayFocusCache = body;
     slot.innerHTML = todayFocusHTML(body).toString();
     return body;
   } catch {

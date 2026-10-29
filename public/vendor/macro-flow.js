@@ -25414,6 +25414,7 @@ function Xk(e, ...t) {
 // src/client/views/macro/flow-canvas.js
 var Zk = /[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef]/;
 function Qk(e, t) {
+	if (e == null) return 0;
 	let n = 0;
 	for (let r of String(e)) n += Zk.test(r) ? t : t * .58;
 	return n;
@@ -25664,7 +25665,7 @@ var iA = class {
 	computeTouchedEdges() {
 		let e = /* @__PURE__ */ new Set();
 		if (this.state?.graphMode !== "sandbox" || !this.state.shock || !this.prop) return e;
-		for (let t of this.prop.values()) for (let n of t.paths) e.add(n.edges);
+		for (let t of this.prop.values()) for (let n of t.paths ?? []) for (let t of n.edges ?? []) e.add(t);
 		return e;
 	}
 	ctx() {
@@ -26004,7 +26005,7 @@ var iA = class {
 		};
 	}
 	dispose() {
-		this.ro?.disconnect(), this.ro = null, this.tools?.remove(), this.graph?.dispose(), this.graph = null;
+		this.ro?.disconnect(), this.ro = null, this.tools?.remove(), this.tools = null, this.graph?.dispose?.(), this.graph = null;
 	}
 }, aA = {
 	E01: "M-GOLD-USD",
@@ -26361,7 +26362,13 @@ function BA(e, t, n) {
 	let i = document.createElement("div");
 	i.innerHTML = n.trim();
 	let a = i.firstElementChild;
-	a && (r ? r.replaceWith(a) : e.querySelector(".graph-stage").before(a));
+	if (!a) return;
+	if (r) {
+		r.replaceWith(a);
+		return;
+	}
+	let o = e.querySelector(".graph-stage");
+	o ? o.before(a) : e.appendChild(a);
 }
 function VA(e, t, n, r) {
 	BA(e, ".mg-head", kA(n)), BA(e, ".mg-tools", AA(t, n, r));

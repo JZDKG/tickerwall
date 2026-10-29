@@ -13,6 +13,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 document.body.innerHTML = '<section id="events"></section>';
 
 const events = await import('../src/client/views/events.js');
+const { store } = await import('../src/client/shared/store.js');
 
 const art = (id = 'ev1', extra = '') => `
   <article class="event" data-id="${id}">
@@ -171,5 +172,33 @@ describe('今天重点的挂载', () => {
     globalThis.fetch = undefined;
     expect(await events.hydrateTodayFocus()).toBeNull();
     globalThis.fetch = saved;
+  });
+});
+
+/* ================================================================== *
+ * 重绘后「今天重点」不能消失
+ *
+ * 故障形态（真实浏览器里观察到的）：`renderEvents` 整块重建 innerHTML，
+ * 槽位一起被清空；30 秒定时刷新或 LLM 重试再渲染一次，顶部就空了 ——
+ * 而接口明明有数据。修法：缓存最近一次 payload，重绘后用缓存补回。
+ * ================================================================== */
+describe('今天重点在重绘后仍在', () => {
+  it('第二次渲染不需要重新请求就能把槽位补回来', async () => {
+    // 槽位要真的在容器里：hydrate 找不到 #today-focus-slot 会直接返回，不发请求
+    document.body.innerHTML = '<section id="events"><div id="today-focus-slot"></div></section>';
+    store.events = { data: { items: [], total: 0, sources: [], coverage: null, llm: { enabled: false, applied: 0, pending: false } }, level: '', topic: '', origin: '', studyMode: 'auto' };
+    let calls = 0;
+    const body = { count: 1, short: true, rule: '规则', focus: [{ id: 'a', title: 'A', time: '2026-10-29 10:00:00', why: '高等级' }], next: { title: '非农', inMs: 3600_000 } };
+    await events.hydrateTodayFocus({ fetchImpl: async () => { calls += 1; return { ok: true, json: async () => body }; } });
+    expect(calls).toBe(1);
+    const first = document.getElementById('today-focus-slot').textContent;
+    expect(first).toContain('今天重点');
+
+    // 模拟整块重绘：renderEvents 会重建 innerHTML，槽位被清空，
+    // 由 paintTodayFocus 用缓存补回 —— 不重新请求
+    events.renderEvents();
+    const slot = document.getElementById('today-focus-slot');
+    expect(slot?.textContent ?? '').toContain('今天重点');
+    expect(calls).toBe(1);
   });
 });
