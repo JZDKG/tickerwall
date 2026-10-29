@@ -54,3 +54,7 @@ jobs:
 
       - name: 构建一致性
         run: npm run verify:build
+
+      # 发布包：白名单收集 → 解压到全新临时目录 → 起真进程 → 三个入口都 200
+      - name: 发布包冒烟
+        run: npm run pack

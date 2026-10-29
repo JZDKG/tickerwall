@@ -27,7 +27,9 @@
     "doctor": "node tools/doctor.mjs",
     "verify:build": "node tools/verify-build.mjs",
     "backup": "node tools/backup.mjs",
-    "restore": "node tools/restore.mjs"
+    "restore": "node tools/restore.mjs",
+    "pack": "node tools/pack.mjs",
+    "pack:smoke": "PACK_SMOKE=1 vitest run tests/pack-tool.test.js"
   },
   "engines": {
     "node": ">=24.0.0",
