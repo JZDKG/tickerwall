@@ -15,7 +15,7 @@
  * 纯函数：观测、事件、时间都由调用方注入。
  * ================================================================== */
 
-import { computeChange, presentChange, alignCommon, windowSpec } from './alignment.js';
+import { changeBetween, computeChange, presentChange, alignCommon, windowSpec } from './alignment.js';
 import { CHANNEL_STATUS } from './mechanisms.js';
 
 /** 稳定的观测标识：同一来源 + 指标 + 观测期 = 同一 logicalKey */
@@ -223,8 +223,59 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
   }
   const sa = { dates: aligned.dates, values: aligned.a };
   const sb = { dates: aligned.dates, values: aligned.b };
-  const chFrom = computeChange(sa, { comparisonPolicy: fromObs.definition?.comparisonPolicy, observations: observationsCount });
-  const chTo = computeChange(sb, { comparisonPolicy: toObs.definition?.comparisonPolicy, observations: observationsCount });
+
+  /**
+   * **锚定到被解释的那个窗口**（审阅复现的 bug）。
+   *
+   * 原来这里各取「最新 N 个」：黄金窗口是 10-28→10-29，而实际收益率只更新到
+   * 10-27，于是解释卡拿 10-26→10-27 的「实际收益率下降、黄金上涨」去支持
+   * 10-28→10-29 的下跌 —— 历史关系被当成了当期证据。
+   *
+   * 现在：给了 anchor 就必须两端都落在 anchor 上；落不上就明确标成
+   * 「窗口外，仅作历史背景」，状态 untested，不参与当结论。
+   */
+  const anchor = opts.anchor ?? null;
+  const inAnchor = anchor?.start && anchor?.end
+    ? aligned.dates.includes(anchor.start) && aligned.dates.includes(anchor.end)
+    : null;
+
+  const chFromRaw = anchor && inAnchor
+    ? changeBetween(sa, anchor.start, anchor.end, { comparisonPolicy: fromObs.definition?.comparisonPolicy })
+    : computeChange(sa, { comparisonPolicy: fromObs.definition?.comparisonPolicy, observations: observationsCount });
+  const chToRaw = anchor && inAnchor
+    ? changeBetween(sb, anchor.start, anchor.end, { comparisonPolicy: toObs.definition?.comparisonPolicy })
+    : computeChange(sb, { comparisonPolicy: toObs.definition?.comparisonPolicy, observations: observationsCount });
+
+  if (anchor?.start && anchor?.end && inAnchor === false) {
+    // 驱动数据没跟上目标窗口：如实说「本次窗口没有可比观测」，并把手上的
+    // 数据标成背景（它证明的是历史关系，不是当期证据）
+    return {
+      ...base,
+      missing,
+      status: 'untested',
+      reasons: ['OUT_OF_WINDOW'],
+      window: { key: windowKey, start: anchor.start, end: anchor.end, observations: aligned.n },
+      evidence: [
+        evidenceEntry({
+          role: 'background',
+          instrumentId: mechanism.from,
+          definition: fromObs.definition,
+          change: chFromRaw,
+          note: `历史背景：${chFromRaw?.start ?? '?'} → ${chFromRaw?.end ?? '?'}，不在本次窗口内`,
+        }),
+        evidenceEntry({
+          role: 'background',
+          instrumentId: mechanism.to,
+          definition: toObs.definition,
+          change: chToRaw,
+          note: `历史背景：${chToRaw?.start ?? '?'} → ${chToRaw?.end ?? '?'}，不在本次窗口内`,
+        }),
+      ].filter((e) => e.change),
+    };
+  }
+
+  const chFrom = chFromRaw;
+  const chTo = chToRaw;
   if (!chFrom || !chTo) {
     return {
       ...base,

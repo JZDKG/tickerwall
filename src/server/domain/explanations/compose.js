@@ -13,13 +13,21 @@
  * 纯函数：不读时钟（时间由调用方传）、不写库、不发请求。
  * ================================================================== */
 
-import { presentChange, computeChange, windowSpec } from './alignment.js';
+import { changeBetween, presentChange, computeChange, windowSpec } from './alignment.js';
 import { CHANNEL_STATUS, RELATION_TYPES, CONDITION_TEXT } from './mechanisms.js';
 
 export const EXPLANATION_SCHEMA_VERSION = 1;
 // calc-v2：证据装配口径变化 —— 事件型渠道最多引用 3 条已分类报道，
 // 价格型渠道不再引用窗口内全部事件。版本号进快照，旧快照按旧口径保留。
-export const CALCULATION_VERSION = 'calc-v2';
+/**
+ * 计算口径版本。**改了「怎么算」就要抬这里**：
+ * 指纹包含它，所以抬版本会让已有快照全部失效并重建。
+ *
+ * calc-v3（2026-10-29）：机制与驱动事实改为**锚定目标窗口**（同窗证据），
+ * 不再各取自己最新的一段 —— 见 evidence.js 的 OUT_OF_WINDOW 分支。
+ * 不抬版本的话，旧快照会按指纹命中、继续把历史关系当当期证据。
+ */
+export const CALCULATION_VERSION = 'calc-v3';
 export const LANGUAGE_VERSION = 'template-v1';
 
 /** 单位格式化：pct 保留两位小数、bp 保留一位小数、level 原样 */
@@ -43,7 +51,7 @@ function inWindowText(window) {
  *
  * 每个事实都带 window、单位与观测标识；界面「查看依据」用它们定位原始数据。
  */
-export function buildFacts({ targetId, targetDefinition, targetSeries, drivers, windowKey }) {
+export function buildFacts({ targetId, targetDefinition, targetSeries, drivers, windowKey, anchor = null }) {
   const spec = windowSpec(windowKey) ?? windowSpec('session');
   const facts = [];
   const targetChange = targetSeries
@@ -64,15 +72,25 @@ export function buildFacts({ targetId, targetDefinition, targetSeries, drivers, 
       observationIds: [`${targetId}@${targetChange.start}`, `${targetId}@${targetChange.end}`],
     });
   }
+  /**
+   * 驱动事实也锚定到目标窗口（与机制同一口径）。
+   *
+   * 锚不上时不再假装它是本窗口的变化：保留它自己的窗口，并标
+   * `alignedToTarget: false`，界面据此刻意写「历史背景」。
+   */
   for (const [instrumentId, obs] of drivers) {
     if (!obs?.series?.dates?.length) continue;
-    const ch = computeChange(obs.series, {
+    const anchored = anchor?.start && anchor?.end
+      ? changeBetween(obs.series, anchor.start, anchor.end, { comparisonPolicy: obs.definition?.comparisonPolicy })
+      : null;
+    const ch = anchored ?? computeChange(obs.series, {
       comparisonPolicy: obs.definition?.comparisonPolicy,
       observations: spec.observations,
     });
     if (!ch) continue;
     facts.push({
       code: 'DRIVER_CHANGE',
+      alignedToTarget: anchored ? true : anchor?.start ? false : null,
       instrumentId,
       label: `${obs.definition?.short ?? instrumentId}本窗口变化`,
       window: { start: ch.start, end: ch.end },

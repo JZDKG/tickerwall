@@ -126,6 +126,35 @@ export function alignCommon(a, b) {
  * @param {{ comparisonPolicy: 'log-return'|'pp-difference'|'level', observations: number }} opts
  * @returns {{ start, end, from, to, change, changeUnit, observations } | null}
  */
+/**
+ * 按**指定日期**算变化（不做「取最后 N 个」）。
+ *
+ * 为什么需要它：`computeChange` 永远取序列最新的一段，而不同指标的更新节奏
+ * 不同 —— 于是「黄金 10-28→10-29 下跌」的解释可能配着「实际收益率
+ * 10-26→10-27 下降」的证据。解释必须固定在被解释的那个窗口上。
+ *
+ * @returns {object|null} 与 computeChange 同形状；任一端点不存在时返回 null
+ */
+export function changeBetween(series, startDate, endDate, { comparisonPolicy = 'log-return' } = {}) {
+  if (!isValidSeries(series) || !startDate || !endDate) return null;
+  const startIdx = series.dates.indexOf(startDate);
+  const endIdx = series.dates.indexOf(endDate);
+  if (startIdx < 0 || endIdx < 0 || endIdx <= startIdx) return null;
+  const from = series.values[startIdx];
+  const to = series.values[endIdx];
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return null;
+  const observations = endIdx - startIdx;
+  if (comparisonPolicy === 'pp-difference') {
+    return { start: startDate, end: endDate, from, to, change: to - from, changeUnit: 'pp', observations };
+  }
+  if (comparisonPolicy === 'level') {
+    return { start: startDate, end: endDate, from, to, change: to - from, changeUnit: 'level', observations };
+  }
+  // 价格：要求两端为正，否则对数收益率没有意义
+  if (!(from > 0) || !(to > 0)) return null;
+  return { start: startDate, end: endDate, from, to, change: Math.log(to / from), changeUnit: 'log-return', observations };
+}
+
 export function computeChange(series, { comparisonPolicy = 'log-return', observations = 1 } = {}) {
   if (!isValidSeries(series)) return null;
   const n = Math.max(1, Math.min(Number(observations) || 1, series.values.length - 1));

@@ -57,6 +57,44 @@ export function sliceWindow(rows, points = 1, cutoff = null) {
 }
 
 /**
+ * 三条序列的**共同窗口**：先求日期的交集，再在交集上取跨度。
+ *
+ * 为什么不能各切各的：`commonCutoff` 只对齐了**末端**。若国内金缺一天，
+ * 它的起点就会比国际金早一天 —— 于是「两天的境内外溢价都为零」这种情形
+ * 仍会算出一个非零的溢价变化（因为两端根本不在同一天）。
+ *
+ * @param {Array<Array<{date:string,close:number}>>} rowsList 三条原始日线
+ * @param {number} points 交集上要跨几个交易日
+ * @returns {{dates:string[], at:(rows:Array)=>object|null}|null} 交集为空或不足两点时返回 null
+ */
+export function commonWindow(rowsList, points = 1) {
+  const clean = (rows) =>
+    (rows ?? []).filter((r) => Number.isFinite(r?.close) && r.close > 0 && r?.date);
+  const sortedDates = rowsList.map((rows) => [...new Set(clean(rows).map((r) => String(r.date)))].sort());
+  if (sortedDates.some((d) => d.length === 0)) return null;
+
+  // 交集：按最短的那条去筛其他条
+  const shortest = sortedDates.reduce((a, b) => (a.length <= b.length ? a : b));
+  const sets = sortedDates.map((d) => new Set(d));
+  const shared = shortest.filter((date) => sets.every((set) => set.has(date)));
+  if (shared.length < 2) return null;
+
+  const span = Math.max(1, Math.min(points, shared.length - 1));
+  const startDate = shared[shared.length - 1 - span];
+  const endDate = shared[shared.length - 1];
+
+  /** 取某条序列在指定日期上的收盘价（两者都必须存在，不做「就近取」） */
+  const at = (rows) => {
+    const byDate = new Map(clean(rows).map((r) => [String(r.date), r.close]));
+    const start = byDate.get(startDate);
+    const end = byDate.get(endDate);
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+    return { start, end, startDate, endDate };
+  };
+  return { dates: shared, startDate, endDate, at };
+}
+
+/**
  * 三个序列的共同截止日：取**最早**的那个「最后一根」。
  *
  * 为什么不是最晚：取最晚会让某个市场的窗口末端落在它没有数据的日期上，
@@ -110,12 +148,46 @@ export async function buildComparison({ windowKey = 'session', deps = {} } = {})
     };
   }
 
-  // 先各自取到「最后一根」，据此定共同截止日，再按截止日重新切片
-  const ends = [intlRaw.rows, domRaw.rows, fxRaw.rows].map((rows) => sliceWindow(rows, 0));
-  const cutoff = commonCutoff(...ends);
-  const intl = sliceWindow(intlRaw.rows, window.points, cutoff);
-  const domestic = sliceWindow(domRaw.rows, window.points, cutoff);
-  const fx = sliceWindow(fxRaw.rows, window.points, cutoff);
+  /**
+   * **先在日期交集上定窗口，再取数**。
+   *
+   * 原来只对齐末端（`commonCutoff`），三条序列各自向前切 N 天：任一条缺一天，
+   * 起点就与别人不同，分解出来的「境内外溢价变化」其实是跨日的差。
+   * 现在交集不足两点就直接判不可比，不输出分解。
+   */
+  const shared = commonWindow([intlRaw.rows, domRaw.rows, fxRaw.rows], window.points);
+  if (!shared) {
+    return {
+      ok: true,
+      status: 'unknown',
+      windowKey,
+      windowLabel: window.label,
+      comparable: false,
+      missing: [],
+      reasonText: [
+        '三条序列没有足够的共同交易日期（交集少于两天），这次不做分解 —— 强行分解会把不同日子的变化当成同一窗口。',
+      ],
+      decomposition: null,
+      generatedAt: new Date(now()).toISOString(),
+    };
+  }
+  const cutoff = shared.endDate;
+  const intl = shared.at(intlRaw.rows);
+  const domestic = shared.at(domRaw.rows);
+  const fx = shared.at(fxRaw.rows);
+  if (!intl || !domestic || !fx) {
+    return {
+      ok: true,
+      status: 'unknown',
+      windowKey,
+      windowLabel: window.label,
+      comparable: false,
+      missing: [],
+      reasonText: ['共同窗口缺少某一端的收盘价，这次不做分解。'],
+      decomposition: null,
+      generatedAt: new Date(now()).toISOString(),
+    };
+  }
 
   // 对齐后三个序列的末端就是同一天：`at` 用真实日期，而不是抹平成「随便一天」
   const align = (w) => (w ? { start: w.start, end: w.end, at: `${w.endDate}T00:00:00Z` } : w);

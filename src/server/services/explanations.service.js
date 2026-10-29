@@ -40,7 +40,7 @@ import {
   instrumentDefinition,
   GOLD_DRIVERS,
 } from '../domain/explanations/instruments.js';
-import { WINDOW_KEYS, WINDOW_SPECS, windowSpec } from '../domain/explanations/alignment.js';
+import { WINDOW_KEYS, WINDOW_SPECS, computeChange, windowSpec } from '../domain/explanations/alignment.js';
 import { assessExplanationFreshness } from '../domain/explanations/quality.js';
 import { diffExplanations, summarizeDiff } from '../domain/explanations/diff.js';
 import {
@@ -211,15 +211,39 @@ export function observationQualityList(observations) {
  * 组成 = 资产 + 窗口 + 三个版本 + 每个指标的「最后观测日期 + 最后值」。
  * 只有这些变化才需要新快照；单纯经过时间不改变内容（读取时再算新鲜度）。
  */
-export function explanationFingerprint({ assetId, windowKey, observations, events = [] }) {
+export function explanationFingerprint({ assetId, windowKey, observations, events = [], windowSpan = null }) {
   const parts = [assetId, windowKey, MECHANISM_LIBRARY_VERSION, CALCULATION_VERSION, LANGUAGE_VERSION];
   const ids = [...observations.keys()].sort();
+  /**
+   * 指纹必须覆盖**窗口内真正用到的那两个点**，不能只看「最后一个值」。
+   *
+   * 审阅复现过两种失效：
+   *   1. 窗口**起点**那一格的观测后来被修订 → 指纹没变 → 强制刷新仍复用旧解释；
+   *   2. 终点变了、指纹变了、新解释显示新数值，但引用（`资产@日期`）指向的
+   *      仍是旧修订 —— 历史回看时看到的是「新结论 + 旧证据」。
+   *
+   * 这里做两件事：
+   *   · 把窗口起止日期及其值/修订号都纳入指纹；
+   *   · 每条观测若有 `revision`，一并纳入（同 id 不同修订 = 不同事实）。
+   */
   for (const id of ids) {
     const obs = observations.get(id);
-    const last = obs?.series?.dates?.length ? obs.series.dates[obs.series.dates.length - 1] : 'none';
-    const lastVal = obs?.series?.values?.length ? obs.series.values[obs.series.values.length - 1] : 'none';
+    const dates = obs?.series?.dates ?? [];
+    const values = obs?.series?.values ?? [];
+    const last = dates.length ? dates[dates.length - 1] : 'none';
+    const lastVal = values.length ? values[values.length - 1] : 'none';
     const fellBack = obs?.quality?.fellBack ? 'fallback' : 'direct';
-    parts.push(`${id}:${last}:${lastVal}:${fellBack}`);
+    const spans = [];
+    if (windowSpan?.start != null && dates.includes(windowSpan.start)) {
+      const i = dates.indexOf(windowSpan.start);
+      spans.push(`s=${windowSpan.start}:${values[i]}`);
+    }
+    if (windowSpan?.end != null && dates.includes(windowSpan.end)) {
+      const i = dates.indexOf(windowSpan.end);
+      spans.push(`e=${windowSpan.end}:${values[i]}`);
+    }
+    const rev = obs?.revision ?? obs?.quality?.revision ?? null;
+    parts.push(`${id}:${last}:${lastVal}:${fellBack}:${spans.join(',')}:rev=${rev ?? 'none'}`);
   }
   /**
    * 事件证据必须进指纹（方案 §6.3 / §7.2）。
@@ -273,16 +297,34 @@ export function buildExplanation({
     relevance.add(m.from);
     for (const req of m.requires ?? []) relevance.add(req.instrument);
   }
+  /**
+   * 先固定**被解释的窗口**（目标资产的本次变化），再把同一个窗口交给事实与机制。
+   *
+   * 审阅复现过的问题：事实用目标资产最新窗口，机制各取自己最新共同日期，
+   * 于是「黄金 10-28→10-29 下跌 0.66%」的解释里，支持依据却是
+   * 「实际收益率 10-26→10-27 下降 2bp、黄金上涨 1.07%」—— 那是历史关系，
+   * 不是当期证据。现在两者共用一个 anchor。
+   */
+  const anchorSpec = windowSpec(windowKey) ?? windowSpec('session');
+  const anchorChange = targetObs?.series
+    ? computeChange(targetObs.series, {
+        comparisonPolicy: assetDefinition?.comparisonPolicy,
+        observations: anchorSpec.observations,
+      })
+    : null;
+  const anchor = anchorChange ? { start: anchorChange.start, end: anchorChange.end } : null;
+
   const facts = buildFacts({
     targetId: assetId,
     targetDefinition: assetDefinition,
     targetSeries: targetObs?.series ?? null,
     drivers: [...observations.entries()].filter(([id]) => id !== assetId && relevance.has(id)),
     windowKey,
+    anchor,
   });
 
   const hypotheses = mechanisms.map((m) =>
-    evaluateMechanism(m, observations, { windowKey, eventEvidence: events }),
+    evaluateMechanism(m, observations, { windowKey, eventEvidence: events, anchor }),
   );
   markConflicts(hypotheses);
 
@@ -615,7 +657,24 @@ export async function getExplanationResponse({
     };
   }
 
-  const fingerprint = explanationFingerprint({ assetId: asset, windowKey, observations, events: eventsResolved });
+  // 指纹带上窗口起止：起点那格被修订时，旧快照必须失效
+  const fpAnchor = targetObs?.series
+    ? (() => {
+        const spec0 = windowSpec(windowKey) ?? windowSpec('session');
+        const ch = computeChange(targetObs.series, {
+          comparisonPolicy: instrumentDefinition(asset)?.comparisonPolicy,
+          observations: spec0.observations,
+        });
+        return ch ? { start: ch.start, end: ch.end } : null;
+      })()
+    : null;
+  const fingerprint = explanationFingerprint({
+    assetId: asset,
+    windowKey,
+    observations,
+    events: eventsResolved,
+    windowSpan: fpAnchor,
+  });
   const existingId = explanationIdByFingerprint(fingerprint);
   if (existingId) {
     const stored = readExplanation(existingId);

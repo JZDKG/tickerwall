@@ -970,3 +970,63 @@ describe('事件证据与快照', () => {
     expect(h.eventMatchCount).toBe(9);
   });
 });
+
+/* ================================================================== *
+ * 解释必须锚定在**被解释的那个窗口**（审阅复现的核心可信度问题）
+ *
+ * 现象：摘要说「10-28→10-29 黄金下跌 0.66%」，展开「实际收益率」却给出
+ * 「10-26→10-27 实际收益率下降、黄金上涨 1.07%」—— 那是历史关系，
+ * 不能支持当期下跌。
+ * ================================================================== */
+describe('同窗证据（anchor）', () => {
+  const series = (pairs) => ({ dates: pairs.map((p) => p[0]), values: pairs.map((p) => p[1]) });
+
+  it('驱动数据跟不上目标窗口时，标成 untested + OUT_OF_WINDOW，并降级为背景', async () => {
+    const { evaluateMechanism } = await import('../src/server/domain/explanations/evidence.js');
+    const mechanism = {
+      id: 'real-yield', version: 'v1', relationType: 'inverse',
+      from: 'dfii10', to: 'gold-intl', sign: -1, label: '实际收益率 → 黄金',
+      mechanism: '实际收益率上行抬高持有黄金的机会成本',
+    };
+    const observations = new Map([
+      // 目标资产更新到 10-29
+      ['gold-intl', { definition: { short: '国际金价', unit: 'usd', comparisonPolicy: 'log-return' },
+        series: series([['2026-10-26', 2000], ['2026-10-27', 2021], ['2026-10-29', 2007]]) }],
+      // 驱动只更新到 10-27
+      ['dfii10', { definition: { short: '实际收益率', unit: 'pct', comparisonPolicy: 'pp-difference' },
+        series: series([['2026-10-26', 1.9], ['2026-10-27', 1.88]]) }],
+    ]);
+    const out = evaluateMechanism(mechanism, observations, {
+      windowKey: 'session',
+      anchor: { start: '2026-10-28', end: '2026-10-29' },
+    });
+    expect(out.status).toBe('untested');
+    expect(out.reasons).toContain('OUT_OF_WINDOW');
+    expect(out.evidence.every((e) => e.role === 'background')).toBe(true);
+    expect(out.evidence[0].note).toContain('不在本次窗口内');
+  });
+
+  it('驱动数据覆盖目标窗口时，用同一组起止日期算变化', async () => {
+    const { evaluateMechanism } = await import('../src/server/domain/explanations/evidence.js');
+    const mechanism = {
+      id: 'real-yield', version: 'v1', relationType: 'inverse',
+      from: 'dfii10', to: 'gold-intl', sign: -1, label: '实际收益率 → 黄金',
+      mechanism: '实际收益率上行抬高持有黄金的机会成本',
+    };
+    const observations = new Map([
+      ['gold-intl', { definition: { short: '国际金价', unit: 'usd', comparisonPolicy: 'log-return' },
+        series: series([['2026-10-27', 2021], ['2026-10-28', 2010], ['2026-10-29', 2007]]) }],
+      ['dfii10', { definition: { short: '实际收益率', unit: 'pct', comparisonPolicy: 'pp-difference' },
+        series: series([['2026-10-27', 1.9], ['2026-10-28', 1.93], ['2026-10-29', 1.96]]) }],
+    ]);
+    const out = evaluateMechanism(mechanism, observations, {
+      windowKey: 'session',
+      anchor: { start: '2026-10-28', end: '2026-10-29' },
+    });
+    expect(out.window.start).toBe('2026-10-28');
+    expect(out.window.end).toBe('2026-10-29');
+    const to = out.evidence.find((e) => e.instrumentId === 'gold-intl');
+    expect(to.window.start).toBe('2026-10-28');
+    expect(to.window.end).toBe('2026-10-29');
+  });
+});
