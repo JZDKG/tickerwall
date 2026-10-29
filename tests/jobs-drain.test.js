@@ -73,12 +73,20 @@ describe('内置处理器', () => {
     expect(Object.keys(QUEUE_HANDLERS)).toContain('explanation-rebuild');
   });
 
-  it('explanation-rebuild 在缺少资产时用默认资产（不让任务因为空 payload 失败）', async () => {
-    const handler = QUEUE_HANDLERS['explanation-rebuild'];
-    const out = await handler({ payload: {} });
-    expect(out.asset).toBeTruthy();
-    expect(out.windowKey).toBeTruthy();
-  });
+  /**
+   * 这条会真的走一遍解释重建（读观测、可能触上游），Ubuntu 上冷启动偶尔超过
+   * 默认 5s —— 本机有缓存所以看不出来。给它单独的预算，别把慢路径当作 bug。
+   */
+  it(
+    'explanation-rebuild 在缺少资产时用默认资产（不让任务因为空 payload 失败）',
+    async () => {
+      const handler = QUEUE_HANDLERS['explanation-rebuild'];
+      const out = await handler({ payload: {} });
+      expect(out.asset).toBeTruthy();
+      expect(out.windowKey).toBeTruthy();
+    },
+    30_000,
+  );
 });
 
 describe('启动恢复', () => {
