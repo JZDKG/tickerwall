@@ -127,7 +127,7 @@ export function buildDefaultJobs(overrides = {}) {
       intervalMs: 15_000,
       backoffBaseMs: 30_000,
       maxBackoffMs: 5 * 60_000,
-      run: () => drainQueue(),
+      run: overrides.jobQueue ?? (() => drainQueue()),
     },
   ];
 }

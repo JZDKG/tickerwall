@@ -265,11 +265,13 @@ describe('默认任务表', () => {
       explain: async () => calls.push('explain'),
       // 历史回补默认会入队（写库）：这里替换掉，只验调度表本身跑得通
       backfill: async () => calls.push('backfill'),
+      // job-queue 会真的 drainQueue()：调度表用例不该去动数据库队列
+      jobQueue: async () => calls.push('job-queue'),
     });
     const collector = createCollector({ store: memoryStore(), jobs });
     const results = await collector.tick();
     expect(results.every((r) => r.status === 'ok')).toBe(true);
-    expect(calls.sort()).toEqual(['backfill', 'calendar', 'events', 'explain', 'obs', 'quotes']);
+    expect(calls.sort()).toEqual(['backfill', 'calendar', 'events', 'explain', 'job-queue', 'obs', 'quotes']);
   });
 });
 

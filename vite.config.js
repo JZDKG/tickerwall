@@ -69,6 +69,9 @@ export default defineConfig({
      * 这里在 worker 里给每次运行一个全新临时目录（`paths.js` 认 KANBAN_DATA_DIR），
      * 于是无论哪个测试漏了 `:memory:`，写的也是临时目录。
      */
+    // 每个 worker 各一个数据目录：run 级别的 env 会被并行 worker 共用，
+    // 导致它们在同一个 SQLite 文件上互相抢锁（CI 上表现为 job-queue 超时）。
+    setupFiles: ['tests/setup-per-worker.mjs'],
     env: {
       KANBAN_DATA_DIR: mkdtempSync(join(tmpdir(), 'kanban-test-data-')),
     },
