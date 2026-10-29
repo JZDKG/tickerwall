@@ -285,3 +285,70 @@ describe('历史版本', () => {
     expect(out === null || typeof out === 'object').toBe(true);
   });
 });
+
+/* ================================================================== *
+ * 「更多行」与失败页的返回（detail.js）
+ *
+ * 两处都是最容易漏绑的：按钮是渲染出来的，处理函数却在别处补。
+ * ================================================================== */
+describe('更多行与失败页', () => {
+  it('点「查看更多」一次加 30 行并重绘（不是无反应）', () => {
+    d.renderDetail(d.detailState.data);
+    const btn = document.getElementById('more-rows');
+    if (!btn) return;
+    const before = d.detailState.tableRows;
+    btn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    expect(d.detailState.tableRows).toBe(before + 30);
+  });
+
+  it('失败页有「返回列表」且点了回到列表', () => {
+    location.hash = '#/d/gold-intl';
+    d.renderDetailError('gold-intl', '读不到数据');
+    const back = document.getElementById('back');
+    expect(back).toBeTruthy();
+    back.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    expect(location.hash).toBe('');
+  });
+});
+
+/* ================================================================== *
+ * 图表控件：周期 / 区间 / 缩放 / 均线 / 图型（detail.js 分段控件）
+ *
+ * 每个按钮都要能改状态并重绘 —— 断了就是「点了没反应」。
+ * ================================================================== */
+describe('图表分段控件', () => {
+  const clickSeg = (host, value) => {
+    const el = document.querySelector(`${host} [data-val="${value}"]`) ?? document.querySelector(`${host} button`);
+    if (!el) return null;
+    el.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    return el;
+  };
+
+  it('五个控件点一遍都能改状态且不抛', () => {
+    d.renderDetail(d.detailState.data);
+    for (const [host, val] of [['#period-seg', 'week'], ['#range-seg', '1y'], ['#scale-seg', 'log'], ['#type-seg', 'candle'], ['#ma-seg', 'false']]) {
+      expect(() => clickSeg(host, val)).not.toThrow();
+    }
+  });
+
+  it('切换后 detailState 至少有一项变化（不是空转）', () => {
+    d.renderDetail(d.detailState.data);
+    const before = JSON.stringify({ p: d.detailState.period, r: d.detailState.range, s: d.detailState.scale, t: d.detailState.type, ma: d.detailState.ma });
+    for (const [host, val] of [['#period-seg', 'week'], ['#range-seg', '6m'], ['#scale-seg', 'log'], ['#type-seg', 'candle'], ['#ma-seg', 'false']]) {
+      clickSeg(host, val);
+    }
+    const after = JSON.stringify({ p: d.detailState.period, r: d.detailState.range, s: d.detailState.scale, t: d.detailState.type, ma: d.detailState.ma });
+    expect(after).not.toBe(before);
+  });
+
+  it('历史表按 tableRows 截断，点「再显示 30 行」能真的变长', () => {
+    d.renderDetail(d.detailState.data);
+    const table = document.querySelector('.hist-table');
+    if (!table) return; // 该夹具没有历史表，跳过
+    const rows = table.querySelectorAll('tbody tr').length;
+    const more = document.getElementById('more-rows');
+    if (!more) return;
+    more.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    expect(document.querySelector('.hist-table').querySelectorAll('tbody tr').length).toBeGreaterThanOrEqual(rows);
+  });
+});

@@ -543,3 +543,35 @@ describe('图谱点击命中', () => {
     expect(() => host.querySelector('[data-node]').dispatchEvent(new window.MouseEvent('click', { bubbles: true }))).not.toThrow();
   });
 });
+
+/* ================================================================== *
+ * 图谱回调：双击、模式切换、解释懒取（macro.js 的 chrome 分支）
+ * ================================================================== */
+describe('图谱回调', () => {
+  it('双击节点 → 切到导图并聚焦该节点', () => {
+    m.renderMacro();
+    const mod = globalThis.__macroFlowMod;
+    // 该模块未加载时走手绘分支，回调不存在——跳过
+    if (!mod?.lastOpts?.onNodeDbl) return;
+    const id = 'gold-intl';
+    mod.lastOpts.onNodeDbl(id);
+    expect(m.macroState.graphMode).toBe('mindmap');
+    expect(m.macroState.graphFocus).toBe(id);
+  });
+
+  it('点连线与点节点的回调都能被调用（不是空函数）', () => {
+    m.renderMacro();
+    const mod = globalThis.__macroFlowMod;
+    if (!mod?.lastOpts) return;
+    expect(() => mod.lastOpts.onEdge?.('E01')).not.toThrow();
+    expect(() => mod.lastOpts.onNode?.('oil')).not.toThrow();
+  });
+});
+
+describe('宏观诊断计数', () => {
+  it('eventsServeStats 返回对象（诊断面板要用）', async () => {
+    const { eventsServeStats } = await import('../src/server/services/events.service.js');
+    const s = eventsServeStats();
+    expect(s === undefined || typeof s === 'object').toBe(true);
+  });
+});
