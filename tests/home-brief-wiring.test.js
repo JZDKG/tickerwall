@@ -246,3 +246,11 @@ describe('启动时真的会拉（不是只有函数定义）', () => {
     expect(src).toMatch(/void refreshHomeBriefSafe\(\)/);
   });
 });
+
+describe('首页先看这三个问题（产品 §3 的挂载）', () => {
+  it('刷首页时把关注项清单传给渲染层', async () => {
+    const src = await import('node:fs').then((fs) => fs.readFileSync('src/client/views/home-brief-wiring.js', 'utf8'));
+    expect(src).toMatch(/questions:\s*\{\s*list:\s*WATCH_QUESTIONS/);
+    expect(src).toMatch(/chosen:\s*watched/);
+  });
+});

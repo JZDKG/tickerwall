@@ -35,8 +35,30 @@ export function shouldHideHomeBrief(brief, ledger) {
  * @param {object} ledger 预期台账
  * @param {object|null} lifePath 生活场景（可选；没取到就不渲染那一块）
  */
-export function homeBriefHTML(brief, ledger, lifePath = null) {
-  return `${watchBriefHTML(brief)}${expectationsCardHTML(ledger)}${
+/**
+ * 首页「先看这三个问题」（产品 §3 的层级要求）。
+ *
+ * 首页原来把问题卡与行情并列，读者第一眼看到的是**行情表**。
+ * 这里把「我关心的问题」提到最前，且**最多三条** —— 多出来的收在
+ * 选择面板里，不铺在首页上。
+ */
+export const TOP_QUESTION_LIMIT = 3;
+
+export function topQuestionsHTML(questions = [], chosen = []) {
+  const picked = (questions ?? []).filter((q) => chosen.includes(q.key)).slice(0, TOP_QUESTION_LIMIT);
+  if (!picked.length) return '';
+  return html`<section class="d-block home-questions" data-state="picked">
+    <h3>今天先看这三个问题 <span class="h3-note">按你选的关注项，最多三条</span></h3>
+    <ol class="hq-list">
+      ${picked.map((q) => html`<li class="hq-item" data-key="${q.key}"><b>${q.ask}</b><span>${q.hint ?? ''}</span></li>`)}
+    </ol>
+    <button type="button" class="hq-edit" id="wb-pick">调整关注项</button>
+  </section>`;
+}
+
+export function homeBriefHTML(brief, ledger, lifePath = null, questions = null) {
+  const top = questions ? topQuestionsHTML(questions.list ?? [], questions.chosen ?? []) : '';
+  return `${top}${watchBriefHTML(brief)}${expectationsCardHTML(ledger)}${
     lifePath && lifePath.ok !== false ? lifePathHTML(lifePath) : ''
   }`;
 }
@@ -52,6 +74,7 @@ export function homeBriefHTML(brief, ledger, lifePath = null) {
 export function renderHomeBrief(host, brief, ledger, handlers = {}) {
   if (!host) return false;
   const lifePath = handlers.lifePath ?? null;
+  const questions = handlers.questions ?? null;
   // 生活场景是「额外一块」：有内容时即使前两块为空也值得显示
   const hasLife = Boolean(lifePath && lifePath.ok !== false);
   if (!hasLife && shouldHideHomeBrief(brief, ledger)) {
@@ -59,7 +82,7 @@ export function renderHomeBrief(host, brief, ledger, handlers = {}) {
     host.innerHTML = '';
     return false;
   }
-  host.innerHTML = homeBriefHTML(brief, ledger, lifePath);
+  host.innerHTML = homeBriefHTML(brief, ledger, lifePath, questions);
   host.hidden = false;
   host.querySelector('#wb-pick')?.addEventListener('click', () => handlers.onPick?.());
   return true;

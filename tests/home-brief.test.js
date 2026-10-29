@@ -8,7 +8,8 @@
  * ================================================================== */
 
 import { describe, it, expect } from 'vitest';
-import { homeBriefHTML, renderHomeBrief, shouldHideHomeBrief, watchPickerHTML } from '../src/client/views/home-brief.js';
+import { readFileSync } from 'node:fs';
+import { homeBriefHTML, renderHomeBrief, shouldHideHomeBrief, topQuestionsHTML, watchPickerHTML } from '../src/client/views/home-brief.js';
 
 const briefItems = { reason: 'HAS_ITEMS', count: 1, items: [{ id: 'a', time: '2026-10-28 10:00:00', title: '金价回落', sources: 2 }], sinceMs: Date.now() - 3600_000 };
 const ledgerOk = {
@@ -162,5 +163,72 @@ describe('生活场景作为第三块', () => {
     const shown = renderHomeBrief(host, { reason: 'NO_WATCH' }, { total: 0 }, { lifePath: { ok: false } });
     expect(shown).toBe(false);
     host.remove();
+  });
+});
+
+/* ================================================================== *
+ * 首页问题优先（产品 §3）：最多三个问题，行情在后
+ *
+ * 这一条之前只是「首页同时有问题卡和行情」。要求是**层级**：
+ * 问题在前、最多三个，行情在后。
+ * ================================================================== */
+describe('问题优先的层级', () => {
+  const brief = (n) => ({
+    ok: true,
+    status: 'ok',
+    hasWatch: true,
+    items: Array.from({ length: n }, (_, i) => ({
+      id: `e${i}`, title: `事件${i}`, time: '2026-10-29 10:00:00', level: 'high', assets: ['gold-intl'], fingerprint: `f${i}`,
+    })),
+    empty: false,
+  });
+
+  it('入口按钮在 DOM 里排在行情列表之前', () => {
+    const html = readFileSync('public/index.html', 'utf8');
+    expect(html.indexOf('id="home-brief"')).toBeLessThan(html.indexOf('id="rows"'));
+  });
+
+  it('选择面板不会让人选超过三个（第四个 disable）', () => {
+    const qs = ['a', 'b', 'c', 'd'].map((k) => ({ key: k, ask: `问题${k}` }));
+    const el = document.createElement('div');
+    el.innerHTML = watchPickerHTML(qs, ['a', 'b', 'c']).toString();
+    const boxes = [...el.querySelectorAll('input[data-watch]')];
+    const disabled = boxes.filter((b) => b.disabled).map((b) => b.dataset.watch);
+    expect(disabled).toEqual(['d']);
+  });
+
+  it('简报条目有上限（最多三条，不铺满首页）', () => {
+    const el = document.createElement('div');
+    el.innerHTML = homeBriefHTML(brief(9), { total: 0, items: [] });
+    const cards = el.querySelectorAll('.wb-card, .wb-item');
+    expect(cards.length).toBeLessThanOrEqual(3);
+  });
+});
+
+const brief_ = (n) => ({
+  ok: true, status: 'ok', hasWatch: true, empty: false,
+  items: Array.from({ length: n }, (_, i) => ({ id: `e${i}`, title: `事件${i}`, time: '2026-10-29 10:00:00', level: 'high', assets: ['gold-intl'], fingerprint: `f${i}` })),
+});
+
+describe('先看这三个问题', () => {
+  const qs = ['a', 'b', 'c', 'd', 'e'].map((k) => ({ key: k, ask: `问题${k}`, hint: '提示' }));
+
+  it('只渲染被选中的，且最多三条', () => {
+    const el = document.createElement('div');
+    el.innerHTML = topQuestionsHTML(qs, ['a', 'b', 'c', 'd', 'e']).toString();
+    expect(el.querySelectorAll('.hq-item')).toHaveLength(3);
+    expect(el.textContent).toContain('问题a');
+    expect(el.textContent).not.toContain('问题d');
+  });
+
+  it('没选任何问题时不渲染这一块（不给空壳）', () => {
+    expect(String(topQuestionsHTML(qs, []))).toBe('');
+  });
+
+  it('排在简报与预期之前（问题优先于资讯）', () => {
+    const el = document.createElement('div');
+    el.innerHTML = homeBriefHTML(brief_(1), { total: 0, items: [] }, null, { list: qs, chosen: ['a'] }).toString();
+    const first = el.firstElementChild;
+    expect(first.className).toContain('home-questions');
   });
 });

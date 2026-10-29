@@ -81,6 +81,8 @@ export async function refreshHomeBrief({ host, storage, nowMs = Date.now(), fetc
 
   renderHomeBrief(host, brief, ledger, {
     lifePath,
+    // 首页「先看这三个问题」（产品 §3）：清单来自 WATCH_QUESTIONS，选中项来自本地存储
+    questions: { list: WATCH_QUESTIONS.map((q) => ({ key: q.key, ask: q.ask, hint: q.hint })), chosen: watched },
     onPick: () => openPicker({ host, storage, fetchJson, nowMs }),
   });
 
