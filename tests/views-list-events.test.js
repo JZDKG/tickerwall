@@ -483,13 +483,23 @@ describe('events.loadEvents / mount：网络、增量 NEW、失败与定时器',
 
   function mockApi({ events = DATA, eventStatus = 200, study = { ok: true, kinds: [], rows: [] }, cal = { upcoming: [], today: '2026-10-26' } } = {}) {
     globalThis.fetch = vi.fn(async (url) => {
-      const u = String(url);
-      // 注意先判 eventstudy：'./api/events' 是 './api/eventstudy' 的前缀
-      if (u.includes('./api/eventstudy')) return { ok: true, status: 200, json: async () => study };
-      if (u.includes('./api/events')) {
+      /**
+       * 按**路径段**匹配，不用前缀 —— `'./api/events'` 是 `'./api/eventstudy'`
+       * 的前缀，靠 includes 判会先命中错的；而且请求层换成 buildUrl 生成 URL
+       * 之后形状会变，前缀匹配会静默走错分支（表现为 newIds 变 null）。
+       */
+      const path = (() => {
+        try {
+          return new URL(String(url), 'http://x').pathname;
+        } catch {
+          return String(url);
+        }
+      })();
+      if (path.endsWith('/api/eventstudy')) return { ok: true, status: 200, json: async () => study };
+      if (path.endsWith('/api/events')) {
         return { ok: eventStatus === 200, status: eventStatus, json: async () => events };
       }
-      if (u.includes('./api/calendar')) return { ok: true, status: 200, json: async () => cal };
+      if (path.endsWith('/api/calendar')) return { ok: true, status: 200, json: async () => cal };
       return { ok: true, status: 200, json: async () => ({}) };
     });
   }

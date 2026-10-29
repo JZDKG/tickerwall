@@ -12,6 +12,7 @@ import { eventsEl } from '../shared/dom.js';
 import { clockText, esc, html, safeHref } from '../shared/format.js';
 import { todayFocusHTML } from './today-focus.js';
 import { PLACEHOLDER, store } from '../shared/store.js';
+import { api } from '../shared/api.js';
 
 
 export let eventsTimer = null;
@@ -412,13 +413,12 @@ export function stopEventsTimer() {
 
 export async function loadEvents(force = false) {
   try {
-    const [evRes, cal, study] = await Promise.all([
-      fetch(`./api/events${force ? '?force=1' : ''}`, { cache: 'no-store' }),
+    const [data, cal, study] = await Promise.all([
+      // 共享请求层：与地图共用同一份 in-flight，两边同时进不会打两次
+      api.get('api/events', { params: force ? { force: 1 } : null }).then((r) => r.data),
       loadCalendarCached(force),
       loadEventStudy(false),
     ]);
-    if (!evRes.ok) throw new Error(`HTTP ${evRes.status}`);
-    const data = await evRes.json();
     if (!store.events) store.events = { data, calendar: cal, study, level: '', topic: '', origin: '', studyMode: 'auto', newIds: null, newCount: 0 };
     store.events.study = study;
 
@@ -586,8 +586,8 @@ export function eventStudyHTML(study, mode = 'auto') {
 export async function loadEventStudy(force = false) {
   if (!force && studyCacheClient) return studyCacheClient;
   try {
-    const res = await fetch(`./api/eventstudy${force ? '?force=1' : ''}`, { cache: 'no-store' });
-    if (res.ok) studyCacheClient = await res.json();
+    const { data } = await api.get('api/eventstudy', { params: force ? { force: 1 } : null });
+    studyCacheClient = data;
   } catch {
     /* 忽略 */
   }
