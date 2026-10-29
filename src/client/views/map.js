@@ -35,6 +35,7 @@ import { sparklinePath } from './map/logic/sparkline.js';
 import { mapEl } from '../shared/dom.js';
 import { dirOf, esc, fmtPrice, html, raw, safeHref } from '../shared/format.js';
 import { store } from '../shared/store.js';
+import { api } from '../shared/api.js';
 import { on } from '../shared/bus.js';
 import { loadCalendarCached } from '../shared/calendar.js';
 import { applyInverseMatrix, applyMatrix } from '../shared/matrix.js';
@@ -512,9 +513,9 @@ async function ensureMacro() {
 
   macroLoading = true;
   try {
-    const res = await fetch('./api/macro?window=250', { cache: 'no-store' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    store.macro = { data: await res.json(), at: Date.now() };
+    // 共享请求层：超时/取消/错误分类 + 跨视图去重（宏观接口最重）
+    const { data } = await api.get('api/macro', { params: { window: 250 } });
+    store.macro = { data, at: Date.now() };
     macroFailedAt = 0;
     renderHud();
   } catch {
@@ -536,9 +537,7 @@ const HISTORY_TTL_MS = 5 * 60 * 1000;
 async function ensureHistory() {
   if (historyCache && Date.now() - historyCache.at < HISTORY_TTL_MS) return historyCache.data;
   try {
-    const res = await fetch('./api/events/history?hours=24', { cache: 'no-store' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
+    const { data } = await api.get('api/events/history', { params: { hours: 24 } });
     historyCache = { data, at: Date.now() };
     return data;
   } catch {
@@ -1449,11 +1448,12 @@ export function stopMapTimer() {
 
 export async function loadMap() {
   try {
-    const [evRes, cal] = await Promise.all([
-      fetch('./api/events', { cache: 'no-store' }),
+    const [evOut, cal] = await Promise.all([
+      // 事件流失败不该让整张地图白屏：单独 catch 成 null
+      api.get('api/events').then(({ data }) => data).catch(() => null),
       loadCalendarCached(false),
     ]);
-    const data = evRes.ok ? await evRes.json() : null;
+    const data = evOut;
     if (!store.events) store.events = { data, calendar: cal, level: '', topic: '', studyMode: 'auto', newIds: null, newCount: 0 };
     if (data) {
       store.events.data = data;

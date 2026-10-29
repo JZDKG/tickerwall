@@ -8,12 +8,14 @@
  * ================================================================== */
 
 import { store } from './store.js';
+import { api } from './api.js';
 
 export async function loadCalendarCached(force = false) {
   if (!force && store.calendar) return store.calendar;
   try {
-    const res = await fetch('./api/calendar', { cache: 'no-store' });
-    if (res.ok) store.calendar = await res.json();
+    // 走共享请求层：拿超时/取消/错误分类与跨视图去重，失败仍然静默
+    const { data } = await api.get('api/calendar');
+    store.calendar = data;
   } catch {
     /* 日历失败不影响事件流 */
   }

@@ -172,3 +172,11 @@ export function createApi({ base = './', timeoutMs = 20_000, fetchImpl = null, n
 
   return { get, cancel, inflightSize: () => inflight.size, base, timeoutMs };
 }
+
+/**
+ * 共享实例（E07）。
+ *
+ * 用单例的原因：**去重表要跨视图生效**。地图与事件中心都会取 `api/events`，
+ * 各自 new 一个 api 就各有一张 in-flight 表，同一时刻仍然打两次。
+ */
+export const api = createApi();

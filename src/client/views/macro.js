@@ -10,6 +10,7 @@
 
 import { macroEl } from '../shared/dom.js';
 import { store } from '../shared/store.js';
+import { api } from '../shared/api.js';
 import { clockText, dirOf, esc, html, raw } from '../shared/format.js';
 import { macroGraphSectionHTML, findEdge, EDGE_BY_ID } from '/macro-graph.js';
 // 图谱消费「同一份解释」：取数与状态判断在 explanations/graph.js（纯函数 + 60s 缓存）。
@@ -809,12 +810,10 @@ export async function loadMacro(windowSize = 250, force = false) {
   macroEl.innerHTML = html`<div class="d-loading">正在采集 13 个市场的历史数据…</div>`.toString();
   try {
     const freq = macroState?.freq ?? 'day';
-    const res = await fetch(
-      `./api/macro?window=${windowSize}&freq=${freq}${force ? '&force=1' : ''}`,
-      { cache: 'no-store' },
-    );
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
+    // 共享请求层：宏观是全站最重的接口，跨视图去重 + 超时在此生效
+    const params = { window: windowSize, freq };
+    if (force) params.force = 1;
+    const { data } = await api.get('api/macro', { params });
     if (!macroState) {
       macroState = {
         data,
