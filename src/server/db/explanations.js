@@ -105,6 +105,33 @@ export function latestObservationFor(instrumentId, observedAt) {
   return { id: String(row.id), revision: Number(row.revision ?? 1), value: Number(row.value) };
 }
 
+/**
+ * 一次取回多个指标的「每个日期的最新修订号」。
+ *
+ * 为什么需要批量：逐日调用 `latestObservationFor` 会让每次解释生成付出
+ * N 指标 × M 日的同步 SQL —— Ubuntu 上冷启动直接把这批测试拖过 5 秒超时
+ * （本地快得看不出来）。这里一条语句拿完。
+ *
+ * @param {string[]} instrumentIds
+ * @returns {Map<string, number>} key = `指标@日期`，value = 最大修订号
+ */
+export function latestRevisionsFor(instrumentIds) {
+  const ids = [...new Set((instrumentIds ?? []).filter(Boolean).map(String))];
+  const out = new Map();
+  if (!ids.length) return out;
+  const placeholders = ids.map(() => '?').join(',');
+  const rows = db()
+    .prepare(
+      `SELECT instrument_id, observed_at, MAX(revision) AS rev
+       FROM observation_revisions
+       WHERE instrument_id IN (${placeholders})
+       GROUP BY instrument_id, observed_at`,
+    )
+    .all(...ids);
+  for (const r of rows) out.set(`${r.instrument_id}@${r.observed_at}`, Number(r.rev ?? 1));
+  return out;
+}
+
 export function readObservationRevision(id) {
   const row = db().prepare('SELECT * FROM observation_revisions WHERE id = ?').get(String(id));
   if (!row) return null;

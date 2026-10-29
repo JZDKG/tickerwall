@@ -49,6 +49,7 @@ export {
   writeObservationRevisions,
   readObservationRevision,
   latestObservationFor,
+  latestRevisionsFor,
   readObservationAsOf,
   countObservationRevisions,
   writeArticle,

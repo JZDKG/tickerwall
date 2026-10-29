@@ -28,6 +28,7 @@ import {
   writeExplanation,
   writeObservationRevisions,
   latestObservationFor,
+  latestRevisionsFor,
   readExplanation,
   latestExplanation,
   listExplanationHistory,
@@ -640,22 +641,19 @@ export async function getExplanationResponse({
   }
 
   /**
-   * 把「这一天的最新修订号」挂到观测上。
+   * 把「这一天的最新修订号」挂到观测上（**一次批量查询**）。
    *
-   * 为什么在组合之前挂：解释里引用的观测 id 要指向**当时那一版**。
-   * 落库时若发现同一 (指标, 日期) 的值变了，会写 `#rN` 的新行；
-   * 这里读回最新的那一版，让新解释引用它，而不是继续引用 r1。
-   * 库不可用时静默降级（revisionOf 缺失 → id 退回 `指标@日期`）。
+   * 为什么批量：逐日查会让每次生成付出 N 指标 × M 日的同步 SQL，
+   * Ubuntu 冷启动时直接把这批用例拖过 5 秒超时（本地看不出来）。
+   * 库不可用时静默降级：没有 revisionOf → id 退回 `指标@日期`。
    */
   try {
-    const revisionOf = (instrumentId, date) => {
-      const row = latestObservationFor(instrumentId, date);
-      return row ? row.revision : null;
-    };
-    for (const [, obs] of observations) {
+    const revMap = latestRevisionsFor([...observations.keys()]);
+    const revisionOf = (instrumentId, date) => revMap.get(`${instrumentId}@${date}`) ?? null;
+    for (const [id, obs] of observations) {
       obs.revisionOf = revisionOf;
       const dates = obs?.series?.dates ?? [];
-      const revs = dates.map((d) => revisionOf(obs.instrumentId ?? '', d)).filter((x) => x != null);
+      const revs = dates.map((d) => revisionOf(id, d)).filter((x) => x != null);
       obs.revision = revs.length ? Math.max(...revs) : 1;
     }
   } catch {
