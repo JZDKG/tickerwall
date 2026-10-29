@@ -85,6 +85,26 @@ export function writeObservationRevisions(records) {
   return written;
 }
 
+/**
+ * 某指标某一天的**最新修订**。
+ *
+ * 观测是追加的：同一 logical key 被修订后会有 `#r2`、`#r3` 的新行，
+ * 旧行保持不变 —— 这样「新结论 + 旧证据」才有可能被发现。
+ *
+ * @returns {{revision:number, id:string, value:number}|null}
+ */
+export function latestObservationFor(instrumentId, observedAt) {
+  const row = db()
+    .prepare(
+      `SELECT id, revision, value FROM observation_revisions
+       WHERE instrument_id = ? AND observed_at = ?
+       ORDER BY revision DESC LIMIT 1`,
+    )
+    .get(String(instrumentId), String(observedAt));
+  if (!row) return null;
+  return { id: String(row.id), revision: Number(row.revision ?? 1), value: Number(row.value) };
+}
+
 export function readObservationRevision(id) {
   const row = db().prepare('SELECT * FROM observation_revisions WHERE id = ?').get(String(id));
   if (!row) return null;

@@ -48,6 +48,7 @@ export {
 export {
   writeObservationRevisions,
   readObservationRevision,
+  latestObservationFor,
   readObservationAsOf,
   countObservationRevisions,
   writeArticle,

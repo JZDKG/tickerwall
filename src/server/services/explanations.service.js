@@ -27,6 +27,7 @@ import { readDailyCache, writeDailyCache } from '../db/index.js';
 import {
   writeExplanation,
   writeObservationRevisions,
+  latestObservationFor,
   readExplanation,
   latestExplanation,
   listExplanationHistory,
@@ -318,6 +319,7 @@ export function buildExplanation({
     targetId: assetId,
     targetDefinition: assetDefinition,
     targetSeries: targetObs?.series ?? null,
+    targetObs,
     drivers: [...observations.entries()].filter(([id]) => id !== assetId && relevance.has(id)),
     windowKey,
     anchor,
@@ -418,12 +420,23 @@ export function persistReferencedObservations(explanation, observations, { known
   for (const [instrumentId, obs] of observations) {
     const dates = obs?.series?.dates ?? [];
     for (const date of dates) {
-      const id = observationIdOf(instrumentId, date);
-      if (!wanted.has(id)) continue;
       const idx = dates.indexOf(date);
+      const logicalKey = observationIdOf(instrumentId, date);
+      /**
+       * 同一 (指标, 日期) 的值变了 → 写一个新的**修订版本**（`#r2`、`#r3`…），
+       * 旧版本保留。这样「这条解释后来怎么变了」才能被追溯；
+       * 值没变就沿用原 id（`INSERT OR IGNORE` 不会重复写）。
+       */
+      const prev = latestObservationFor(instrumentId, date);
+      const value = obs.series.values[idx];
+      const sameValue = prev && Number.isFinite(prev.value) && Math.abs(prev.value - Number(value)) < 1e-9;
+      const revision = prev ? (sameValue ? prev.revision : prev.revision + 1) : 1;
+      const id = sameValue ? prev.id : observationIdOf(instrumentId, date, revision);
+      const wantedIds = new Set([id, logicalKey]);
+      if (![...wantedIds].some((x) => wanted.has(x))) continue;
       const record = {
         id,
-        logicalKey: id,
+        logicalKey,
         instrumentId,
         observedAt: date,
         publishedAt: null,
@@ -432,7 +445,7 @@ export function persistReferencedObservations(explanation, observations, { known
         value: obs.series.values[idx],
         unit: obs.definition?.unit ?? null,
         valueDomain: obs.definition?.valueDomain ?? 'positive',
-        revision: 1,
+        revision,
         quality: obs.quality ?? null,
         sourceRef: obs.source ?? null,
       };
@@ -624,6 +637,29 @@ export async function getExplanationResponse({
         meta: { evaluatedAt: new Date().toISOString(), freshness: 'unavailable', refreshStatus: 'failed', retryAfterMs: 5000 },
       },
     };
+  }
+
+  /**
+   * 把「这一天的最新修订号」挂到观测上。
+   *
+   * 为什么在组合之前挂：解释里引用的观测 id 要指向**当时那一版**。
+   * 落库时若发现同一 (指标, 日期) 的值变了，会写 `#rN` 的新行；
+   * 这里读回最新的那一版，让新解释引用它，而不是继续引用 r1。
+   * 库不可用时静默降级（revisionOf 缺失 → id 退回 `指标@日期`）。
+   */
+  try {
+    const revisionOf = (instrumentId, date) => {
+      const row = latestObservationFor(instrumentId, date);
+      return row ? row.revision : null;
+    };
+    for (const [, obs] of observations) {
+      obs.revisionOf = revisionOf;
+      const dates = obs?.series?.dates ?? [];
+      const revs = dates.map((d) => revisionOf(obs.instrumentId ?? '', d)).filter((x) => x != null);
+      obs.revision = revs.length ? Math.max(...revs) : 1;
+    }
+  } catch {
+    /* 读修订失败不影响解释生成 */
   }
 
   const targetObs = observations.get(asset);

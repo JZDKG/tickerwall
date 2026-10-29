@@ -14,6 +14,7 @@
  * ================================================================== */
 
 import { changeBetween, presentChange, computeChange, windowSpec } from './alignment.js';
+import { observationIdOf } from './evidence.js';
 import { CHANNEL_STATUS, RELATION_TYPES, CONDITION_TEXT } from './mechanisms.js';
 
 export const EXPLANATION_SCHEMA_VERSION = 1;
@@ -51,7 +52,39 @@ function inWindowText(window) {
  *
  * 每个事实都带 window、单位与观测标识；界面「查看依据」用它们定位原始数据。
  */
-export function buildFacts({ targetId, targetDefinition, targetSeries, drivers, windowKey, anchor = null }) {
+/**
+ * 事实里引用的观测 id。
+ *
+ * 与证据层同一套规则：**按每个端点各自的修订**生成（`指标@日期#rN`）。
+ * 原来这里手拼 `指标@日期`，于是同一份解释里事实指向 r1、证据指向 r2 ——
+ * 历史回看时两处对不上。
+ */
+function factIds(instrumentId, change, obs) {
+  const revisionOf = typeof obs?.revisionOf === 'function' ? obs.revisionOf : null;
+  const revAt = (date) => {
+    if (!revisionOf) return obs?.revision ?? null;
+    try {
+      return revisionOf(instrumentId, date) ?? obs?.revision ?? null;
+    } catch {
+      return obs?.revision ?? null;
+    }
+  };
+  return [
+    observationIdOf(instrumentId, change.start, revAt(change.start)),
+    observationIdOf(instrumentId, change.end, revAt(change.end)),
+  ];
+}
+
+export function buildFacts({
+  targetId,
+  targetDefinition,
+  targetSeries,
+  /** 目标观测对象（可选）：只有它带 revisionOf，用于把事实引用指到具体修订 */
+  targetObs = null,
+  drivers,
+  windowKey,
+  anchor = null,
+}) {
   const spec = windowSpec(windowKey) ?? windowSpec('session');
   const facts = [];
   const targetChange = targetSeries
@@ -69,7 +102,7 @@ export function buildFacts({ targetId, targetDefinition, targetSeries, drivers, 
       change: presentChange(targetChange),
       level: { from: targetChange.from, to: targetChange.to },
       unit: targetDefinition?.unit ?? null,
-      observationIds: [`${targetId}@${targetChange.start}`, `${targetId}@${targetChange.end}`],
+      observationIds: factIds(targetId, targetChange, targetObs),
     });
   }
   /**
@@ -97,7 +130,7 @@ export function buildFacts({ targetId, targetDefinition, targetSeries, drivers, 
       change: presentChange(ch),
       level: { from: ch.from, to: ch.to },
       unit: obs.definition?.unit ?? null,
-      observationIds: [`${instrumentId}@${ch.start}`, `${instrumentId}@${ch.end}`],
+      observationIds: factIds(instrumentId, ch, obs),
     });
   }
   return facts;

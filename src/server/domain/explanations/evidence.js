@@ -26,6 +26,19 @@ import { CHANNEL_STATUS } from './mechanisms.js';
  * 仍指向它，于是「新结论 + 旧证据」。修订号 > 1 时加上 `#rN`，
  * 让不同修订成为不同事实（r1 保持人类可读的原样，避免全站链接变丑）。
  */
+/** 优先按日期查修订；查不到（或没有这个能力）就退回整体修订号 */
+function revisionAt(revisionOf, instrumentId, date, fallback) {
+  if (typeof revisionOf === 'function') {
+    try {
+      const r = revisionOf(instrumentId, date);
+      if (r != null) return r;
+    } catch {
+      /* 读不到就用兜底值 */
+    }
+  }
+  return fallback;
+}
+
 export function observationIdOf(instrumentId, date, revision = null) {
   const rev = Number(revision);
   return Number.isFinite(rev) && rev > 1 ? `${instrumentId}@${date}#r${rev}` : `${instrumentId}@${date}`;
@@ -40,7 +53,7 @@ export function isMaterialChange(change, minAbs) {
   return Math.abs(shown.value) >= threshold;
 }
 
-function evidenceEntry({ role, instrumentId, definition, change, note, revision = null }) {
+function evidenceEntry({ role, instrumentId, definition, change, note, revision = null, revisionOf = null }) {
   const shown = presentChange(change);
   return {
     role,
@@ -50,8 +63,15 @@ function evidenceEntry({ role, instrumentId, definition, change, note, revision 
     window: { start: change?.start ?? null, end: change?.end ?? null },
     level: { from: change?.from ?? null, to: change?.to ?? null },
     change: shown ? { value: Number(shown.value.toFixed(6)), unit: shown.unit } : null,
+    /**
+     * 引用按**每个端点各自的修订**生成：同一窗口里可能只有终点被修订过，
+     * 给两端都打同一个 `#rN` 会让起点指向一个不存在的版本。
+     */
     observationIds: change
-      ? [observationIdOf(instrumentId, change.start, revision), observationIdOf(instrumentId, change.end, revision)]
+      ? [
+          observationIdOf(instrumentId, change.start, revisionAt(revisionOf, instrumentId, change.start, revision)),
+          observationIdOf(instrumentId, change.end, revisionAt(revisionOf, instrumentId, change.end, revision)),
+        ]
       : [],
     note: note ?? null,
   };
@@ -237,8 +257,8 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
       missing,
       window: { key: windowKey, start: chTo?.start ?? null, end: chTo?.end ?? null, observations: aligned.n },
       evidence: [
-        evidenceEntry({ role: 'background', instrumentId: mechanism.from, definition: fromObs?.definition, change: chFrom, revision: fromObs?.revision ?? null }),
-        evidenceEntry({ role: 'background', instrumentId: mechanism.to, definition: toObs?.definition, change: chTo, revision: toObs?.revision ?? null }),
+        evidenceEntry({ role: 'background', instrumentId: mechanism.from, definition: fromObs?.definition, change: chFrom, revision: fromObs?.revision ?? null, revisionOf: fromObs?.revisionOf ?? null }),
+        evidenceEntry({ role: 'background', instrumentId: mechanism.to, definition: toObs?.definition, change: chTo, revision: toObs?.revision ?? null, revisionOf: toObs?.revisionOf ?? null }),
       ].filter((e) => e.change),
     };
   }
@@ -300,6 +320,7 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
           definition: fromObs.definition,
           change: chFromRaw,
           revision: fromObs?.revision ?? null,
+          revisionOf: fromObs?.revisionOf ?? null,
           note: `历史背景：${chFromRaw?.start ?? '?'} → ${chFromRaw?.end ?? '?'}，不在本次窗口内`,
         }),
         evidenceEntry({
@@ -308,6 +329,7 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
           definition: toObs.definition,
           change: chToRaw,
           revision: toObs?.revision ?? null,
+          revisionOf: toObs?.revisionOf ?? null,
           note: `历史背景：${chToRaw?.start ?? '?'} → ${chToRaw?.end ?? '?'}，不在本次窗口内`,
         }),
       ].filter((e) => e.change),
@@ -334,8 +356,8 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
       reasons: ['NO_MATERIAL_DRIVER_CHANGE'],
       window: { key: windowKey, start: chFrom.start, end: chFrom.end, observations: aligned.n },
       evidence: [
-        evidenceEntry({ role: 'background', instrumentId: mechanism.from, definition: fromObs.definition, change: chFrom, revision: fromObs?.revision ?? null }),
-        evidenceEntry({ role: 'background', instrumentId: mechanism.to, definition: toObs.definition, change: chTo, revision: toObs?.revision ?? null }),
+        evidenceEntry({ role: 'background', instrumentId: mechanism.from, definition: fromObs.definition, change: chFrom, revision: fromObs?.revision ?? null, revisionOf: fromObs?.revisionOf ?? null }),
+        evidenceEntry({ role: 'background', instrumentId: mechanism.to, definition: toObs.definition, change: chTo, revision: toObs?.revision ?? null, revisionOf: toObs?.revisionOf ?? null }),
       ].filter((e) => e.change),
     };
   }
@@ -379,7 +401,7 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
           reasons: ['NEEDS_REAL_YIELD_CONFIRMATION'],
           window: { key: windowKey, start: windowDates[0], end: windowDates[1], observations: aligned.n },
           evidence: [
-            evidenceEntry({ role: 'background', instrumentId: mechanism.from, definition: fromObs.definition, change: chFrom, revision: fromObs?.revision ?? null }),
+            evidenceEntry({ role: 'background', instrumentId: mechanism.from, definition: fromObs.definition, change: chFrom, revision: fromObs?.revision ?? null, revisionOf: fromObs?.revisionOf ?? null }),
             evidenceEntry({ role: 'background', instrumentId: 'dfii10', definition: realObs.definition, change: { start: windowDates[0], end: windowDates[1], change: dReal / 100, changeUnit: 'pp' }, revision: realObs?.revision ?? null }),
           ].filter((e) => e.change),
         };
@@ -405,8 +427,8 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
       reasons: ['NO_MATERIAL_TARGET_CHANGE'],
       window: { key: windowKey, start: chFrom.start, end: chFrom.end, observations: aligned.n },
       evidence: [
-        evidenceEntry({ role: 'background', instrumentId: mechanism.from, definition: fromObs.definition, change: chFrom, revision: fromObs?.revision ?? null }),
-        evidenceEntry({ role: 'background', instrumentId: mechanism.to, definition: toObs.definition, change: chTo, revision: toObs?.revision ?? null }),
+        evidenceEntry({ role: 'background', instrumentId: mechanism.from, definition: fromObs.definition, change: chFrom, revision: fromObs?.revision ?? null, revisionOf: fromObs?.revisionOf ?? null }),
+        evidenceEntry({ role: 'background', instrumentId: mechanism.to, definition: toObs.definition, change: chTo, revision: toObs?.revision ?? null, revisionOf: toObs?.revisionOf ?? null }),
       ].filter((e) => e.change),
     };
   }
@@ -428,8 +450,8 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
         reasons: ['SHOCK_TYPE_UNCLASSIFIED'],
         window: { key: windowKey, start: chFrom.start, end: chFrom.end, observations: aligned.n },
         evidence: [
-          evidenceEntry({ role: 'background', instrumentId: mechanism.from, definition: fromObs.definition, change: chFrom, revision: fromObs?.revision ?? null }),
-          evidenceEntry({ role: 'background', instrumentId: mechanism.to, definition: toObs.definition, change: chTo, revision: toObs?.revision ?? null }),
+          evidenceEntry({ role: 'background', instrumentId: mechanism.from, definition: fromObs.definition, change: chFrom, revision: fromObs?.revision ?? null, revisionOf: fromObs?.revisionOf ?? null }),
+          evidenceEntry({ role: 'background', instrumentId: mechanism.to, definition: toObs.definition, change: chTo, revision: toObs?.revision ?? null, revisionOf: toObs?.revisionOf ?? null }),
         ].filter((e) => e.change),
       };
     }
@@ -448,8 +470,8 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
         reasons: ['MISSING_INSTRUMENT:dfii10', 'NEEDS_REAL_YIELD_CONFIRMATION'],
         window: { key: windowKey, start: chFrom.start, end: chFrom.end, observations: aligned.n },
         evidence: [
-          evidenceEntry({ role: 'background', instrumentId: mechanism.from, definition: fromObs.definition, change: chFrom, revision: fromObs?.revision ?? null }),
-          evidenceEntry({ role: 'background', instrumentId: mechanism.to, definition: toObs.definition, change: chTo, revision: toObs?.revision ?? null }),
+          evidenceEntry({ role: 'background', instrumentId: mechanism.from, definition: fromObs.definition, change: chFrom, revision: fromObs?.revision ?? null, revisionOf: fromObs?.revisionOf ?? null }),
+          evidenceEntry({ role: 'background', instrumentId: mechanism.to, definition: toObs.definition, change: chTo, revision: toObs?.revision ?? null, revisionOf: toObs?.revisionOf ?? null }),
         ].filter((e) => e.change),
       };
     }
@@ -481,6 +503,7 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
         definition: fromObs.definition,
         change: chFrom,
         revision: fromObs?.revision ?? null,
+        revisionOf: fromObs?.revisionOf ?? null,
       }),
       evidenceEntry({
         role: consistent ? 'support' : 'contrary',
@@ -488,6 +511,7 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
         definition: toObs.definition,
         change: chTo,
         revision: toObs?.revision ?? null,
+        revisionOf: toObs?.revisionOf ?? null,
       }),
     ].filter((e) => e.change),
   };

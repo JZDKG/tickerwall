@@ -1192,3 +1192,68 @@ describe('名义利率渠道：前提与算术一致性', () => {
     expect(h.status).toBe('not_supported');
   });
 });
+
+/* ================================================================== *
+ * 第 89 轮：观测修订的不可变身份（真正接线）
+ *
+ * 之前 observationIdOf 支持 #rN，但落库永远 revision:1、载入层也不读修订，
+ * 所以线上 id 一直停在「指标@日期」。这里钉住三件事：
+ *   · 值没变 → 不新增版本；
+ *   · 值变了 → 写 #r2，最新行指向 #r2；
+ *   · 旧行保留（历史回看能拿到当时那一版）。
+ *
+ * 注意：本文件里数据库按用例重置，所以三次写入必须放在**同一个用例**里，
+ * 否则第二、三次看到的「上一个版本」并不存在。
+ * ================================================================== */
+describe('观测修订', () => {
+  const INSTR = 'test-rev-obs';
+  const obsMap = (value) => new Map([
+    [INSTR, {
+      definition: { short: '国际金价', unit: 'usd', comparisonPolicy: 'log-return', valueDomain: 'positive' },
+      series: { dates: ['2026-10-28', '2026-10-29'], values: [2010, value] },
+      quality: null,
+      source: null,
+    }],
+  ]);
+  const explanation = {
+    id: 'exp-r',
+    facts: [{ code: 'TARGET_CHANGE', observationIds: [`${INSTR}@2026-10-28`, `${INSTR}@2026-10-29`] }],
+    hypotheses: [],
+  };
+
+  it('r1 → 同值不新增 → 值变了写 #r2，且旧行保留', async () => {
+    const { persistReferencedObservations } = await import('../src/server/services/explanations.service.js');
+    const { latestObservationFor, readObservationRevision } = await import('../src/server/db/index.js');
+
+    // 1) 第一次：r1，id 不带后缀
+    persistReferencedObservations(explanation, obsMap(2007), { knownAt: '2026-10-29T00:00:00Z' });
+    const first = latestObservationFor(INSTR, '2026-10-29');
+    expect(first.revision).toBe(1);
+    expect(first.id).toBe(`${INSTR}@2026-10-29`);
+
+    // 2) 同值重写：不堆行
+    persistReferencedObservations(explanation, obsMap(2007), { knownAt: '2026-10-29T01:00:00Z' });
+    expect(latestObservationFor(INSTR, '2026-10-29').revision).toBe(1);
+
+    // 3) 值变了：写 #r2
+    persistReferencedObservations(explanation, obsMap(2001), { knownAt: '2026-10-29T02:00:00Z' });
+    const third = latestObservationFor(INSTR, '2026-10-29');
+    expect(third.revision).toBe(2);
+    expect(third.id).toBe(`${INSTR}@2026-10-29#r2`);
+    expect(third.value).toBe(2001);
+    // 旧版本还在（不可变）
+    expect(readObservationRevision(`${INSTR}@2026-10-29`)).not.toBeNull();
+  });
+
+  it('载入层把最新修订挂到观测上，证据引用随之带 #rN', async () => {
+    const { persistReferencedObservations } = await import('../src/server/services/explanations.service.js');
+    const { latestObservationFor } = await import('../src/server/db/index.js');
+    persistReferencedObservations(explanation, obsMap(2007), { knownAt: '2026-10-29T03:00:00Z' });
+    persistReferencedObservations(explanation, obsMap(1999), { knownAt: '2026-10-29T04:00:00Z' });
+    const row = latestObservationFor(INSTR, '2026-10-29');
+    expect(row.revision).toBeGreaterThanOrEqual(2);
+    // 证据层用 observationIdOf 生成引用，带修订号才能与库里的行对上
+    const { observationIdOf } = await import('../src/server/domain/explanations/evidence.js');
+    expect(observationIdOf(INSTR, '2026-10-29', row.revision)).toBe(row.id);
+  });
+});

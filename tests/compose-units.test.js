@@ -13,6 +13,7 @@ import {
   contentStatusOf,
   verifyExplanation,
   buildUnknowns,
+  buildFacts,
 } from '../src/server/domain/explanations/compose.js';
 
 describe('formatChange', () => {
@@ -112,5 +113,60 @@ describe('buildUnknowns 的驱动质量分支', () => {
     const out = buildUnknowns({ hypotheses: [], facts: [], driverQuality: [{ instrumentId: 'dxy', status: 'unavailable' }], events: [{}] });
     const text = out.map((u) => u.text ?? '').join(' ');
     expect(text).toContain('没有可用观测');
+  });
+});
+
+/* ================================================================== *
+ * 第 90 轮：事实里的观测引用也要带修订号
+ *
+ * 线上复现过：同一份解释里「事实」指向 r1、「证据」指向 r2 ——
+ * 历史回看时两处对不上。根因是 compose 里手拼 `指标@日期`。
+ * ================================================================== */
+describe('事实引用的修订号', () => {
+  const series = { dates: ['2026-10-28', '2026-10-29'], values: [2010, 2007] };
+
+  it('只有终点被修订时：起点不带后缀、终点带 #r2', () => {
+    const targetObs = {
+      definition: { short: '国际金价', unit: 'usd', comparisonPolicy: 'log-return' },
+      series,
+      revisionOf: (id, date) => (date === '2026-10-29' ? 2 : 1),
+    };
+    const facts = buildFacts({
+      targetId: 'gold-intl',
+      targetDefinition: targetObs.definition,
+      targetSeries: series,
+      targetObs,
+      drivers: [],
+      windowKey: 'session',
+      anchor: { start: '2026-10-28', end: '2026-10-29' },
+    });
+    const ids = facts.find((f) => f.code === 'TARGET_CHANGE').observationIds;
+    expect(ids).toEqual(['gold-intl@2026-10-28', 'gold-intl@2026-10-29#r2']);
+  });
+
+  it('没有 revisionOf 时退回可读形式（不编后缀）', () => {
+    const facts = buildFacts({
+      targetId: 'gold-intl',
+      targetDefinition: { short: '国际金价', unit: 'usd', comparisonPolicy: 'log-return' },
+      targetSeries: series,
+      drivers: [],
+      windowKey: 'session',
+      anchor: { start: '2026-10-28', end: '2026-10-29' },
+    });
+    expect(facts.find((f) => f.code === 'TARGET_CHANGE').observationIds)
+      .toEqual(['gold-intl@2026-10-28', 'gold-intl@2026-10-29']);
+  });
+
+  it('revisionOf 抛错时不影响生成（降级到可读形式）', () => {
+    const targetObs = {
+      definition: { short: '国际金价', unit: 'usd', comparisonPolicy: 'log-return' },
+      series,
+      revisionOf: () => { throw new Error('db down'); },
+    };
+    const facts = buildFacts({
+      targetId: 'gold-intl', targetDefinition: targetObs.definition, targetSeries: series, targetObs,
+      drivers: [], windowKey: 'session', anchor: { start: '2026-10-28', end: '2026-10-29' },
+    });
+    expect(facts.find((f) => f.code === 'TARGET_CHANGE').observationIds[0]).toBe('gold-intl@2026-10-28');
   });
 });
