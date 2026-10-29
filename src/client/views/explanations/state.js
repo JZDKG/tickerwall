@@ -14,6 +14,7 @@ import { explanationCardHTML } from './card.js';
 import { publishExplanation } from '../../shared/explanation-store.js';
 import { loadExplanationHistory, loadExplanationVersion, historyListHTML, replayBannerHTML } from './history.js';
 import { diffPanelHTML, diffToggleHTML } from './diff-panel.js';
+import { getJsonWithStatus } from '../../shared/fetch-json.js';
 
 /** 解释能力开关（方案 §10.3：先置于可关闭的功能开关后） */
 export const EXPLAIN_FLAG_KEY = 'explain-card-enabled';
@@ -122,21 +123,11 @@ export function applyResponse(state, { status, body }) {
  * @returns {Promise<{status:number, body:object}>}
  */
 export async function fetchExplanation({ assetId, windowKey, force = false, fetchImpl } = {}) {
-  const f = fetchImpl ?? (typeof fetch === 'function' ? fetch : null);
-  if (!f) return { status: 503, body: { ok: false, error: '当前环境没有 fetch' } };
-  const qs = `asset=${encodeURIComponent(assetId)}&window=${encodeURIComponent(windowKey)}${force ? '&force=1' : ''}`;
-  try {
-    const res = await f(`./api/explanations?${qs}`, { cache: 'no-store' });
-    let body = null;
-    try {
-      body = await res.json();
-    } catch {
-      body = null;
-    }
-    return { status: res.status, body: body ?? {} };
-  } catch (err) {
-    return { status: 503, body: { ok: false, error: String(err?.message ?? err) } };
-  }
+  // 统一出口：传了 fetchImpl 走注入（测试），否则走共享 api（生产）
+  return getJsonWithStatus('api/explanations', {
+    fetchImpl: fetchImpl ?? null,
+    query: `asset=${encodeURIComponent(assetId)}&window=${encodeURIComponent(windowKey)}${force ? '&force=1' : ''}`,
+  });
 }
 
 /**
@@ -229,16 +220,10 @@ export function renderExplainCard(state, { assetName } = {}) {
  */
 export async function fetchExplanationDiff(id, { withId = null, fetchImpl } = {}) {
   if (!id) return { status: 400, body: { ok: false, error: '缺少解释版本号' } };
-  const f = fetchImpl ?? (typeof fetch === 'function' ? fetch : null);
-  if (!f) return { status: 503, body: { ok: false, error: '当前环境没有 fetch' } };
-  const qs = withId ? `?with=${encodeURIComponent(withId)}` : '';
-  try {
-    const res = await f(`./api/explanations/${encodeURIComponent(id)}/diff${qs}`, { cache: 'no-store' });
-    const body = await res.json().catch(() => ({}));
-    return { status: res.status, body: body ?? {} };
-  } catch (err) {
-    return { status: 503, body: { ok: false, error: String(err?.message ?? err) } };
-  }
+  return getJsonWithStatus(`api/explanations/${encodeURIComponent(id)}/diff`, {
+    fetchImpl: fetchImpl ?? null,
+    query: withId ? `with=${encodeURIComponent(withId)}` : '',
+  });
 }
 
 export async function refreshHistory(state, { fetchImpl } = {}) {

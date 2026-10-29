@@ -360,8 +360,8 @@ SQLite 提供 Online Backup API，也支持 `VACUUM INTO`。后续在线备份�
 | E03 CI、vendor 核对、发布包冒烟 | **已完成** | [`tools/verify-build.mjs`](../tools/verify-build.mjs)：两个独立临时目录各构建一次，比对文件集合与 sha256，再与 `public/vendor/` 逐文件比；[`.github/workflows/ci.yml`](../.github/workflows/ci.yml)：doctor → `npm ci` → `npm test` → `test:cov` → `verify:build` → **`npm run pack`** | `npm run verify:build` → 2 个文件 / 1115.6 KB，两次构建摘要一致且与入库产物一致；`npm run pack` → 719 个文件 / 1252.9 KB，**解压到全新临时目录起真进程，/api/health + / + /app.css 均 200** | 无（Docker 构建留给有 daemon 的环境） |
 | E04 数据契约与来源注册表 | **已完成** | [`src/contracts/`](../src/contracts/)（Observation / DataQuality / 解释外壳三份 JSON Schema，带 `$id` 与 examples）；[`contracts/index.js`](../src/server/contracts/index.js)（Ajv + ajv-formats，返回带字段路径的 `{ok, errors}`，并提供「合格/不合格」分组而不丢数据）；[`providers/registry.js`](../src/server/providers/registry.js)（15 个源：kinds / 超时与预算 / 能力开关 / 两级时间 / 凭据需求）；写库前校验接入 `persistReferencedObservations`（不合格进 `rejected` 并计入 `meta.invalidObservations`） | `tests/contracts.test.js`（21：单位、值域、日期格式、多字段、批量不丢、注册表自洽、标的↔适配器全覆盖） | 仅覆盖「观测」这一条链路；HTTP 响应尚未逐端点跑 schema 校验（留给 E07） |
 | E05 迁移、导入、flush、备份恢复 | **已完成** | ① `schema_migrations(version, name, checksum, applied_at)` + 漂移检测（改过的迁移立刻报错）+ 「库比程序新」拒绝打开；② 导入抽到 [`db/legacy-import.js`](../src/server/db/legacy-import.js)，`import_ledger` 按来源记 `ok/absent/partial/failed` + 文件（或目录）校验和，只有全部成功才写总体标记，失败项下次启动重试；③ [`db/sqlite.js`](../src/server/db/sqlite.js) 的维护窗口：`stopWrites()`（`PRAGMA query_only=ON`，语句层拦写）、`flush()`（排空钩子 + WAL checkpoint）、`withWriteAccess()`（同步回调 + 自动收回）；④ [`db/maintenance.js`](../src/server/db/maintenance.js) 备份/校验/恢复；⑤ [`tools/backup.mjs`](../tools/backup.mjs)、[`tools/restore.mjs`](../tools/restore.mjs) + `POST /api/maintenance/backup`（进程内备份，默认关闭） | `tests/db-migrations.test.js`（8）、`tests/db-maintenance.test.js`（14）、`tests/db-legacy-import.test.js`（13）；实测：CLI 备份 17 文件 / 22.4 MB → 恢复新目录 → 完整性 ok、外键 0 违规 → 隔离端口起服务首页 200；进程内端点 `flushed.hooks=1`（CLI 拿不到运行中进程的内存，所以两者都需要） | 在线备份（不停写）未做；保留策略只按份数，不做时间/容量维度 |
-| E06 调度、请求合并、质量状态 | **已完成** | ① [`jobs/coalesce.js`](../src/server/jobs/coalesce.js)：同键合并 + 两级时间（TTL 与 maxServeAge）+ 刷新失败保留旧值；接入 `getDetail` / `getMacro` / `getEvents` 三个入口（原来只有报价有合并）；② 迁移 v3 新增 `collection_jobs` 与 `collection_state.data_cutoff_at`（数据水位与「抓取成功」分开）；③ [`jobs/queue.js`](../src/server/jobs/queue.js)：去重键、租约领取、过期回收、`max_attempts` 终态、`runOne` 批量消化；④ 解释重建改为入队（`explanations` 任务只入队，`job-queue` 任务消化），启动时 `recoverPendingJobs()` 先回收中断任务；⑤ `/api/health` 增加 `queue` 概览 | `tests/jobs-coalesce.test.js`（11）、`tests/services-coalescing.test.js`（3，服务级：「并发同标的只构建一次」）、`tests/jobs-queue.test.js`（16）、`tests/jobs-and-quality.test.js`（24）；实测：线上 queue `done=1`（解释重建确实经队列完成）；手工造一个 running 任务 + 过期租约 → 重启日志 `[bg] 恢复 1 个中断任务` | 队列现在接了**两条**生产线：`explanation-rebuild` 与 `history-backfill`（后台补历史序列，取不到行就抛错走重试/终态，不静默成功）。仍留一条不做：队列的跨进程分发（单进程够用，见 §13.4） |
-| E07 客户端请求层与浏览器测试 | **已完成** | ① [`shared/api.js`](../src/client/shared/api.js)：参数编码（不丢 `api/x` 的前导语义、空格用 `%20`）、超时、`AbortController` 取消、错误六分类（network/timeout/http/parse/aborted/business，带 `retryable`）、同 URL 并发合并；② [`shared/query-cache.js`](../src/client/shared/query-cache.js)：`data/fetchedAt/error/refreshStatus/inflight` 五字段，失败**不覆盖**数据，取消不算失败，`describeRefresh()` 给四种状态不同文案；③ [`shared/explanation-store.js`](../src/client/shared/explanation-store.js)：按 `assetId@windowKey` 共享快照，旧快照按 `generatedAt` 丢弃，`state.js` 在 200 时发布 —— 首页/详情/图谱/地图读同一个 `explanationId`；④ 第一个视图迁移样板 `views/briefing.js`（从 0 覆盖到 88%），改成消费快照而不是 try/catch res.json()；⑤ [`tests/browser-path.test.js`](../tests/browser-path.test.js)：起真服务进程 + jsdom 渲染真实视图，覆盖行情列表 / 详情+解释 / 事件中心 / 隔夜复盘四条路径 | `tests/client-api.test.js`（23）、`tests/client-query-cache.test.js`（19）、`tests/client-explanation-store.test.js`（17）、`tests/views-briefing.test.js`（7）、`tests/browser-path.test.js`（10） | **10 处调用全部迁完，`src/client` 里已无直连 `fetch`**：`shared/calendar.js`、`views/map.js` ×3、`views/macro.js`、`views/detail.js`、`views/events.js` ×2，以及 `shared/api.js` 自身。夹具改为按**路径段**匹配（`new URL(u,'http://x').pathname.endsWith('/api/events')`）—— 前缀匹配会先命中 `/api/eventstudy`。Playwright 第二层改用 **CDP 直连**（`--remote-debugging-port` + Node 内置 WebSocket），已完成首页/事件中心/详情三页的真实浏览器验证与点击交互，见 runtime-audit.md |
+| E06 调度、请求合并、质量状态 | **已完成** | ① [`jobs/coalesce.js`](../src/server/jobs/coalesce.js)：同键合并 + 两级时间（TTL 与 maxServeAge）+ 刷新失败保留旧值；接入 `getDetail` / `getMacro` / `getEvents` 三个入口（原来只有报价有合并）；② 迁移 v3 新增 `collection_jobs` 与 `collection_state.data_cutoff_at`（数据水位与「抓取成功」分开）；③ [`jobs/queue.js`](../src/server/jobs/queue.js)：去重键、租约领取、过期回收、`max_attempts` 终态、`runOne` 批量消化；④ 解释重建改为入队（`explanations` 任务只入队，`job-queue` 任务消化），启动时 `recoverPendingJobs()` 先回收中断任务；⑤ `/api/health` 增加 `queue` 概览 | `tests/jobs-coalesce.test.js`（11）、`tests/services-coalescing.test.js`（3，服务级：「并发同标的只构建一次」）、`tests/jobs-queue.test.js`（16）、`tests/jobs-and-quality.test.js`（24）；实测：线上 queue `done=1`（解释重建确实经队列完成）；手工造一个 running 任务 + 过期租约 → 重启日志 `[bg] 恢复 1 个中断任务` | 队列接了**两条**生产线：`explanation-rebuild` 与 `history-backfill`。**入口**是调度表里的 `history-backfill-schedule`（6 小时一轮 / 日频完成后触发 / 去重键 `history:资产:日期`）—— 上一版只有处理器没有入口，被审阅抓出后补齐。仍留一条不做：队列跨进程分发（见 §13.4） |
+| E07 客户端请求层与浏览器测试 | **已完成** | ① [`shared/api.js`](../src/client/shared/api.js)：参数编码（不丢 `api/x` 的前导语义、空格用 `%20`）、超时、`AbortController` 取消、错误六分类（network/timeout/http/parse/aborted/business，带 `retryable`）、同 URL 并发合并；② [`shared/query-cache.js`](../src/client/shared/query-cache.js)：`data/fetchedAt/error/refreshStatus/inflight` 五字段，失败**不覆盖**数据，取消不算失败，`describeRefresh()` 给四种状态不同文案；③ [`shared/explanation-store.js`](../src/client/shared/explanation-store.js)：按 `assetId@windowKey` 共享快照，旧快照按 `generatedAt` 丢弃，`state.js` 在 200 时发布 —— 首页/详情/图谱/地图读同一个 `explanationId`；④ 第一个视图迁移样板 `views/briefing.js`（从 0 覆盖到 88%），改成消费快照而不是 try/catch res.json()；⑤ [`tests/browser-path.test.js`](../tests/browser-path.test.js)：起真服务进程 + jsdom 渲染真实视图，覆盖行情列表 / 详情+解释 / 事件中心 / 隔夜复盘四条路径 | `tests/client-api.test.js`（23）、`tests/client-query-cache.test.js`（19）、`tests/client-explanation-store.test.js`（17）、`tests/views-briefing.test.js`（7）、`tests/browser-path.test.js`（10） | **12 处调用全部迁完，`src/client` 里已无业务直连 `fetch`**：`shared/calendar.js`、`views/map.js` ×3、`views/macro.js`、`views/detail.js`、`views/events.js` ×2，以及 `shared/api.js` 自身；另有 5 处 `fetchImpl ?? fetch` 的「伪消除」写法（events ×2、explanations/state ×2、explanations/history ×2）统一收进 `shared/fetch-json.js`，生产路径一律走 `api.get()`，注入路径保留给测试。夹具改为按**路径段**匹配（`new URL(u,'http://x').pathname.endsWith('/api/events')`）—— 前缀匹配会先命中 `/api/eventstudy`。Playwright 第二层改用 **CDP 直连**（`--remote-debugging-port` + Node 内置 WebSocket），已完成首页/事件中心/详情三页的真实浏览器验证与点击交互，见 runtime-audit.md |
 | E08 日志、健康、退出、单容器 | **已完成** | [`observability/health.js`](../src/server/observability/health.js)：存活 / 就绪 / 数据健康分开报，就绪检查静态入口、数据目录可写、契约可编译、注册表自洽；`/api/health` 保留旧字段并新增 `readiness` / `contracts` / `sources`（缺凭据的源被点名）；[`routes/system.js`](../src/server/routes/system.js) 把健康与市场探针从入口抽出（server.mjs 199 → 180 行） 结构化日志 [`observability/log.js`](../src/server/observability/log.js)（一行一条 JSON，`requestId/method/url/status/durationMs/result/errorCode`；凭据键与查询串 token 一律脱敏）；请求日志用 `withRequestLog` 在入口包一层（一次请求恰好一条，含 404/500）；[`lifecycle.js`](../src/server/lifecycle.js) 的 `installShutdown`（停调度 → 关连接 → 限时排空 5s → flush → closeDb → exit）；[`app.js`](../src/server/app.js) 把路由表与 405 守卫搬出入口（server.mjs 195 → 118 行）；[`Dockerfile`](../Dockerfile) + `.dockerignore`（非 root、`/app/data` 卷、健康检查读 readiness） | `tests/observability.test.js`（23：脱敏、日志形状、请求日志三种结果、退出五种情形、Dockerfile 形态）、`tests/app-router.test.js`（12：逐路由参数归一/边界/404/405/500）；实测：真进程请求日志两条（`result: ok` / `client_error`），SIGTERM 后 `closeResult=closed, flushHooks=1, durationMs=7` 并退出 | 没有集中式指标系统（按方案 §9.3「先结构化日志，有需求再接指标」）；容器构建本身未在 CI 跑（CI 无 docker daemon） |
 
 ### 13.1.1 E02 / E03 / E07 的剩余项（第 77 轮已全部收口）
@@ -376,12 +376,12 @@ SQLite 提供 Online Backup API，也支持 `VACUUM INTO`。后续在线备份�
 
 ### 13.2 覆盖率推进（目标 95%）
 
-2026-10-29 实测（`npm run test:cov`）：**全站 95.06% statements / 83.89% branches / 95.02% functions / 96.87% lines**。
+2026-10-29 实测（`npm run test:cov`）：**全站 95.13% statements / 84.08% branches / 95.19% functions / 96.88% lines**。
 （E01–E08 全部落地；`src/server/**` 与 `src/client/shared/**` 均在门槛之上，主战场只剩 `src/client/views/**`。）
 
 | 范围 | 实测 | 门槛 | 说明 |
 | --- | --- | --- | --- |
-| 全站 | **95.08 / 83.93 / 95.04 / 96.87** | 95 / 83 / 95 / 96 | **三项达成 95**，门槛已抬到实测下沿 |
+| 全站 | **95.13 / 84.08 / 95.19 / 96.88** | 95 / 83 / 95 / 96 | **三项达成 95**，门槛已抬到实测下沿 |
 | `src/server/**` | 门槛通过（app.js 95.7%、log.js 95%、lifecycle 88.9%、契约 100%） | 92 / 80 / 93 / 94 | 剩余缺口是解释服务与 collector 的异常分支 |
 | `src/client/shared/**` | 99.46 / 97.05 / 100 / 100 | 97 / 97 / 99 / 99 | 已达 95（含新增的 api / query-cache / explanation-store） |
 | `src/client/views/**` | 86.54 / 76.19 / 81.20 / 89.05 | 50 / 46 / 50 / 49 | 已远越门槛。逐文件战果见下节「已拿下的文件」 |
@@ -437,6 +437,45 @@ SQLite 提供 Online Backup API，也支持 `VACUUM INTO`。后续在线备份�
 
 > 运行时自检记录见 [runtime-audit.md](runtime-audit.md)（含一次「夹具跟着实现走」
 > 导致线上 `next` 永远为 null 的记录）。
+
+### 13.4 「已完成」项里**明确不做**的部分（逐条理由）
+
+「完成所有的内容」不等于「每项都做到无穷」。下面这些是**有意识不做**的，
+写在这里是为了让「已完成」这个状态可复核，而不是靠我口头说。
+
+| 项 | 不做的部分 | 理由 |
+| --- | --- | --- |
+| E04 | HTTP 响应逐端点跑 schema 校验 | 现有三份 schema 描述的是**观测**、**质量**与**解释外壳**；`/api/quotes`、`/api/events` 这类端点返回服务层聚合视图，不是契约对象。硬套会让 schema 退化成「描述当前实现的快照」，反而失去约束力。真正需要契约的是写库前那一刻 —— 那里**已经在校验**（`persistReferencedObservations`） |
+| E05 | 在线备份（不停写） | SQLite 在线备份要在 `stopWrites()` 之外引入第二套一致性策略，风险高于收益；当前是「停写 → 备份 → 恢复写」，脚本与端点都走这条路径，已验证可恢复（17 文件 / 22.4 MB） |
+| E05 | 保留策略按时间/容量 | 只按份数。理由是**可预测**：按容量要先想清楚「删哪一份」，那正是备份最不该猜的地方 |
+| E06 | 队列跨进程分发 | 单进程部署（`node server.mjs`）下没有第二个消费者；加一层消息中间件会引入「谁是 leader」的新问题 |
+| 2.1 | 原油、铜的内外盘 | 数据源与合约口径不同（WTI vs 上海原油、LME vs 上期所），**先确认口径再谈分解**，否则会做出看起来合理但不可比的分解 |
+| 2.4 | 共识预期字段 | 日历源没有这个字段。按方案「没有预期就不补一个」，取不到就如实说「无预期值」 |
+| 产品 §11 | 用户研究（5 位试用者的理解任务测量） | 这是**产品研究**，不是代码交付。目标写在文档里、尚未测量 —— 保持「尚未测量」，不编造结果 |
+
+### 13.3 分支覆盖的可达性归因（95% 目标评估）
+
+2026-10-29 实测（`npm run test:cov`，istanbul 口径）：**分支 10126 条，未覆盖 1612 条 → 84.08%**。
+
+按分支**类型**拆开（这是 istanbul 自己的分类，不是我的推测）：
+
+| 类型 | 未覆盖 / 总数 | 含义 | 可达性 |
+| --- | --- | --- | --- |
+| `binary-expr` | **866 / 4182** | `??` / `\|\|` / `&&` 的每个操作数 | 默认侧要求「字段存在但为 undefined」这类不自然输入；已覆盖的 3313 条本来就是真实路径 |
+| `if` | **369 / 3306** | 真实 `if` 条件 | **可测**：构造业务上真实存在的输入即可 |
+| `cond-expr` | **372 / 2080** | 三元运算符两侧 | **可测**：多为「有值 / 无值」两态 |
+| `default-arg` | 3 / 547 | 默认参数 | 可测 |
+| `switch` | 0 / 11 | 全部已覆盖 | — |
+
+结论（不粉饰，**并纠正此前一个错误说法**）：
+
+1. 我此前写道「剩下的基本都是 binary-expr 默认侧」——**这句话不准确**。
+   真实控制流（`if` + `cond-expr`）还有 **741 条**未覆盖，占未覆盖总数 **46%**。
+2. 把 741 条真实条件流补齐，分支率约 **91.4%**（(10126−1612+741)/10126）。
+   所以「分支 95%」不是完全不可达，而是**还差这批 + 约 300 条 binary-expr**。
+3. 这 741 条目前**没有补**，原因是排期取舍（先做真实浏览器验证与产品闭环），
+   不是「不可测」。谁要抬分支，从这里开始补，不需要构造畸形 payload。
+4. 门槛定在 83 是**当前实测下沿**，只作为防回退，不代表达标线。
 
 ### 13.4 「已完成」项里**明确不做**的部分（逐条理由）
 

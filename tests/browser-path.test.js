@@ -19,6 +19,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { childEnv } from './helpers/child-env.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -60,8 +61,8 @@ beforeAll(async () => {
   dataDir = mkdtempSync(path.join(tmpdir(), 'browser-path-'));
   child = spawn(process.execPath, ['server.mjs'], {
     cwd: REPO,
-    env: {
-      ...process.env,
+    env: childEnv({
+      // 白名单环境：不继承开发机上的模型凭据（见 helpers/child-env.js）
       PORT: '0',
       HOST: '127.0.0.1',
       DISABLE_BACKGROUND: '1',
@@ -69,7 +70,7 @@ beforeAll(async () => {
       KANBAN_DB: path.join(dataDir, 'kanban.db'),
       // 不给模型凭据：离线路径不该依赖它们
       DEEPSEEK_API_KEY: '',
-    },
+    }),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   const port = await waitForListening(child);

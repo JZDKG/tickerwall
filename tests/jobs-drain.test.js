@@ -106,3 +106,32 @@ describe('history-backfill 处理器', () => {
     await expect(QUEUE_HANDLERS['history-backfill']({ payload: { asset: 'definitely-not-an-asset' } })).rejects.toThrow();
   }, 60_000);
 });
+
+/* ================================================================== *
+ * 历史回补必须有**入口**（不是只有处理器）
+ *
+ * 上一版把处理器注册进 QUEUE_HANDLERS 就宣称「第二条生产线接好了」，
+ * 但全仓没有任何地方 enqueue 它 —— 典型的「有实现、有测试、没人调用」。
+ * 这条用例断言：默认调度表里有一个任务会真的把它排进队列。
+ * ================================================================== */
+describe('history-backfill 有调度入口', () => {
+  it('默认调度里存在 history-backfill-schedule，且会按资产入队', async () => {
+    const jobs = await import('../src/server/jobs/index.js');
+    const defs = jobs.buildDefaultJobs({});
+    const def = defs.find((d) => d.key === 'history-backfill-schedule');
+    expect(def).toBeTruthy();
+    expect(typeof def.run).toBe('function');
+
+    const queue = await import('../src/server/jobs/queue.js');
+    await def.run();
+    // claim 出来看：队列里确实有 history-backfill 任务（不是只调了个空函数）
+    const claimed = [];
+    for (let i = 0; i < 5; i += 1) {
+      const job = queue.claimNext() ?? null;
+      if (!job) break;
+      claimed.push(job);
+    }
+    expect(claimed.length).toBeGreaterThan(0);
+    expect(claimed.every((j) => j.taskKey === 'history-backfill')).toBe(true);
+  }, 30_000);
+});

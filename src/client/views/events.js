@@ -12,6 +12,7 @@ import { eventsEl } from '../shared/dom.js';
 import { clockText, esc, html, safeHref } from '../shared/format.js';
 import { todayFocusHTML } from './today-focus.js';
 import { PLACEHOLDER, store } from '../shared/store.js';
+import { getJson } from '../shared/fetch-json.js';
 import { api } from '../shared/api.js';
 
 
@@ -144,15 +145,9 @@ export function revisionPanelHTML(eventId, rows) {
 
 /** 取某事件的版本列表 */
 export async function loadEventRevisions(eventId, { fetchImpl } = {}) {
-  const f = fetchImpl ?? (typeof fetch === 'function' ? fetch : null);
-  if (!f) return [];
-  try {
-    const res = await f(`./api/events/${encodeURIComponent(eventId)}/revisions`, { cache: 'no-store' });
-    const body = await res.json().catch(() => ({}));
-    return body?.revisions ?? [];
-  } catch {
-    return [];
-  }
+  // 统一出口：注入走 fetchImpl（测试），否则走共享 api（生产拿到超时/去重/错误分类）
+  const body = await getJson(`api/events/${encodeURIComponent(eventId)}/revisions`, { fetchImpl: fetchImpl ?? null });
+  return body?.revisions ?? [];
 }
 
 /**
@@ -627,20 +622,15 @@ function paintTodayFocus() {
 export async function hydrateTodayFocus({ fetchImpl = null } = {}) {
   const slot = document.getElementById('today-focus-slot');
   if (!slot) return null;
-  const f = fetchImpl ?? (typeof fetch === 'function' ? fetch : null);
-  if (!f) return null;
-  try {
-    const res = await f('./api/today-focus', { cache: 'no-store' });
-    const body = await res.json().catch(() => null);
-    if (!body) return null;
-    todayFocusCache = body;
-    slot.innerHTML = todayFocusHTML(body).toString();
-    return body;
-  } catch {
+  const body = await getJson('api/today-focus', { fetchImpl: fetchImpl ?? null });
+  if (!body) {
     // 顶部结构是加分项：取不到就保持空槽，不给一块红字
     slot.innerHTML = '';
     return null;
   }
+  todayFocusCache = body;
+  slot.innerHTML = todayFocusHTML(body).toString();
+  return body;
 }
 
 export function mountEvents() {

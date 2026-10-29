@@ -117,7 +117,7 @@ async function smoke(dir) {
     ['-e', `
       process.env.DISABLE_BACKGROUND = '1';
       process.env.PORT = '${port}';
-      process.env.DATA_DIR = ${JSON.stringify(join(dir, 'data-smoke'))};
+      process.env.KANBAN_DATA_DIR = ${JSON.stringify(join(dir, 'data-smoke'))};
       await import(${JSON.stringify(join(dir, 'server.mjs'))});
       const sleep = (ms) => new Promise(r => setTimeout(r, ms));
       let ok = false;

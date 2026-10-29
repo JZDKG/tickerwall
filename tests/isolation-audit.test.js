@@ -24,10 +24,15 @@ describe('1) 不写用户真实数据目录', () => {
   const offenders = files.filter((f) => {
     const src = read(f);
     if (!src.includes('src/server/db')) return false;
-    // 允许：useDatabase(':memory:') / 显式临时目录 / 子进程带 KANBAN_DATA_DIR
-    if (src.includes("useDatabase(':memory:')") || src.includes('useDatabase(":memory:")')) return false;
     if (src.includes('mkdtempSync') || src.includes('KANBAN_DATA_DIR')) return false;
-    return OPENS_DEFAULT_DB.test(src);
+    /**
+     * 逐**行**判定，不是整篇放行。
+     *
+     * 原来写的是「这个文件里出现过 useDatabase(':memory:') 就 return false」，
+     * 结果是：一个文件里有 20 个用例，只要 1 个用了内存库，另外 19 个直接
+     * 开真实默认库也照样通过 —— 审计看起来绿，其实什么都没查。
+     */
+    return src.split('\n').some((line) => OPENS_DEFAULT_DB.test(line) && !/:memory:/.test(line));
   });
 
   it('没有测试打开默认路径的数据库', () => {
@@ -40,6 +45,8 @@ describe('2) 起子进程的测试带隔离数据目录', () => {
 
   it('每个起进程的测试都显式给了数据目录或明确不需要', () => {
     const bad = spawners.filter((f) => {
+      // 审计脚本自己会写出 `...process.env` 这个字样（在正则里），不算违规
+      if (f === 'isolation-audit.test.js') return false;
       const src = read(f);
       if (src.includes('KANBAN_DATA_DIR')) return false;
       // 明确声明「这个子进程不落盘」的，允许（例如纯计算脚本）
@@ -53,10 +60,36 @@ describe('2) 起子进程的测试带隔离数据目录', () => {
 
   it('起进程的测试不遗传模型凭据', () => {
     const leaks = spawners.filter((f) => {
+      // 审计脚本自己把 `...process.env` 写在正则里（用来抓别人），不算违规
+      if (f === 'isolation-audit.test.js') return false;
       const src = read(f);
-      return /env:\s*\{\s*\.\.\.process\.env\s*\}/.test(src);
+      /**
+       * **跨行**匹配：`env: {\n  ...process.env,\n  PORT: '0',\n}` 也要被抓住。
+       * 原来的单行正则只能匹配「只展开、不追加」的那种写法，
+       * 而真实测试恰好都是「先展开再覆盖几个变量」—— 于是全部漏判。
+       */
+      return /env:\s*\{[\s\S]{0,400}?\.\.\.process\.env[\s\S]{0,400}?\}/.test(src);
     });
     expect(leaks).toEqual([]);
+  });
+});
+
+describe('2b) 子进程环境来自白名单', () => {
+  const spawners = files.filter((f) => /execFileSync|spawn\(|fork\(/.test(read(f)));
+
+  it('每个起进程的测试都通过 childEnv() 构造环境', () => {
+    const bad = spawners.filter((f) => {
+      const src = read(f);
+      if (f === 'isolation-audit.test.js' || f === 'pack-tool.test.js') return false;
+      // 要么用白名单助手，要么显式声明不需要环境
+      return !src.includes('childEnv(') && !src.includes('NO_ENV_NEEDED');
+    });
+    expect(bad).toEqual([]);
+  });
+
+  it('白名单本身不包含任何凭据类键', async () => {
+    const { ALLOWED_ENV_KEYS } = await import('./helpers/child-env.js');
+    expect(ALLOWED_ENV_KEYS.some((k) => /API_KEY|TOKEN|SECRET|PASSWORD/i.test(k))).toBe(false);
   });
 });
 

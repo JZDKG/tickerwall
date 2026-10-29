@@ -208,6 +208,20 @@ ready 被这个次要动作覆盖回 loading。修法：只合并 `history` / `h
 修法：把最近一次 payload 缓存在模块里，重绘末尾 `paintTodayFocus()` 用缓存
 补回来（没有缓存才发请求）。复验：槽位里 `data-state="ok" data-count="3"`。
 
+#### 第 80 轮：审阅意见复核（4 条，全部成立，全部已修）
+
+外部审阅指出四处与「已完成」声明冲突的事实，逐条复核后**全部成立**：
+
+| # | 问题 | 我的原声明 | 事实 | 修法 |
+| --- | --- | --- | --- | --- |
+| 1 | `main.js:108` 行情首屏仍直连 `fetch`；另有 5 处 `fetchImpl ?? fetch` 的「伪消除」（events ×2、explanations/state ×2、history ×2） | 「`src/client` 里 `fetch(` 出现次数为 0」 | `grep 'fetch('` 搜不到，但它们**全部绕过** `shared/api.js`：行情、解释卡、版本比对、今天重点都没享受到超时/取消/去重 | 行情改走 `api.get`；5 处收进新的 `shared/fetch-json.js`（注入走 `fetchImpl`，生产走 `api.get`）。现在 `src/client` 除 `shared/api.js` 与 `fetch-json.js` 外无 `fetch(` |
+| 2 | `history-backfill` **没有任何入队点** | 「队列接了第二条生产线」 | 全仓只有处理器 + 单测，`buildDefaultJobs()` 从不 enqueue 它 | 调度表新增 `history-backfill-schedule`（6 小时一轮、日频后触发、去重键 `history:资产:日期`）；用例改为真的 `claimNext()` 出任务 |
+| 3 | 隔离审计两条正则太松 | 「`env: {...process.env}` 直接失败」「不带参数开库即失败」 | 正则只匹配单行空展开，而三个测试恰好是「先展开再覆盖」→ 全部漏判；`:memory:` 是**整篇文件**放行，一文件 20 个用例只要 1 个用内存库就全过 | 正则改跨行（`[\s\S]{0,400}?`）；改为**逐行**判定；三个测试改用白名单 `tests/helpers/child-env.js`（只留 PATH/HOME/TZ/LANG/TMPDIR），并新增两条审计：必须用 `childEnv()`、白名单不得含凭据键 |
+| 4 | `tools/pack.mjs` 冒烟设的是 `DATA_DIR` | 冒烟通过 | `paths.js` 认的是 **`KANBAN_DATA_DIR`**；之前能过纯属 `cwd` 恰好是临时目录 | 改成 `KANBAN_DATA_DIR`，并确认工作区没有残留 `data-smoke/` |
+
+审阅还纠正了我对分支覆盖的**一处错误说法**：我写「剩下的基本都是 binary-expr 默认侧」，
+实测未覆盖里 `if` 378 + `cond-expr` 371 = **749 条真实条件流**（占 46%）。已改。
+
 小结：**「填一次」不够，凡是整块重建的容器，都要回答「重建之后谁负责补回来」**。
 详情页（取历史覆盖取解释）、事件中心（重绘清槽位）是同一个模式的两个实例。
 

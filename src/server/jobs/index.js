@@ -70,6 +70,30 @@ export function buildDefaultJobs(overrides = {}) {
       run: observations,
     },
     {
+      /**
+       * 历史回补（E06 第二条生产线）的**入口**。
+       *
+       * 上一版只有处理器、没有任何调度或业务代码入队 —— 属于
+       * 「有实现、有测试、没人调用」。放在这里的原因：它与 `daily-series`
+       * 的发布节奏一致（日频序列补齐后才有新行可补），但用单独的 key，
+       * 免得日频失败把回补一起拖住。
+       *
+       * 去重键按「资产:日期」：同一天同一资产只排一个任务，
+       * 重启后 `recoverPendingJobs()` 接手未完成的那个。
+       */
+      key: 'history-backfill-schedule',
+      intervalMs: 6 * 60 * 60_000,
+      backoffBaseMs: 15 * 60_000,
+      maxBackoffMs: 6 * 60 * 60_000,
+      triggers: ['daily-series'],
+      run: async () => {
+        const day = new Date().toISOString().slice(0, 10);
+        for (const asset of EXPLAIN_ASSETS) {
+          enqueue({ taskKey: 'history-backfill', dedupeKey: `history:${asset}:${day}`, payload: { asset } });
+        }
+      },
+    },
+    {
       key: 'explanations',
       // 兜底周期：即使没有新输入，也定期确认快照仍在（读取时会重算新鲜度）
       intervalMs: 10 * 60_000,

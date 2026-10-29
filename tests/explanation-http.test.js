@@ -16,6 +16,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDatabase, writeDailyCache, closeDb } from '../src/server/db/index.js';
+import { childEnv } from './helpers/child-env.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -93,8 +94,8 @@ beforeAll(async () => {
 
   child = spawn(process.execPath, ['server.mjs'], {
     cwd: REPO,
-    env: {
-      ...process.env,
+    env: childEnv({
+      // 白名单环境：不继承开发机上的模型凭据（见 helpers/child-env.js）
       PORT: '0',
       HOST: '127.0.0.1',
       KANBAN_DATA_DIR: dataDir,
@@ -102,7 +103,7 @@ beforeAll(async () => {
       LLM_CONFIG_SOURCE: 'env',
       // 集成测试不跑后台采集：请求路径本身就能建快照
       DISABLE_BACKGROUND: '1',
-    },
+    }),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   const { host, port } = await waitForListen(child);

@@ -26,6 +26,7 @@ import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { childEnv } from './helpers/child-env.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -64,8 +65,8 @@ beforeAll(async () => {
   dataDir = mkdtempSync(path.join(tmpdir(), 'kanban-http-'));
   child = spawn(process.execPath, ['server.mjs'], {
     cwd: REPO,
-    env: {
-      ...process.env,
+    env: childEnv({
+      // 白名单环境：不继承开发机上的模型凭据（见 helpers/child-env.js）
       PORT: '0',
       HOST: '127.0.0.1',
       KANBAN_DATA_DIR: dataDir,
@@ -75,7 +76,7 @@ beforeAll(async () => {
       // 关键：不起后台抓取，否则测试依赖外网
       DISABLE_BACKGROUND: '1',
       // 不设 ENABLE_DEBUG_API，验证调试端点默认关闭
-    },
+    }),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   const { host, port } = await waitForListen(child);

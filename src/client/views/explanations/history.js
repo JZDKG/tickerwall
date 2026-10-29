@@ -10,6 +10,8 @@
  * 纯取数 + 纯字符串，可在 Node 里单测。
  * ================================================================== */
 
+import { getJsonWithStatus } from '../../shared/fetch-json.js';
+
 const VERSIONS_SHOWN = 6;
 
 export const CONTENT_STATUS_TEXT = {
@@ -29,31 +31,16 @@ export function shortStamp(iso) {
 
 /** 取某资产 + 窗口的历史快照列表 */
 export async function loadExplanationHistory({ assetId, windowKey = 'session', limit = VERSIONS_SHOWN, fetchImpl } = {}) {
-  const f = fetchImpl ?? (typeof fetch === 'function' ? fetch : null);
-  if (!f) return { status: 503, items: [] };
-  try {
-    const res = await f(
-      `./api/explanations/history?asset=${encodeURIComponent(assetId)}&window=${encodeURIComponent(windowKey)}&limit=${limit}`,
-      { cache: 'no-store' },
-    );
-    const body = await res.json().catch(() => ({}));
-    return { status: res.status, items: body?.items ?? [] };
-  } catch {
-    return { status: 503, items: [] };
-  }
+  const { status, body } = await getJsonWithStatus('api/explanations/history', {
+    fetchImpl: fetchImpl ?? null,
+    query: `asset=${encodeURIComponent(assetId)}&window=${encodeURIComponent(windowKey)}&limit=${limit}`,
+  });
+  return { status, items: body?.items ?? [] };
 }
 
 /** 取某一版快照（就是 /api/explanations/:id） */
 export async function loadExplanationVersion(id, { fetchImpl } = {}) {
-  const f = fetchImpl ?? (typeof fetch === 'function' ? fetch : null);
-  if (!f) return { status: 503, body: {} };
-  try {
-    const res = await f(`./api/explanations/${encodeURIComponent(id)}`, { cache: 'no-store' });
-    const body = await res.json().catch(() => ({}));
-    return { status: res.status, body };
-  } catch (err) {
-    return { status: 503, body: { ok: false, error: String(err?.message ?? err) } };
-  }
+  return getJsonWithStatus(`api/explanations/${encodeURIComponent(id)}`, { fetchImpl: fetchImpl ?? null });
 }
 
 /**

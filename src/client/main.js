@@ -6,6 +6,7 @@
 import { route } from './router.js';
 import { countdownEl, refreshBtn, updatedEl } from './shared/dom.js';
 import { store } from './shared/store.js';
+import { api } from './shared/api.js';
 import { attachGlossary } from './shared/glossary.js';
 import { apply, renderSkeleton } from './views/list.js';
 import { questionsEl } from './shared/dom.js';
@@ -105,9 +106,9 @@ export async function loadQuotes(force = false) {
   refreshBtn.disabled = true;
   paintCountdown();
   try {
-    const res = await fetch(`./api/quotes${force ? '?force=1' : ''}`, { cache: 'no-store' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    apply(await res.json());
+    // 共享请求层：行情是首屏第一枪，超时/取消/去重都在这里生效
+    const { data } = await api.get('api/quotes', { params: force ? { force: 1 } : null });
+    apply(data);
     // 行情先落地，再异步补问题卡（慢也不挡首屏）
     void refreshQuestions();
   } catch (err) {

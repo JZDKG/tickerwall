@@ -16,10 +16,23 @@ import {
 } from '../src/server/domain/explanations/quality.js';
 
 describe('默认任务表', () => {
-  it('六个任务齐全且 key 唯一（含可恢复任务队列）', () => {
+  /**
+   * 任务表从 6 个变 7 个：新增 `history-backfill-schedule`。
+   * 原因见 jobs/index.js —— 上一版只有处理器没有入口，属于
+   * 「有实现、有测试、没人调用」，这条调度就是它的入口。
+   */
+  it('任务表齐全（7 个）且 key 唯一', () => {
     const jobs = buildDefaultJobs();
     const keys = jobs.map((j) => j.key);
-    expect(keys).toEqual(['quotes', 'events', 'calendar', 'daily-series', 'explanations', 'job-queue']);
+    expect(keys).toEqual([
+      'quotes',
+      'events',
+      'calendar',
+      'daily-series',
+      'history-backfill-schedule',
+      'explanations',
+      'job-queue',
+    ]);
     expect(new Set(keys).size).toBe(keys.length);
   });
 
