@@ -364,14 +364,24 @@ SQLite 提供 Online Backup API，也支持 `VACUUM INTO`。后续在线备份�
 | E07 客户端请求层与浏览器测试 | **进行中**（核心层与第一条路径完成） | ① [`shared/api.js`](../src/client/shared/api.js)：参数编码（不丢 `api/x` 的前导语义、空格用 `%20`）、超时、`AbortController` 取消、错误六分类（network/timeout/http/parse/aborted/business，带 `retryable`）、同 URL 并发合并；② [`shared/query-cache.js`](../src/client/shared/query-cache.js)：`data/fetchedAt/error/refreshStatus/inflight` 五字段，失败**不覆盖**数据，取消不算失败，`describeRefresh()` 给四种状态不同文案；③ [`shared/explanation-store.js`](../src/client/shared/explanation-store.js)：按 `assetId@windowKey` 共享快照，旧快照按 `generatedAt` 丢弃，`state.js` 在 200 时发布 —— 首页/详情/图谱/地图读同一个 `explanationId`；④ 第一个视图迁移样板 `views/briefing.js`（从 0 覆盖到 88%），改成消费快照而不是 try/catch res.json()；⑤ [`tests/browser-path.test.js`](../tests/browser-path.test.js)：起真服务进程 + jsdom 渲染真实视图，覆盖行情列表 / 详情+解释 / 事件中心 / 隔夜复盘四条路径 | `tests/client-api.test.js`（23）、`tests/client-query-cache.test.js`（19）、`tests/client-explanation-store.test.js`（17）、`tests/views-briefing.test.js`（7）、`tests/browser-path.test.js`（10） | 其余 9 处直接 `fetch` 的视图尚未迁移；Playwright 第二层未做（理由见 §14.1） |
 | E08 日志、健康、退出、单容器 | **已完成** | [`observability/health.js`](../src/server/observability/health.js)：存活 / 就绪 / 数据健康分开报，就绪检查静态入口、数据目录可写、契约可编译、注册表自洽；`/api/health` 保留旧字段并新增 `readiness` / `contracts` / `sources`（缺凭据的源被点名）；[`routes/system.js`](../src/server/routes/system.js) 把健康与市场探针从入口抽出（server.mjs 199 → 180 行） 结构化日志 [`observability/log.js`](../src/server/observability/log.js)（一行一条 JSON，`requestId/method/url/status/durationMs/result/errorCode`；凭据键与查询串 token 一律脱敏）；请求日志用 `withRequestLog` 在入口包一层（一次请求恰好一条，含 404/500）；[`lifecycle.js`](../src/server/lifecycle.js) 的 `installShutdown`（停调度 → 关连接 → 限时排空 5s → flush → closeDb → exit）；[`app.js`](../src/server/app.js) 把路由表与 405 守卫搬出入口（server.mjs 195 → 118 行）；[`Dockerfile`](../Dockerfile) + `.dockerignore`（非 root、`/app/data` 卷、健康检查读 readiness） | `tests/observability.test.js`（23：脱敏、日志形状、请求日志三种结果、退出五种情形、Dockerfile 形态）、`tests/app-router.test.js`（12：逐路由参数归一/边界/404/405/500）；实测：真进程请求日志两条（`result: ok` / `client_error`），SIGTERM 后 `closeResult=closed, flushHooks=1, durationMs=7` 并退出 | 没有集中式指标系统（按方案 §9.3「先结构化日志，有需求再接指标」）；容器构建本身未在 CI 跑（CI 无 docker daemon） |
 
+### 13.1.1 E02 / E03 / E07 的剩余项（不许当成已完成）
+
+覆盖率达标不等于工程路线图全部收口。这三项**仍是进行中**，剩余内容如下：
+
+| 编号 | 还差什么 | 量级 |
+| --- | --- | --- |
+| E02 | 固定时钟与临时数据目录尚未覆盖**全部**测试；子进程环境变量白名单只做到「不遗传模型凭据」一条 | 中（要逐个测试文件改夹具） |
+| E03 | **发布包未做**：白名单收集打包 + 解压到新目录启动冒烟 | 小（可单独一轮做完） |
+| E07 | 其余 9 处直接 `fetch` 的视图尚未迁移到 `shared/api.js`；Playwright 第二层未做（改用 CDP 直连替代，见 runtime-audit.md） | 大（9 个视图逐个迁） |
+
 ### 13.2 覆盖率推进（目标 95%）
 
-2026-10-29 实测（`npm run test:cov`）：**全站 94.52% statements / 83.39% branches / 94.63% functions / 96.39% lines**。
+2026-10-29 实测（`npm run test:cov`）：**全站 95.06% statements / 83.89% branches / 95.02% functions / 96.87% lines**。
 （E01–E08 全部落地；`src/server/**` 与 `src/client/shared/**` 均在门槛之上，主战场只剩 `src/client/views/**`。）
 
 | 范围 | 实测 | 门槛 | 说明 |
 | --- | --- | --- | --- |
-| 全站 | 94.52 / 83.39 / 94.63 / **96.39** | 73 / 64 / 73 / 73 | 目标 95，按目录分批抬 |
+| 全站 | **95.06 / 83.89 / 95.02 / 96.87** | 95 / 83 / 95 / 96 | **三项达成 95**，门槛已抬到实测下沿 |
 | `src/server/**` | 门槛通过（app.js 95.7%、log.js 95%、lifecycle 88.9%、契约 100%） | 92 / 80 / 93 / 94 | 剩余缺口是解释服务与 collector 的异常分支 |
 | `src/client/shared/**` | 99.46 / 97.05 / 100 / 100 | 97 / 97 / 99 / 99 | 已达 95（含新增的 api / query-cache / explanation-store） |
 | `src/client/views/**` | 86.54 / 76.19 / 81.20 / 89.05 | 50 / 46 / 50 / 49 | 已远越门槛。逐文件战果见下节「已拿下的文件」 |
