@@ -94,6 +94,26 @@ async function connect(wsUrl) {
   return { ws, send, evaluate, exceptions, consoleErrors };
 }
 
+/**
+ * 轮询直到条件成立（带超时）。
+ *
+ * 为什么不用固定 sleep：干净数据目录要冷拉上游日历与指标，耗时随网络波动，
+ * 实测偶发踩在 6~8 秒临界线上 —— 一旦超时就会误判成「0 张卡 / 槽位为空」，
+ * 在 CI 上表现为随机闪红（Flaky）。轮询把「等够时间」换成「等到就继续」，
+ * 快的时候更快，慢的时候也不会误判。
+ */
+async function waitForCondition(evaluateFn, { timeoutMs = 15000, gapMs = 250 } = {}) {
+  const startedAt = Date.now();
+  let last = null;
+  while (Date.now() - startedAt < timeoutMs) {
+    const out = await evaluateFn();
+    last = out;
+    if (out && out.value) return out;
+    await sleep(gapMs);
+  }
+  return last; // 超时返回最后一次观测，交给断言去判定并打印实际值
+}
+
 const findings = [];
 const record = (ok, name, detail = '') => {
   findings.push({ ok, name, detail });
@@ -157,7 +177,16 @@ async function main() {
 
     /* ---------------- 首页 ---------------- */
     await cdp.send('Page.navigate', { url: `${base}/` });
-    await sleep(6000);
+    // 等到行情有内容（干净目录首拉最慢的是上游序列）再取全量快照
+    await waitForCondition(
+      () => cdp.evaluate(`(() => { const r = document.getElementById('rows'); return Boolean(r && r.children.length > 3); })()`),
+      { timeoutMs: 20000 },
+    );
+    // 问题卡比行情晚一步（要先有报价才谈「为什么」），单独等
+    await waitForCondition(
+      () => cdp.evaluate(`document.querySelectorAll('#questions .q-card').length >= 3`),
+      { timeoutMs: 20000 },
+    );
 
     const home = await cdp.evaluate(`(() => {
       const cards = [...document.querySelectorAll('#questions .q-card')];
@@ -191,7 +220,10 @@ async function main() {
 
     /* ---------------- 事件中心：今天重点 ---------------- */
     await cdp.send('Page.navigate', { url: `${base}/#/events` });
-    await sleep(8000);
+    await waitForCondition(
+      () => cdp.evaluate(`Boolean(document.querySelector('#today-focus-slot .tf-card'))`),
+      { timeoutMs: 20000 },
+    );
     const ev = await cdp.evaluate(`(() => {
       const slot = document.getElementById('today-focus-slot');
       const card = slot?.querySelector('.tf-card');
@@ -202,7 +234,10 @@ async function main() {
 
     /* ---------------- 详情：解释卡 ---------------- */
     await cdp.send('Page.navigate', { url: `${base}/#/d/gold-intl` });
-    await sleep(6000);
+    await waitForCondition(
+      () => cdp.evaluate(`document.querySelector('.explain-card')?.dataset?.phase === 'ready'`),
+      { timeoutMs: 25000 },
+    );
     const detail = await cdp.evaluate(`(() => {
       const card = document.querySelector('.explain-card');
       return {

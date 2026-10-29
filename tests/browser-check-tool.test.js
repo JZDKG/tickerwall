@@ -47,6 +47,27 @@ describe('失败必须显式', () => {
   });
 });
 
+describe('不许用固定 sleep 当同步手段（会偶发闪红）', () => {
+  it('有超时轮询器，且三处页面断言都用它等条件', () => {
+    expect(src).toContain('waitForCondition');
+    expect(src).toContain('timeoutMs');
+    // 首页 / 事件中心 / 详情 三处都要轮询
+    expect((src.match(/await waitForCondition\(/g) ?? []).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('页面等待不再依赖 6/8 秒这种魔法数字', () => {
+    expect(src).not.toContain('await sleep(6000)');
+    expect(src).not.toContain('await sleep(8000)');
+  });
+
+  it('轮询有上限，不会无限挂住 CI', () => {
+    const m = /timeoutMs = (\d+)/.exec(src);
+    expect(m).toBeTruthy();
+    expect(Number(m[1])).toBeGreaterThan(0);
+    expect(Number(m[1])).toBeLessThanOrEqual(30000);
+  });
+});
+
 describe('隔离与清理', () => {
   it('服务用 KANBAN_DATA_DIR 指向临时目录', () => {
     expect(src).toContain('KANBAN_DATA_DIR: dataDir');
