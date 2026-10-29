@@ -247,10 +247,25 @@ describe('启动时真的会拉（不是只有函数定义）', () => {
   });
 });
 
-describe('首页先看这三个问题（产品 §3 的挂载）', () => {
-  it('刷首页时把关注项清单传给渲染层', async () => {
-    const src = await import('node:fs').then((fs) => fs.readFileSync('src/client/views/home-brief-wiring.js', 'utf8'));
-    expect(src).toMatch(/questions:\s*\{\s*list:\s*WATCH_QUESTIONS/);
-    expect(src).toMatch(/chosen:\s*watched/);
+
+/* ================================================================== *
+ * 问题区已收敛到 #questions（第 81 轮）
+ *
+ * 上一轮我在 home-brief 里又加了一个「今天先看这三个问题」，导致首屏出现
+ * 两个都在说「先看问题」的区块，行情被挤到 Y≈1461。现在：
+ *   · `#questions`（最多三张问题卡）是唯一的问题优先区，位于行情之前；
+ *   · `home-brief` 只放关注简报 / 预期台账 / 生活连接，且在行情之后。
+ * ================================================================== */
+describe('问题区只有一个', () => {
+  it('home-brief 不再渲染问题清单（避免与 #questions 重复）', async () => {
+    const src = await import('node:fs').then((fs) => fs.readFileSync('src/client/views/home-brief.js', 'utf8'));
+    expect(src).not.toContain('topQuestionsHTML');
+    expect(src).not.toContain('今天先看这三个问题');
+  });
+
+  it('首页 DOM 顺序：问题 → 行情 → 简报', async () => {
+    const html = await import('node:fs').then((fs) => fs.readFileSync('public/index.html', 'utf8'));
+    expect(html.indexOf('id="questions"')).toBeLessThan(html.indexOf('id="rows"'));
+    expect(html.indexOf('id="rows"')).toBeLessThan(html.indexOf('id="home-brief"'));
   });
 });

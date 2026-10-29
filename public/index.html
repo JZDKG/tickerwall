@@ -36,6 +36,8 @@
   <link rel="stylesheet" href="./styles/recap.css" />
   <link rel="stylesheet" href="./styles/macro-graph.css" />
   <link rel="stylesheet" href="./styles/explanations.css" />
+  <!-- 任务导航（.tasks/.task-group/.task-label）的样式在这里，别漏 -->
+  <link rel="stylesheet" href="./app.css" />
 </head>
 <body>
   <header class="topbar">
@@ -61,17 +63,23 @@
         <a class="nav-link" data-nav-hash="#/events" href="#/events">今天重点</a>
       </div>
       <button id="briefing-btn" type="button" class="nav-link btn-link" title="A股收盘后，隔夜各资产走了多少">隔夜复盘</button>
-      <span id="updated" class="updated">连接中…</span>
-      <span id="countdown" class="muted"></span>
-      <button id="refresh" type="button" title="立即刷新（快捷键 R）">刷新</button>
-    </div>
+      <!-- 状态簇打包成一个 flex 项：窄屏换行时整组落到同一行，而不是拆散 -->
+      <span class="tasks-status">
+        <span id="updated" class="updated">连接中…</span>
+        <span id="countdown" class="muted"></span>
+        <button id="refresh" type="button" title="立即刷新（快捷键 R）">刷新</button>
+      </span>
+    </nav>
   </header>
 
+  <!-- 问题优先区（产品 §3）：最多三张问题卡，行情之前 -->
   <section id="questions" class="questions" aria-live="polite" hidden></section>
-  <!-- 问题优先区（产品 2.3 关注简报 + 2.4 预期台账）：两块都没内容时整块隐藏 -->
-  <section id="home-brief" class="home-brief" hidden></section>
 
   <main id="rows" class="rows" aria-live="polite" aria-busy="true"></main>
+
+  <!-- 关注简报 + 预期台账 + 生活连接（2.3 / 2.4 / 2.6）：
+       放在行情之后 —— 它是补充阅读，不该把 23 个标的挤到两屏开外 -->
+  <section id="home-brief" class="home-brief" hidden></section>
 
   <section id="detail" class="detail" hidden aria-live="polite"></section>
 

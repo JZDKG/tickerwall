@@ -222,7 +222,35 @@ ready 被这个次要动作覆盖回 loading。修法：只合并 `history` / `h
 审阅还纠正了我对分支覆盖的**一处错误说法**：我写「剩下的基本都是 binary-expr 默认侧」，
 实测未覆盖里 `if` 378 + `cond-expr` 371 = **749 条真实条件流**（占 46%）。已改。
 
+### 第 81 轮：真实浏览器截图走查 —— 5 个只有页面才会暴露的问题
+
+用 CDP 取 DOM / 计算样式 / 几何坐标 + 截图，发现 5 处：
+
+| # | 现象 | 根因 | 严重度 |
+| --- | --- | --- | --- |
+| 1 | 首屏三张问题卡**全是黄金的克隆**：跌幅都 0.14%，来源快照 id 都 `exp_gold-intl_session_…` | `fetch-json.js` 生产分支只用了 `params`，而调用方传的是 `query` → 请求退化成无参数的 `GET /api/explanations`，服务端回落 `gold-intl`，再叠加 api 的并发合并 | **严重（我自己在上一轮修的引入）** |
+| 2 | 首屏有两个都在说「先看问题」的区块（`#questions` 447px + `#home-brief` 里又一份「今天先看这三个问题」） | 第 77 轮我把问题区加进 home-brief，与既有 `#questions` 重复 | 高（信息冗余） |
+| 3 | 行情主列表在 Y≈1461，一屏看不到任何报价 | 上面两块叠加（nav 111 + questions 447 + home-brief 836） | 高（看板核心场景） |
+| 4 | 任务导航「裸奔」：没有间距、没有胶囊背景、没有激活下划线 | `public/index.html` 引了 12 个样式分片，**唯独没引 `app.css`**，而 `.tasks/.task-group/.task-label` 全写在那里 | 高（导航不可读） |
+| 5 | `<nav>` 用 `</div>` 闭合 | 手写标签笔误 | 中（浏览器会自行修复，但嵌套已错） |
+
+修法与验证：
+
+1. `fetch-json.js` 增加 `paramsOf(query, params)`，**`query` 参与生产路径**；补 3 条只在生产分支生效的用例。
+   浏览器复验：原油 1.79% / 黄金 0.14% / 美元指数 0.09%，三个快照 id 各不相同。
+2. 删掉 `home-brief` 里的问题清单（连同 `topQuestionsHTML` 与接线），问题区只保留 `#questions`（最多三张卡，`max: 3`）。
+3. 首页顺序改为 **问题 → 行情 → 简报**：`#rows` 从 Y≈1461 提到 **Y≈322**，800px 视口能看到 4 行行情。
+4. 补 `<link rel="stylesheet" href="./app.css">`；状态簇（更新于/倒计时/刷新）打包成 `.tasks-status`，`margin-left:auto` 靠右，窄屏整组换行而不是拆散。
+5. `<nav>` 改为 `</nav>`。
+
+新增三类静态守卫（不需要浏览器）：
+`tests/index-html-integrity.test.js`（每个 `link[rel=stylesheet]` 的目标文件必须存在、`app.css` 必须被引且确实含 `.tasks`、`nav/div/section/main` 开闭数量一致、区块顺序）、
+`tests/fetch-json.test.js`（`query` 在生产路径生效）、
+`tests/explanation-params-production.test.js`（解释取数的生产 URL 必须带 asset/window，两个资产不能同 URL）。
+
 小结：**「填一次」不够，凡是整块重建的容器，都要回答「重建之后谁负责补回来」**。
+
+更重要的教训：**注入路径全绿 ≠ 生产路径正确**。这一轮第 1 条，所有单元测试都走 `fetchImpl`，参数丢失在生产分支，因此 2876 条测试一条都挡不住 —— 只有真实浏览器会暴露。
 详情页（取历史覆盖取解释）、事件中心（重绘清槽位）是同一个模式的两个实例。
 
 变化记录面板显示「变化记录暂时不可用」是**正确行为**：库里只有一版，

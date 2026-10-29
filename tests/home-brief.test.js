@@ -9,7 +9,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { homeBriefHTML, renderHomeBrief, shouldHideHomeBrief, topQuestionsHTML, watchPickerHTML } from '../src/client/views/home-brief.js';
+import { homeBriefHTML, renderHomeBrief, shouldHideHomeBrief, watchPickerHTML } from '../src/client/views/home-brief.js';
 
 const briefItems = { reason: 'HAS_ITEMS', count: 1, items: [{ id: 'a', time: '2026-10-28 10:00:00', title: '金价回落', sources: 2 }], sinceMs: Date.now() - 3600_000 };
 const ledgerOk = {
@@ -183,9 +183,116 @@ describe('问题优先的层级', () => {
     empty: false,
   });
 
-  it('入口按钮在 DOM 里排在行情列表之前', () => {
+  it('简报排在行情之后（第 81 轮：不让 23 个标的被挤到两屏外）', () => {
     const html = readFileSync('public/index.html', 'utf8');
-    expect(html.indexOf('id="home-brief"')).toBeLessThan(html.indexOf('id="rows"'));
+    expect(html.indexOf('id="rows"')).toBeLessThan(html.indexOf('id="home-brief"'));
+  });
+
+  it('选择面板不会让人选超过三个（第四个 disable）', () => {
+    const qs = ['a', 'b', 'c', 'd'].map((k) => ({ key: k, ask: `问题${k}` }));
+    const el = document.createElement('div');
+    el.innerHTML = watchPickerHTML(qs, ['a', 'b', 'c']).toString();
+    const boxes = [...el.querySelectorAll('input[data-watch]')];
+    const disabled = boxes.filter((b) => b.disabled).map((b) => b.dataset.watch);
+    expect(disabled).toEqual(['d']);
+  });
+
+  it('简报条目有上限（最多三条，不铺满首页）', () => {
+    const el = document.createElement('div');
+    el.innerHTML = homeBriefHTML(brief(9), { total: 0, items: [] });
+    const cards = el.querySelectorAll('.wb-card, .wb-item');
+    expect(cards.length).toBeLessThanOrEqual(3);
+  });
+});
+
+describe('选择面板', () => {
+  const qs = [
+    { key: 'a', question: '问题 A', why: '因为 A' },
+    { key: 'b', question: '问题 B', why: '因为 B' },
+  ];
+
+  it('已选的打勾，未选的留空', () => {
+    const el = document.createElement('div');
+    el.innerHTML = watchPickerHTML(qs, ['a']);
+    expect(el.querySelector('[data-watch="a"]').checked).toBe(true);
+    expect(el.querySelector('[data-watch="b"]').checked).toBe(false);
+  });
+
+  it('选满三个时其余的禁用（不让用户点进一个会被拒绝的状态）', () => {
+    const el = document.createElement('div');
+    el.innerHTML = watchPickerHTML(qs, ['x', 'y', 'z']);
+    expect(el.querySelector('[data-watch="b"]').disabled).toBe(true);
+  });
+
+  it('说明写清「选多了就退化成全部市场」', () => {
+    const el = document.createElement('div');
+    el.innerHTML = watchPickerHTML(qs, []);
+    expect(el.textContent).toContain('最多选三个');
+  });
+});
+
+describe('生活场景作为第三块', () => {
+  const life = {
+    ok: true,
+    title: '油价与出行成本',
+    plain: '会不会传导到我的加油与出行开销',
+    headline: '国际原油价格本窗口上行',
+    steps: [{ label: '国际原油价格', basis: 'mechanism', basisText: '机制可解释', note: 'x' }],
+    gaps: ['缺本地零售价数据'],
+    disclaimer: '只说明机制，不预测',
+    needsLocalData: true,
+  };
+
+  it('传了生活场景就多渲染一块', () => {
+    const el = document.createElement('div');
+    el.innerHTML = homeBriefHTML(briefItems, ledgerOk, life);
+    expect(el.querySelector('.lp-card')).not.toBeNull();
+  });
+
+  it('没传就不渲染（不占位）', () => {
+    const el = document.createElement('div');
+    el.innerHTML = homeBriefHTML(briefItems, ledgerOk);
+    expect(el.querySelector('.lp-card')).toBeNull();
+  });
+
+  it('前两块都空但有生活场景时仍然显示（否则这一块永远看不到）', () => {
+    const host = document.createElement('section');
+    document.body.appendChild(host);
+    const shown = renderHomeBrief(host, { reason: 'NO_WATCH' }, { total: 0 }, { lifePath: life });
+    expect(shown).toBe(true);
+    expect(host.hidden).toBe(false);
+    host.remove();
+  });
+
+  it('生活场景 ok=false 时不撑开容器', () => {
+    const host = document.createElement('section');
+    document.body.appendChild(host);
+    const shown = renderHomeBrief(host, { reason: 'NO_WATCH' }, { total: 0 }, { lifePath: { ok: false } });
+    expect(shown).toBe(false);
+    host.remove();
+  });
+});
+
+/* ================================================================== *
+ * 首页问题优先（产品 §3）：最多三个问题，行情在后
+ *
+ * 这一条之前只是「首页同时有问题卡和行情」。要求是**层级**：
+ * 问题在前、最多三个，行情在后。
+ * ================================================================== */
+describe('问题优先的层级', () => {
+  const brief = (n) => ({
+    ok: true,
+    status: 'ok',
+    hasWatch: true,
+    items: Array.from({ length: n }, (_, i) => ({
+      id: `e${i}`, title: `事件${i}`, time: '2026-10-29 10:00:00', level: 'high', assets: ['gold-intl'], fingerprint: `f${i}`,
+    })),
+    empty: false,
+  });
+
+  it('简报排在行情之后（第 81 轮：不让 23 个标的被挤到两屏外）', () => {
+    const html = readFileSync('public/index.html', 'utf8');
+    expect(html.indexOf('id="rows"')).toBeLessThan(html.indexOf('id="home-brief"'));
   });
 
   it('选择面板不会让人选超过三个（第四个 disable）', () => {
@@ -210,25 +317,3 @@ const brief_ = (n) => ({
   items: Array.from({ length: n }, (_, i) => ({ id: `e${i}`, title: `事件${i}`, time: '2026-10-29 10:00:00', level: 'high', assets: ['gold-intl'], fingerprint: `f${i}` })),
 });
 
-describe('先看这三个问题', () => {
-  const qs = ['a', 'b', 'c', 'd', 'e'].map((k) => ({ key: k, ask: `问题${k}`, hint: '提示' }));
-
-  it('只渲染被选中的，且最多三条', () => {
-    const el = document.createElement('div');
-    el.innerHTML = topQuestionsHTML(qs, ['a', 'b', 'c', 'd', 'e']).toString();
-    expect(el.querySelectorAll('.hq-item')).toHaveLength(3);
-    expect(el.textContent).toContain('问题a');
-    expect(el.textContent).not.toContain('问题d');
-  });
-
-  it('没选任何问题时不渲染这一块（不给空壳）', () => {
-    expect(String(topQuestionsHTML(qs, []))).toBe('');
-  });
-
-  it('排在简报与预期之前（问题优先于资讯）', () => {
-    const el = document.createElement('div');
-    el.innerHTML = homeBriefHTML(brief_(1), { total: 0, items: [] }, null, { list: qs, chosen: ['a'] }).toString();
-    const first = el.firstElementChild;
-    expect(first.className).toContain('home-questions');
-  });
-});

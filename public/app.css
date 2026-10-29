@@ -1,7 +1,20 @@
 
 /* 导航收敛（产品 §3.2）：三个任务分组。
    任务标签只做视觉分组，不是可点的一层 —— 点任务不会先到中间页。 */
-.tasks { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.tasks {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+/* 状态簇（更新时间 / 倒计时 / 刷新）打包靠右：否则窄一点就会被拆成两行 */
+.tasks .tasks-status {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
 .task-group { display: flex; align-items: center; gap: 6px; }
 .task-group .task-label {
   font-size: 11px; letter-spacing: .04em; color: var(--muted, #8a8f98);

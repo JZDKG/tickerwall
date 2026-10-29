@@ -33,13 +33,31 @@ async function viaInjected(fetchImpl, url) {
  *   `query` 用于需要保留**原始拼接顺序**的调用方（与旧 URL 形状逐字节一致）。
  * @returns {Promise<any|null>}
  */
+/** 把 `a=1&b=2` 这样的 query 串解析成参数对象（生产路径要用它调 api.get） */
+function paramsOf(query, params) {
+  if (params) return params;
+  if (!query) return null;
+  const out = {};
+  for (const [k, v] of new URLSearchParams(query)) out[k] = v;
+  return out;
+}
+
 export async function getJson(path, { params = null, fetchImpl = null, query = '' } = {}) {
-  if (fetchImpl) {
-    const qs = query || (params ? new URLSearchParams(params).toString() : '');
-    return viaInjected(fetchImpl, `./${path}${qs ? `?${qs}` : ''}`);
-  }
+  const qs = query || (params ? new URLSearchParams(params).toString() : '');
+  if (fetchImpl) return viaInjected(fetchImpl, `./${path}${qs ? `?${qs}` : ''}`);
   try {
-    const { data } = await api.get(path, { params });
+    /**
+     * **`query` 必须参与生产路径**。
+     *
+     * 这里曾经写成 `api.get(path, { params })` —— 而调用方大多传的是
+     * `query`（为了与旧 URL 逐字节一致），于是 params 恒为 null，
+     * 请求退化成 `GET /api/explanations`（无任何参数）。服务端默认回退到
+     * gold-intl，再加上 api 的并发合并，首屏三张问题卡全成了黄金的克隆：
+     * 跌幅都是 0.14%，来源快照 id 都是 exp_gold-intl_session_…。
+     * 这类「参数在注入路径生效、在生产路径丢失」的错，jsdom 测不出来
+     * （测试都走注入路径），只有真实浏览器会暴露。
+     */
+    const { data } = await api.get(path, { params: paramsOf(query, params) });
     return data ?? null;
   } catch {
     return null;
@@ -64,7 +82,7 @@ export async function getJsonWithStatus(path, { params = null, fetchImpl = null,
     }
   }
   try {
-    const { data, status } = await api.get(path, { params });
+    const { data, status } = await api.get(path, { params: paramsOf(query, params) });
     return { status, body: data ?? {} };
   } catch (err) {
     const status = err?.status ?? 503;
