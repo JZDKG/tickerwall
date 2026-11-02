@@ -1,0 +1,13 @@
+<view class="tabbar" style="padding-bottom: {{safeBottom}}px">
+  <view
+    wx:for="{{list}}"
+    wx:key="path"
+    class="item {{selected === index ? 'is-active' : ''}}"
+    data-index="{{index}}"
+    bindtap="onTap"
+  >
+    <view class="marker"></view>
+    <t-icon name="{{item.icon}}" size="40rpx" color="{{selected === index ? '#e8edf5' : '#5a6474'}}" />
+    <text class="label">{{item.text}}</text>
+  </view>
+</view>

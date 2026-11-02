@@ -1,0 +1,290 @@
+.head {
+  padding: 20rpx 0 16rpx;
+}
+
+.head-title {
+  display: block;
+  font-size: 40rpx;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.head-sub {
+  display: block;
+  margin-top: 6rpx;
+  font-size: 20rpx;
+  color: var(--muted-2);
+  font-family: var(--mono);
+}
+
+/* ---------------- 计数 ---------------- */
+
+.stats {
+  display: flex;
+  align-items: center;
+  gap: 28rpx;
+  margin: 20rpx 0 6rpx;
+}
+
+.stat {
+  display: flex;
+  align-items: baseline;
+  gap: 8rpx;
+}
+
+.stat-num {
+  font-family: var(--mono);
+  font-size: 32rpx;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-num.ok {
+  color: var(--accent);
+}
+.stat-num.bad {
+  color: #d8a25a;
+}
+.stat-num.dim {
+  color: var(--muted);
+}
+
+.stat-label {
+  font-size: 19rpx;
+  color: var(--muted-2);
+}
+
+.mode-tag {
+  margin-left: auto;
+  font-size: 18rpx;
+  color: #d8a25a;
+  border: 1rpx solid rgba(216, 162, 90, 0.4);
+  border-radius: 6rpx;
+  padding: 1rpx 8rpx;
+}
+
+/* ---------------- 机制卡 ---------------- */
+
+.chain-list {
+  margin-top: 16rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+}
+
+.chain {
+  padding: 20rpx 22rpx;
+  background: var(--panel);
+  border: 1rpx solid var(--line);
+  border-radius: 20rpx;
+}
+
+.chain-head {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.chain-label {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.sign-tag {
+  font-size: 17rpx;
+  color: var(--muted);
+  border: 1rpx solid var(--line);
+  border-radius: 6rpx;
+  padding: 1rpx 8rpx;
+}
+
+.status {
+  margin-left: auto;
+  font-size: 19rpx;
+  padding: 3rpx 12rpx;
+  border-radius: 999rpx;
+  border: 1rpx solid transparent;
+}
+
+/* 状态色不用涨跌红绿：这里判断的是「观测与机制是否一致」，不是价格方向。
+   红绿会被自动读成涨跌，而「一致」既不是利好也不代表机制成立。 */
+.status.st-consistent {
+  color: var(--accent);
+  background: rgba(110, 168, 254, 0.1);
+  border-color: rgba(110, 168, 254, 0.3);
+}
+
+.status.st-opposite {
+  color: #d8a25a;
+  background: rgba(216, 162, 90, 0.1);
+  border-color: rgba(216, 162, 90, 0.32);
+}
+
+.status.st-untested {
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--line);
+}
+
+.chain-arrow {
+  transition: transform 0.18s ease;
+  transform: rotate(0deg);
+  margin-left: 4rpx;
+}
+
+.chain-arrow.is-open {
+  transform: rotate(180deg);
+}
+
+/* ---------------- 两端 ---------------- */
+
+.legs {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  margin-top: 16rpx;
+}
+
+.leg {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2rpx;
+}
+
+.leg-right {
+  align-items: flex-end;
+}
+
+.leg-name {
+  font-size: 20rpx;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.leg-price {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.leg-pct {
+  font-size: 21rpx;
+  font-variant-numeric: tabular-nums;
+}
+
+.arrow {
+  flex: none;
+  position: relative;
+  width: 60rpx;
+  height: 40rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.arrow-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1rpx;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.arrow-text {
+  position: relative;
+  font-size: 22rpx;
+  color: var(--muted-2);
+  background: #0a0e14;
+  padding: 0 4rpx;
+}
+
+.chain-note {
+  margin-top: 14rpx;
+  padding-top: 12rpx;
+  border-top: 1rpx dashed rgba(255, 255, 255, 0.055);
+  font-size: 21rpx;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* ---------------- 展开详情 ---------------- */
+
+.detail {
+  margin-top: 14rpx;
+  padding-top: 12rpx;
+  border-top: 1rpx solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+}
+
+.d-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.d-title {
+  font-size: 19rpx;
+  letter-spacing: 0.08em;
+  color: var(--muted-2);
+}
+
+.d-text {
+  font-size: 23rpx;
+  line-height: 1.6;
+  color: var(--text);
+  opacity: 0.9;
+}
+
+.d-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+}
+
+.d-li {
+  font-size: 22rpx;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+/* ---------------- 错误 / 页脚 ---------------- */
+
+.err-box {
+  padding: 80rpx 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.err-detail {
+  font-size: 20rpx;
+  color: var(--muted-2);
+}
+
+.retry {
+  padding: 12rpx 40rpx;
+  border-radius: 12rpx;
+  border: 1rpx solid var(--line-strong);
+  background: var(--panel-2);
+  font-size: 24rpx;
+}
+
+.foot {
+  margin-top: 28rpx;
+  padding-top: 18rpx;
+  border-top: 1rpx solid var(--line);
+  font-size: 19rpx;
+  color: var(--muted-2);
+  line-height: 1.5;
+}

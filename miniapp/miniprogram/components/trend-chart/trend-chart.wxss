@@ -1,0 +1,13 @@
+/* 兜底高度：canvas 在高度为 0 的容器里不会绘制，而组件一旦拿到 0 高度
+   外观上就是「图没了」但没有任何报错，排查成本很高。 */
+.chart-wrap {
+  position: relative;
+  width: 100%;
+  height: 188px;
+}
+
+.chart {
+  width: 100%;
+  height: 100%;
+  display: block;
+}

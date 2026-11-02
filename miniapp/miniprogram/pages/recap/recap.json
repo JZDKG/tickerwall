@@ -1,0 +1,10 @@
+{
+  "navigationBarTitleText": "隔夜复盘",
+  "enablePullDownRefresh": true,
+  "backgroundColor": "#080b10",
+  "backgroundTextStyle": "dark",
+  "usingComponents": {
+    "t-empty": "tdesign-miniprogram/empty/empty",
+    "t-icon": "tdesign-miniprogram/icon/icon"
+  }
+}

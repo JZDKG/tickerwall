@@ -1,0 +1,369 @@
+.head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16rpx;
+  padding: 20rpx 0 14rpx;
+}
+
+.head-title {
+  display: block;
+  font-size: 40rpx;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.head-sub {
+  display: block;
+  margin-top: 6rpx;
+  font-size: 20rpx;
+  color: var(--muted-2);
+}
+
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.ghost-btn {
+  font-size: 22rpx;
+  color: var(--text);
+  padding: 10rpx 20rpx;
+  border-radius: 10rpx;
+  border: 1rpx solid var(--line);
+  background: var(--panel-2);
+}
+
+.primary-btn {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  font-size: 22rpx;
+  color: #080b10;
+  font-weight: 600;
+  padding: 10rpx 22rpx;
+  border-radius: 10rpx;
+  background: #e8edf5;
+}
+
+.primary-btn:active {
+  opacity: 0.8;
+}
+
+.mode-tag {
+  align-self: flex-start;
+  font-size: 18rpx;
+  color: #d8a25a;
+  border: 1rpx solid rgba(216, 162, 90, 0.4);
+  border-radius: 6rpx;
+  padding: 1rpx 8rpx;
+  margin-bottom: 12rpx;
+}
+
+/* ---------------- 云同步状态条 ---------------- */
+
+.sync-bar {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  padding: 12rpx 18rpx;
+  margin-bottom: 14rpx;
+  border-radius: 14rpx;
+  background: var(--panel);
+  border: 1rpx solid var(--line);
+}
+
+.sync-dot {
+  flex: none;
+  width: 10rpx;
+  height: 10rpx;
+  border-radius: 50%;
+  background: var(--muted-2);
+}
+
+.sync-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 21rpx;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sync-action {
+  flex: none;
+  font-size: 21rpx;
+  color: var(--accent);
+  padding: 4rpx 14rpx;
+  border-radius: 8rpx;
+  border: 1rpx solid rgba(110, 168, 254, 0.3);
+  background: rgba(110, 168, 254, 0.08);
+}
+
+.sync-action.muted {
+  color: var(--muted);
+  border-color: var(--line);
+  background: transparent;
+}
+
+/* 已同步：绿点；失败：红点 + 红字。颜色只表示连接状态，不表示涨跌 */
+.sync-bar.st-on .sync-dot {
+  background: var(--down);
+  box-shadow: 0 0 0 4rpx rgba(14, 203, 129, 0.14);
+}
+
+.sync-bar.st-error .sync-dot {
+  background: var(--up);
+  box-shadow: 0 0 0 4rpx rgba(245, 69, 92, 0.14);
+}
+
+.sync-bar.st-error .sync-text {
+  color: #ff8f9c;
+}
+
+.sync-bar.st-busy .sync-dot {
+  background: var(--accent);
+  animation: syncPulse 1.1s ease-in-out infinite;
+}
+
+@keyframes syncPulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ---------------- 汇总 ---------------- */
+
+.summary {
+  display: flex;
+  align-items: baseline;
+  gap: 14rpx;
+  padding: 16rpx 20rpx;
+  margin-bottom: 16rpx;
+  border-radius: 16rpx;
+  background: var(--panel);
+  border: 1rpx solid var(--line);
+}
+
+.sum-label {
+  font-size: 21rpx;
+  color: var(--muted);
+}
+
+.sum-avg {
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+.sum-avg.up {
+  color: var(--up);
+}
+.sum-avg.down {
+  color: var(--down);
+}
+
+.sum-detail {
+  margin-left: auto;
+  font-size: 20rpx;
+  color: var(--muted-2);
+  font-family: var(--mono);
+}
+
+/* ---------------- 列表 ---------------- */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+}
+
+.row {
+  position: relative;
+}
+
+/* 编辑态的移除按钮：压在卡片右上角，圆形红边 */
+.remove {
+  position: absolute;
+  top: -8rpx;
+  right: -8rpx;
+  width: 44rpx;
+  height: 44rpx;
+  border-radius: 50%;
+  background: #171b22;
+  border: 1rpx solid rgba(245, 69, 92, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+
+.hint {
+  margin-top: 24rpx;
+  font-size: 19rpx;
+  color: var(--muted-2);
+  text-align: center;
+}
+
+/* ---------------- 空态 ---------------- */
+
+.empty-box {
+  padding: 80rpx 40rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20rpx;
+}
+
+.empty-hint {
+  font-size: 22rpx;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.6;
+}
+
+/* ---------------- 错误 ---------------- */
+
+.err-box {
+  padding: 80rpx 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.err-detail {
+  font-size: 20rpx;
+  color: var(--muted-2);
+}
+
+.retry {
+  padding: 12rpx 40rpx;
+  border-radius: 12rpx;
+  border: 1rpx solid var(--line-strong);
+  background: var(--panel-2);
+  font-size: 24rpx;
+}
+
+/* ---------------- 添加面板 ---------------- */
+
+.sheet {
+  background: #0b1017;
+  border-radius: 28rpx 28rpx 0 0;
+  padding: 24rpx 24rpx calc(24rpx + env(safe-area-inset-bottom));
+  border-top: 1rpx solid var(--line);
+  max-height: 76vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16rpx;
+}
+
+.sheet-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.sheet-close {
+  width: 56rpx;
+  height: 56rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* TDesign 搜索框默认是浅色（白底 + 灰字），放进深色面板里会像一块补丁。
+   这里只覆盖它暴露出来的 CSS 变量，不动组件内部结构。 */
+.sheet-search {
+  --td-search-bg-color: rgba(255, 255, 255, 0.06);
+  --td-search-text-color: #e8edf5;
+  --td-search-placeholder-color: #5a6474;
+  --td-search-icon-color: #7c8899;
+  --td-search-clear-icon-color: #7c8899;
+  --td-search-height: 68rpx;
+  --td-search-square-radius: 12rpx;
+  --td-input-bg-color: transparent;
+  --td-input-default-text-color: #e8edf5;
+  --td-input-placeholder-text-color: #5a6474;
+  border-radius: 12rpx;
+  margin-bottom: 12rpx;
+}
+
+.candidate-scroll {
+  flex: 1;
+  max-height: 56vh;
+}
+
+.cand {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 18rpx 4rpx;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+}
+
+.cand-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.cand-name {
+  display: block;
+  font-size: 27rpx;
+  color: var(--text);
+}
+
+.cand-sub {
+  display: block;
+  margin-top: 2rpx;
+  font-size: 19rpx;
+  color: var(--muted-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cand-pct {
+  font-size: 23rpx;
+  font-variant-numeric: tabular-nums;
+}
+
+.cand-pct.up {
+  color: var(--up);
+}
+.cand-pct.down {
+  color: var(--down);
+}
+
+.cand-action {
+  width: 52rpx;
+  height: 52rpx;
+  border-radius: 50%;
+  border: 1rpx solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cand-action.is-on {
+  border-color: rgba(14, 203, 129, 0.4);
+  background: rgba(14, 203, 129, 0.08);
+}
+
+.cand-empty {
+  padding: 40rpx 0;
+  text-align: center;
+  font-size: 22rpx;
+  color: var(--muted-2);
+}

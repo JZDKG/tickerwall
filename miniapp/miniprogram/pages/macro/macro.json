@@ -1,0 +1,10 @@
+{
+  "navigationBarTitleText": "关联分析",
+  "enablePullDownRefresh": true,
+  "backgroundColor": "#080b10",
+  "backgroundTextStyle": "dark",
+  "usingComponents": {
+    "t-empty": "tdesign-miniprogram/empty/empty",
+    "t-icon": "tdesign-miniprogram/icon/icon"
+  }
+}

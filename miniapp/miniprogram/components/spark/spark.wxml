@@ -1,0 +1,9 @@
+<view class="spark {{dir}}" wx:if="{{!empty}}">
+  <view
+    wx:for="{{bars}}"
+    wx:key="index"
+    class="bar {{item.last ? 'is-last' : ''}}"
+    style="height: {{item.h}}%"
+  ></view>
+</view>
+<view class="spark-empty" wx:else>走势积累中</view>

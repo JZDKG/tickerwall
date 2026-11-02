@@ -1,0 +1,40 @@
+.spark {
+  display: flex;
+  align-items: flex-end;
+  gap: 3rpx;
+  width: 100%;
+  height: 100%;
+  color: var(--flat);
+}
+
+.spark.up {
+  color: var(--up);
+}
+
+.spark.down {
+  color: var(--down);
+}
+
+.bar {
+  flex: 1;
+  min-width: 2rpx;
+  border-radius: 2rpx 2rpx 0 0;
+  background-color: currentColor;
+  opacity: 0.42;
+}
+
+.bar.is-last {
+  opacity: 1;
+}
+
+.spark-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border: 1rpx dashed var(--line);
+  border-radius: 12rpx;
+  font-size: 20rpx;
+  color: var(--muted-2);
+}

@@ -1,0 +1,103 @@
+<!-- 自定义导航：固定吸顶，滚动时标题不会被内容盖住；右侧留给微信胶囊 -->
+<view class="nav-fix">
+  <view class="status-space" style="height: {{statusBarHeight}}px"></view>
+  <view class="nav" style="height: {{navBarHeight}}px">
+    <view class="brand">
+      <view class="pulse"></view>
+      <text class="brand-title">市场看板</text>
+    </view>
+  </view>
+</view>
+<view style="height: {{statusBarHeight + navBarHeight}}px"></view>
+
+<view class="page-body">
+  <!-- 状态条：更新时间 / 数据通道 / 操作 -->
+  <view class="status-strip">
+    <view class="stamp-box">
+      <text class="stamp mono">{{updatedText}}</text>
+      <view class="mode-tag" wx:if="{{demo}}">
+        <text>{{'演示数据'}}</text>
+      </view>
+      <text class="mode-why" wx:if="{{demoReason}}">{{demoReason}}</text>
+      <t-loading wx:if="{{refreshing}}" theme="circular" size="26rpx" inherit-color />
+    </view>
+    <view class="strip-actions">
+      <view class="ghost-btn" bindtap="onRecap">隔夜复盘</view>
+      <view class="icon-btn" hover-class="icon-btn-hover" bindtap="onRefreshTap">
+        <t-icon name="refresh" size="34rpx" color="#8b97a8" />
+      </view>
+    </view>
+  </view>
+
+  <!-- 涨跌分布：一眼看出今天是普涨还是普跌 -->
+  <view class="summary" wx:if="{{summary.total}}">
+    <view class="sum-nums">
+      <view class="sum-item">
+        <text class="sum-num up">{{summary.up}}</text>
+        <text class="sum-label">涨</text>
+      </view>
+      <view class="sum-item">
+        <text class="sum-num flat">{{summary.flat}}</text>
+        <text class="sum-label">平</text>
+      </view>
+      <view class="sum-item">
+        <text class="sum-num down">{{summary.down}}</text>
+        <text class="sum-label">跌</text>
+      </view>
+      <text class="sum-total">共 {{summary.total}} 项</text>
+    </view>
+    <view class="sum-bar">
+      <view class="seg up" style="width: {{summary.upPct}}%"></view>
+      <view class="seg flat" style="width: {{summary.flatPct}}%"></view>
+      <view class="seg down" style="width: {{summary.downPct}}%"></view>
+    </view>
+  </view>
+
+  <!-- 筛选 -->
+  <scroll-view class="filters" scroll-x enable-flex show-scrollbar="{{false}}">
+    <view class="filters-inner">
+      <view
+        wx:for="{{filters}}"
+        wx:key="key"
+        class="chip {{filter === item.key ? 'is-on' : ''}}"
+        data-key="{{item.key}}"
+        bindtap="onFilter"
+      >
+        <text>{{item.label}}</text>
+        <text class="chip-count">{{item.count}}</text>
+      </view>
+    </view>
+  </scroll-view>
+
+  <!-- 错误态：只有拿不到任何数据（连快照都没有）才会到这里 -->
+  <view class="err-box" wx:if="{{error && !items.length}}">
+    <t-empty icon="error-circle" description="暂时拿不到行情" />
+    <view class="err-detail mono">{{error}}</view>
+    <view class="retry" bindtap="onRetry">重试</view>
+  </view>
+
+  <!-- 骨架屏：只覆盖「首次加载且没有缓存」这一种情况 -->
+  <view class="list" wx:elif="{{loading && !items.length}}">
+    <view class="sk-card" wx:for="{{[1,2,3,4,5]}}" wx:key="*this">
+      <view class="sk-line w40"></view>
+      <view class="sk-line w70 tall"></view>
+      <view class="sk-line w55"></view>
+    </view>
+  </view>
+
+  <view class="list" wx:else>
+    <quote-card
+      wx:for="{{items}}"
+      wx:key="id"
+      item="{{item}}"
+      bind:open="onOpen"
+    />
+  </view>
+
+  <view class="foot" wx:if="{{items.length}}">
+    <text>{{footerNote}}</text>
+    <text class="foot-note">{{disclaimer}}</text>
+  </view>
+</view>
+
+<view class="tabbar-holder"></view>

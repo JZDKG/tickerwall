@@ -1,0 +1,221 @@
+.head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16rpx;
+  padding: 20rpx 0 16rpx;
+}
+
+.head-title {
+  display: block;
+  font-size: 40rpx;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.head-sub {
+  display: block;
+  margin-top: 6rpx;
+  font-size: 20rpx;
+  color: var(--muted-2);
+  font-family: var(--mono);
+}
+
+.head-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6rpx;
+}
+
+.stamp {
+  font-size: 19rpx;
+  color: var(--muted-2);
+}
+
+.mode-tag {
+  font-size: 18rpx;
+  color: #d8a25a;
+  border: 1rpx solid rgba(216, 162, 90, 0.4);
+  border-radius: 6rpx;
+  padding: 1rpx 8rpx;
+}
+
+/* ---------------- 最强 / 最弱 ---------------- */
+
+.extreme {
+  display: flex;
+  gap: 14rpx;
+  margin-top: 18rpx;
+}
+
+.ext-card {
+  flex: 1;
+  padding: 18rpx 20rpx;
+  border-radius: 18rpx;
+  background: var(--panel);
+  border: 1rpx solid var(--line);
+}
+
+.ext-title {
+  display: block;
+  font-size: 19rpx;
+  letter-spacing: 0.1em;
+  margin-bottom: 10rpx;
+}
+
+.ext-title.up {
+  color: var(--up);
+}
+.ext-title.down {
+  color: var(--down);
+}
+
+.ext-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10rpx;
+  padding: 7rpx 0;
+}
+
+.ext-name {
+  font-size: 23rpx;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ext-pct {
+  font-size: 22rpx;
+  font-variant-numeric: tabular-nums;
+}
+
+.ext-pct.up {
+  color: var(--up);
+}
+.ext-pct.down {
+  color: var(--down);
+}
+
+/* ---------------- 分组 ---------------- */
+
+.group {
+  margin-top: 22rpx;
+  border-radius: 18rpx;
+  background: var(--panel);
+  border: 1rpx solid var(--line);
+  overflow: hidden;
+}
+
+.group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12rpx;
+  padding: 16rpx 20rpx;
+  background: rgba(255, 255, 255, 0.02);
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+}
+
+.group-label {
+  font-size: 25rpx;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.group-meta {
+  font-size: 19rpx;
+  color: var(--muted-2);
+}
+
+.group-avg {
+  margin-left: auto;
+  font-size: 25rpx;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.group-avg.up {
+  color: var(--up);
+}
+.group-avg.down {
+  color: var(--down);
+}
+.group-avg.flat {
+  color: var(--flat);
+}
+
+.group-body {
+  padding: 4rpx 0;
+}
+
+.grow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13rpx 20rpx;
+}
+
+.grow:active {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.grow-name {
+  font-size: 24rpx;
+  color: var(--muted);
+}
+
+.grow-pct {
+  font-size: 24rpx;
+  font-variant-numeric: tabular-nums;
+}
+
+.grow-pct.up {
+  color: var(--up);
+}
+.grow-pct.down {
+  color: var(--down);
+}
+.grow-pct.flat {
+  color: var(--flat);
+}
+
+/* ---------------- 错误 / 页脚 ---------------- */
+
+.err-box {
+  padding: 80rpx 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.err-detail {
+  font-size: 20rpx;
+  color: var(--muted-2);
+}
+
+.retry {
+  padding: 12rpx 40rpx;
+  border-radius: 12rpx;
+  border: 1rpx solid var(--line-strong);
+  background: var(--panel-2);
+  font-size: 24rpx;
+}
+
+.foot {
+  margin-top: 28rpx;
+  padding-top: 18rpx;
+  border-top: 1rpx solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+  font-size: 19rpx;
+  color: var(--muted-2);
+  line-height: 1.5;
+}
+
+.foot-note {
+  color: rgba(90, 100, 116, 0.85);
+}

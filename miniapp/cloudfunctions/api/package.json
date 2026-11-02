@@ -1,0 +1,8 @@
+{
+  "name": "api",
+  "version": "1.0.0",
+  "description": "市场看板小程序的数据接口（行情 / 详情 / 事件 / 关联 / 复盘）",
+  "main": "index.js",
+  "private": true,
+  "dependencies": {}
+}

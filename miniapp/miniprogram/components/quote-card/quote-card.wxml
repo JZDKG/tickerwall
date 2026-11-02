@@ -1,0 +1,62 @@
+<view
+  wx:if="{{v}}"
+  class="qcard {{v.dir}} {{v.stale ? 'is-stale' : ''}} {{v.failed ? 'is-error' : ''}}"
+  hover-class="qcard-hover"
+  hover-stay-time="80"
+  bindtap="onTap"
+>
+  <view class="accent"></view>
+
+  <view class="line-top">
+    <view class="name-box">
+      <text class="name">{{item.name}}</text>
+      <view class="market-badge" wx:if="{{v.marketLabel}}">
+        <view class="dot {{v.open ? 'on' : ''}}"></view>
+        <text>{{v.marketLabel}}</text>
+      </view>
+    </view>
+    <view class="delta-col">
+      <view class="pct {{v.dir}} {{v.failed ? 'is-fail' : ''}}">{{v.pctText}}</view>
+      <text class="abs mono" wx:if="{{v.absText}}">{{v.absText}}</text>
+    </view>
+  </view>
+
+  <view class="line-sub" wx:if="{{!dense}}">
+    <text class="sub">{{item.sub}}</text>
+  </view>
+
+  <view class="line-price">
+    <view class="price-box">
+      <text class="value {{v.dir}} {{v.stale ? 'is-stale-value' : ''}}">{{v.priceText}}</text>
+      <text class="unit">{{item.unit}}</text>
+    </view>
+    <view class="spark-box">
+      <spark points="{{item.history}}" dir="{{v.dir}}" count="{{18}}"></spark>
+    </view>
+  </view>
+
+  <view class="line-meta">
+    <text class="meta-text">{{v.metaText}}</text>
+    <text class="sep" wx:if="{{v.metaText && v.fresh}}">·</text>
+    <text class="fresh lv-{{v.freshLevel}}" wx:if="{{v.fresh}}">{{v.fresh}}</text>
+  </view>
+
+  <view class="line-err" wx:if="{{v.errText}}">
+    <text>{{v.errText}}</text>
+  </view>
+
+  <view class="line-extras" wx:if="{{v.extras.length}}">
+    <view
+      class="extra"
+      wx:for="{{v.extras}}"
+      wx:for-item="ex"
+      wx:key="id"
+      data-id="{{ex.id}}"
+      catchtap="onExtra"
+    >
+      <text class="ex-name">{{ex.name}}</text>
+      <text class="ex-val mono">{{ex.valText}}</text>
+      <text class="ex-pct mono {{ex.dir}}" wx:if="{{ex.pctText}}">{{ex.pctText}}</text>
+    </view>
+  </view>
+</view>

@@ -1,0 +1,11 @@
+{
+  "navigationBarTitleText": "标的详情",
+  "enablePullDownRefresh": true,
+  "backgroundColor": "#080b10",
+  "backgroundTextStyle": "dark",
+  "usingComponents": {
+    "trend-chart": "../../components/trend-chart/trend-chart",
+    "t-empty": "tdesign-miniprogram/empty/empty",
+    "t-icon": "tdesign-miniprogram/icon/icon"
+  }
+}

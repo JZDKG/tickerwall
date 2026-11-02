@@ -1,0 +1,47 @@
+{
+  "pages": [
+    "pages/market/market",
+    "pages/events/events",
+    "pages/macro/macro",
+    "pages/watch/watch",
+    "pages/detail/detail",
+    "pages/recap/recap"
+  ],
+  "window": {
+    "backgroundTextStyle": "dark",
+    "navigationBarBackgroundColor": "#080b10",
+    "navigationBarTitleText": "市场看板",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#080b10",
+    "backgroundColorTop": "#080b10",
+    "backgroundColorBottom": "#080b10"
+  },
+  "tabBar": {
+    "custom": true,
+    "color": "#5a6474",
+    "selectedColor": "#e8edf5",
+    "backgroundColor": "#080b10",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/market/market",
+        "text": "行情"
+      },
+      {
+        "pagePath": "pages/events/events",
+        "text": "事件"
+      },
+      {
+        "pagePath": "pages/macro/macro",
+        "text": "关联"
+      },
+      {
+        "pagePath": "pages/watch/watch",
+        "text": "自选"
+      }
+    ]
+  },
+  "lazyCodeLoading": "requiredComponents",
+  "sitemapLocation": "sitemap.json",
+  "darkmode": false
+}

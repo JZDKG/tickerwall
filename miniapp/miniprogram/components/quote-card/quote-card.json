@@ -1,0 +1,7 @@
+{
+  "component": true,
+  "usingComponents": {
+    "spark": "../spark/spark",
+    "t-tag": "tdesign-miniprogram/tag/tag"
+  }
+}

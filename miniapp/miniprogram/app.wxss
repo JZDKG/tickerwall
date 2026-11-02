@@ -1,0 +1,159 @@
+/* ================================================================== *
+ * 全局设计变量与公共类
+ *
+ * 数值全部照 web 端 public/styles/tokens.css 搬过来（--bg / --panel /
+ * --line / --up / --down …），只把 px 换成 rpx（1px = 2rpx）：
+ * 这样两端的色值、层级、涨跌配色是同一套，视觉上才像同一个产品。
+ *
+ * 涨红跌绿是中国市场约定，和欧美相反 —— 不要改成 green-up。
+ * ================================================================== */
+
+page {
+  --bg: #080b10;
+  --panel: rgba(255, 255, 255, 0.028);
+  --panel-2: rgba(255, 255, 255, 0.05);
+  --line: rgba(255, 255, 255, 0.075);
+  --line-strong: rgba(255, 255, 255, 0.12);
+  --text: #e8edf5;
+  --muted: #7c8899;
+  --muted-2: #5a6474;
+  --up: #f5455c;
+  --down: #0ecb81;
+  --flat: #8b97a8;
+  --accent: #6ea8fe;
+  --radius: 24rpx;
+  --mono: "SF Mono", Menlo, Consolas, "Roboto Mono", "Courier New", monospace;
+
+  background-color: #080b10;
+  /* 与 web 端 body 的两团径向光一致：左上冷、右上暖，压到 10% 以内不抢内容 */
+  background-image:
+    radial-gradient(760rpx 420rpx at 8% -6%, rgba(64, 110, 190, 0.16), transparent 62%),
+    radial-gradient(620rpx 380rpx at 96% 2%, rgba(190, 96, 64, 0.1), transparent 58%);
+  background-repeat: no-repeat;
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  font-size: 28rpx;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+view,
+text,
+scroll-view {
+  box-sizing: border-box;
+}
+
+/* ---------------- 排版工具 ---------------- */
+
+.mono {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+.up {
+  color: var(--up);
+}
+.down {
+  color: var(--down);
+}
+.flat {
+  color: var(--flat);
+}
+
+.dim {
+  color: var(--muted);
+}
+.dimmer {
+  color: var(--muted-2);
+}
+
+/* ---------------- 容器 ---------------- */
+
+.page-body {
+  padding: 0 24rpx calc(40rpx + env(safe-area-inset-bottom));
+}
+
+.card {
+  background: var(--panel);
+  border: 1rpx solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.divider {
+  height: 1rpx;
+  background: var(--line);
+  margin: 24rpx 0;
+}
+
+/* 区块标题：小号大写 + 右侧说明，与 web 的 sec-title 同构 */
+.sec {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16rpx;
+  margin: 36rpx 0 16rpx;
+}
+
+.sec-title {
+  font-size: 24rpx;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+
+.sec-note {
+  font-size: 22rpx;
+  color: var(--muted-2);
+}
+
+/* 胶囊标签 */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8rpx;
+  height: 44rpx;
+  padding: 0 18rpx;
+  border-radius: 999rpx;
+  border: 1rpx solid var(--line);
+  background: var(--panel);
+  font-size: 22rpx;
+  color: var(--muted);
+}
+
+.chip.is-on {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+/* 提示条：解释口径 / 降级说明，弱化处理但可读 */
+.note-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 10rpx;
+  padding: 16rpx 20rpx;
+  border-radius: 16rpx;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1rpx dashed var(--line);
+  font-size: 22rpx;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* 底部占位：给自定义 tabBar 留出高度 */
+.tabbar-holder {
+  height: calc(112rpx + env(safe-area-inset-bottom));
+}
+
+/* ---------------- TDesign 主题对齐 ---------------- */
+/* TDesign 的默认主色是品牌蓝 #0052d9，与本项目的深色终端风不搭。
+   这里只在用到的几个组件上覆盖 CSS 变量，不动组件内部结构。 */
+
+.page-theme {
+  --td-brand-color: #6ea8fe;
+  --td-button-primary-bg-color: #6ea8fe;
+  --td-button-border-radius: 12rpx;
+  --td-tag-primary-color: #6ea8fe;
+  --td-tab-bar-bg-color: #0b1017;
+}

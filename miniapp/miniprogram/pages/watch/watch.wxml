@@ -1,0 +1,118 @@
+<view class="page-theme page-body">
+  <view class="head">
+    <view class="head-left">
+      <text class="head-title">自选</text>
+      <text class="head-sub">{{watching}} 个标的</text>
+    </view>
+    <view class="head-actions">
+      <view class="ghost-btn" wx:if="{{rows.length}}" bindtap="toggleEdit">{{editing ? '完成' : '编辑'}}</view>
+      <view class="primary-btn" bindtap="openAdd">
+        <t-icon name="add" size="28rpx" color="#080b10" />
+        <text>添加</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="mode-tag" wx:if="{{demo}}">演示数据</view>
+
+  <!-- 云同步状态：未登录/已同步/失败三种态，文案如实反映当下 -->
+  <view class="sync-bar st-{{syncState}}">
+    <view class="sync-dot"></view>
+    <text class="sync-text">{{signedIn ? account + ' · ' : ''}}{{syncText}}</text>
+    <view class="sync-action" wx:if="{{!signedIn}}" bindtap="openLogin">登录同步</view>
+    <view class="sync-action" wx:elif="{{syncState === 'error'}}" bindtap="onSyncRetry">重试</view>
+    <view class="sync-action muted" wx:if="{{signedIn}}" bindtap="onSignOut">退出</view>
+  </view>
+
+  <!-- 自选汇总 -->
+  <view class="summary" wx:if="{{rows.length}}">
+    <text class="sum-label">自选平均</text>
+    <text class="sum-avg mono {{summary.dir}}">{{summary.avg}}</text>
+    <text class="sum-detail">{{summary.up}} 涨 / {{summary.down}} 跌</text>
+  </view>
+
+  <view class="err-box" wx:if="{{error && !rows.length}}">
+    <t-empty icon="error-circle" description="拿不到行情" />
+    <text class="err-detail mono">{{error}}</text>
+    <view class="retry" bindtap="onRetry">重试</view>
+  </view>
+
+  <!-- 空态：给出可执行的下一步，而不是只说「暂无数据」 -->
+  <view class="empty-box" wx:elif="{{!rows.length && !loading}}">
+    <t-empty icon="star" description="还没有自选标的" />
+    <text class="empty-hint">把每天要看的几个标的放进来，首页就不用一行行找了。</text>
+    <t-button theme="primary" size="medium" bind:tap="openAdd">添加标的</t-button>
+  </view>
+
+  <view class="list" wx:else>
+    <view class="row" wx:for="{{rows}}" wx:key="id">
+      <quote-card item="{{item}}" bind:open="onOpen" />
+      <view
+        class="remove"
+        wx:if="{{editing}}"
+        data-id="{{item.id}}"
+        catchtap="onRemove"
+      >
+        <t-icon name="close" size="26rpx" color="#f5455c" />
+      </view>
+    </view>
+  </view>
+
+  <view class="hint" wx:if="{{rows.length}}">
+    <text>{{signedIn ? '自选已同步到云端，换设备登录后会拉回来；点「编辑」可以移除' : '自选存在本机，换设备不会同步；登录后可跨设备同步'}}</text>
+  </view>
+</view>
+
+<!-- 登录面板：邮箱验证码，登录后把自选同步到云端 -->
+<t-popup visible="{{showLogin}}" placement="bottom" bind:visible-change="onLoginPopupVisible">
+  <view class="sheet">
+    <view class="sheet-head">
+      <text class="sheet-title">同步自选</text>
+      <view class="sheet-close" bindtap="closeLogin">
+        <t-icon name="close" size="32rpx" color="#7c8899" />
+      </view>
+    </view>
+    <login-panel bind:signedin="onSignedIn" />
+  </view>
+</t-popup>
+
+<!-- 添加面板 -->
+<t-popup visible="{{showAdd}}" placement="bottom" bind:visible-change="onPopupVisible">
+  <view class="sheet">
+    <view class="sheet-head">
+      <text class="sheet-title">添加自选</text>
+      <view class="sheet-close" bindtap="closeAdd">
+        <t-icon name="close" size="32rpx" color="#7c8899" />
+      </view>
+    </view>
+
+    <t-search
+      value="{{keyword}}"
+      placeholder="搜索名称 / 代码"
+      t-class="sheet-search"
+      bind:change="onSearch"
+    />
+
+    <scroll-view class="candidate-scroll" scroll-y>
+      <view
+        class="cand"
+        wx:for="{{candidates}}"
+        wx:key="id"
+        data-id="{{item.id}}"
+        bindtap="onToggleWatch"
+      >
+        <view class="cand-main">
+          <text class="cand-name">{{item.name}}</text>
+          <text class="cand-sub">{{item.sub}}</text>
+        </view>
+        <text class="cand-pct mono {{item.dir}}">{{item.pct}}</text>
+        <view class="cand-action {{item.watched ? 'is-on' : ''}}">
+          <t-icon name="{{item.watched ? 'check' : 'add'}}" size="26rpx" color="{{item.watched ? '#0ecb81' : '#7c8899'}}" />
+        </view>
+      </view>
+      <view class="cand-empty" wx:if="{{!candidates.length}}">没有匹配的标的</view>
+    </scroll-view>
+  </view>
+</t-popup>
+
+<view class="tabbar-holder"></view>

@@ -1,0 +1,99 @@
+<view class="page-theme page-body">
+  <view class="head">
+    <text class="head-title">关联分析</text>
+    <text class="head-sub">{{updatedText}}</text>
+  </view>
+
+  <!-- 口径声明：放在最上面，避免被当成「今天的归因」 -->
+  <view class="note-bar">
+    <text>这里列的是一般经济机制，以及当日两端涨跌方向是否与之一致 —— 不是「今天涨跌的原因」。一致不等于因果，相反也不代表机制失效。</text>
+  </view>
+
+  <view class="stats">
+    <view class="stat">
+      <text class="stat-num ok">{{counts.consistent}}</text>
+      <text class="stat-label">当日一致</text>
+    </view>
+    <view class="stat">
+      <text class="stat-num bad">{{counts.opposite}}</text>
+      <text class="stat-label">当日相反</text>
+    </view>
+    <view class="stat">
+      <text class="stat-num dim">{{counts.untested}}</text>
+      <text class="stat-label">无法检验</text>
+    </view>
+    <view class="mode-tag" wx:if="{{demo}}">演示数据</view>
+  </view>
+
+  <view class="err-box" wx:if="{{error && !items.length}}">
+    <t-empty icon="error-circle" description="拿不到行情，无法计算观测" />
+    <text class="err-detail mono">{{error}}</text>
+    <view class="retry" bindtap="onRetry">重试</view>
+  </view>
+
+  <view class="chain-list" wx:else>
+    <view
+      class="chain"
+      wx:for="{{items}}"
+      wx:key="id"
+      data-id="{{item.id}}"
+      bindtap="onToggle"
+    >
+      <view class="chain-head">
+        <text class="chain-label">{{item.label}}</text>
+        <text class="sign-tag">{{item.signText}}</text>
+        <text class="status st-{{item.status.key}}">{{item.status.label}}</text>
+        <t-icon
+          name="chevron-down"
+          size="28rpx"
+          color="#5a6474"
+          t-class="chain-arrow {{expanded[item.id] ? 'is-open' : ''}}"
+        />
+      </view>
+
+      <!-- 两端：驱动 → 目标 -->
+      <view class="legs">
+        <view class="leg">
+          <text class="leg-name">{{item.fromName}}</text>
+          <text class="leg-price mono">{{item.fromText}}</text>
+          <text class="leg-pct mono {{item.fromDir}}">{{item.fromPct}}</text>
+        </view>
+        <view class="arrow">
+          <view class="arrow-line"></view>
+          <text class="arrow-text">→</text>
+        </view>
+        <view class="leg leg-right">
+          <text class="leg-name">{{item.toName}}</text>
+          <text class="leg-price mono">{{item.toText}}</text>
+          <text class="leg-pct mono {{item.toDir}}">{{item.toPct}}</text>
+        </view>
+      </view>
+
+      <view class="chain-note">{{item.status.note}}</view>
+
+      <!-- 展开：机制说明 / 成立条件 / 反例 -->
+      <view class="detail" wx:if="{{expanded[item.id]}}">
+        <view class="d-block">
+          <text class="d-title">机制</text>
+          <text class="d-text">{{item.mechanism}}</text>
+        </view>
+        <view class="d-block">
+          <text class="d-title">成立条件</text>
+          <text class="d-text">{{item.condition}}</text>
+        </view>
+        <view class="d-block">
+          <text class="d-title">什么会推翻它</text>
+          <view class="d-list">
+            <text class="d-li" wx:for="{{item.exclusions}}" wx:for-item="ex" wx:key="*this">· {{ex}}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="foot" wx:if="{{items.length}}">
+    <text>机制库版本 gold-v3-mini · 与 web 端同源，已剔除缺少稳定数据源的渠道</text>
+  </view>
+</view>
+
+<view class="tabbar-holder"></view>

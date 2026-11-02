@@ -1,0 +1,153 @@
+<view class="page-theme page-body">
+  <view class="head">
+    <view class="head-left">
+      <text class="head-title">事件中心</text>
+      <text class="head-sub">三源快讯 · {{counts.total}} 条</text>
+    </view>
+    <view class="head-right">
+      <text class="stamp mono">{{updatedText}}</text>
+      <view class="mode-tag" wx:if="{{demo}}">演示数据</view>
+    </view>
+  </view>
+
+  <!-- AI 摘要：模型只做归纳，选材仍由重要度规则决定 -->
+  <view class="ai-card" wx:if="{{ai.state !== 'off'}}">
+    <view class="ai-head">
+      <view class="ai-badge">AI 摘要</view>
+      <text class="ai-hint" wx:if="{{ai.state === 'loading'}}">生成中</text>
+      <text class="ai-hint err" wx:elif="{{ai.state === 'error'}}">生成失败</text>
+      <view class="ai-regen" wx:if="{{ai.state === 'done'}}" bindtap="onRegenerate">重写</view>
+    </view>
+
+    <text class="ai-text" wx:if="{{ai.text}}">{{ai.text}}</text>
+    <text class="ai-ph" wx:elif="{{ai.state === 'loading'}}">正在读今天的 {{counts.total}} 条快讯…</text>
+    <text class="ai-ph" wx:elif="{{ai.state === 'error'}}">{{ai.error}}</text>
+
+    <view class="ai-foot" wx:if="{{ai.state === 'done'}}">
+      <text>{{ai.model}} 生成 · 只归纳标题 · 不构成投资建议</text>
+    </view>
+    <view class="ai-retry" wx:if="{{ai.state === 'error'}}" bindtap="onRegenerate">重试</view>
+  </view>
+
+  <!-- 外文翻译：只在当前列表真有外文时出现，一次批量译完 -->
+  <view class="tr-card" wx:if="{{!demo && tr.count > 0}}">
+    <view class="tr-info">
+      <text class="tr-badge">外文</text>
+      <text class="tr-hint">{{tr.count}} 条非中文快讯</text>
+    </view>
+    <view class="tr-btn {{tr.state === 'loading' ? 'is-busy' : ''}}" bindtap="onTranslate">
+      <text>{{tr.state === 'loading' ? '翻译中…' : (tr.state === 'error' ? '重试' : '译成中文')}}</text>
+    </view>
+  </view>
+  <view class="tr-err" wx:if="{{tr.state === 'error'}}">{{tr.error}}</view>
+
+  <!-- 今日重点 -->
+  <block wx:if="{{focus.length}}">
+    <view class="sec">
+      <text class="sec-title">今日重点</text>
+      <text class="sec-note">按重要度自动挑选，非人工编辑</text>
+    </view>
+    <view class="focus-list">
+      <view
+        class="focus-card lv-{{item.level}}"
+        wx:for="{{focus}}"
+        wx:key="id"
+        data-url="{{item.url}}"
+        bindtap="onCopy"
+      >
+        <view class="focus-top">
+          <text class="focus-time mono">{{item.hhmm}}</text>
+          <text class="lvl lv-{{item.level}}">{{item.levelText}}</text>
+          <text class="tr-tag" wx:if="{{item.zh}}">AI 译</text>
+          <text class="focus-src">{{item.source}}</text>
+        </view>
+        <text class="focus-title" wx:if="{{!item.zh}}">{{item.title}}</text>
+        <block wx:else>
+          <text class="focus-title">{{item.zh}}</text>
+          <text class="ev-orig">{{item.title}}</text>
+        </block>
+        <view class="focus-topics" wx:if="{{item.topics.length}}">
+          <text class="topic" wx:for="{{item.topics}}" wx:for-item="tp" wx:key="key">{{tp.label}}</text>
+        </view>
+      </view>
+    </view>
+  </block>
+
+  <!-- 筛选 -->
+  <view class="filters">
+    <view
+      wx:for="{{filters}}"
+      wx:key="key"
+      class="chip {{filter === item.key ? 'is-on' : ''}}"
+      data-key="{{item.key}}"
+      bindtap="onFilter"
+    >
+      <text>{{item.label}}</text>
+      <text class="chip-count" wx:if="{{item.key === 'high'}}">{{counts.high}}</text>
+      <text class="chip-count" wx:elif="{{item.key === 'mid'}}">{{counts.mid}}</text>
+      <text class="chip-count" wx:else>{{counts.total}}</text>
+    </view>
+  </view>
+
+  <view class="err-box" wx:if="{{error && !items.length}}">
+    <t-empty icon="error-circle" description="快讯源暂时不可用" />
+    <text class="err-detail mono">{{error}}</text>
+    <view class="retry" bindtap="onRetry">重试</view>
+  </view>
+
+  <view class="sk-list" wx:elif="{{loading && !items.length}}">
+    <view class="sk-row" wx:for="{{[1,2,3,4,5,6]}}" wx:key="*this">
+      <view class="sk-time"></view>
+      <view class="sk-body">
+        <view class="sk-line w80"></view>
+        <view class="sk-line w55"></view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 事件流 -->
+  <view class="stream" wx:else>
+    <view class="ev" wx:for="{{items}}" wx:key="id">
+      <view class="ev-side">
+        <text class="ev-time mono">{{item.hhmm}}</text>
+        <text class="ev-date mono">{{item.date}}</text>
+        <view class="ev-dot lv-{{item.level}}"></view>
+      </view>
+
+      <view class="ev-main">
+        <view class="ev-tags">
+          <text class="lvl lv-{{item.level}}">{{item.levelText}}</text>
+          <text class="ev-src">{{item.source}}</text>
+          <text class="tr-tag" wx:if="{{item.zh}}">AI 译</text>
+        </view>
+        <text class="ev-title" wx:if="{{!item.zh}}">{{item.title}}</text>
+        <block wx:else>
+          <text class="ev-title">{{item.zh}}</text>
+          <text class="ev-orig">{{item.title}}</text>
+        </block>
+        <text
+          class="ev-body {{expanded[item.id] ? 'is-open' : ''}}"
+          wx:if="{{item.body && item.body !== item.title}}"
+          data-id="{{item.id}}"
+          bindtap="onToggle"
+        >{{item.body}}</text>
+        <view class="ev-foot">
+          <view class="ev-topics" wx:if="{{item.topics.length}}">
+            <text class="topic" wx:for="{{item.topics}}" wx:for-item="tp" wx:key="key">{{tp.label}}</text>
+          </view>
+          <view class="ev-link" wx:if="{{item.url}}" data-url="{{item.url}}" catchtap="onCopy">
+            <text>原文</text>
+            <t-icon name="link" size="22rpx" color="#6ea8fe" />
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="foot" wx:if="{{items.length}}">
+    <text>事件由金十数据 · 新浪财经 · 华尔街见闻聚合，重要度为词典打分结果</text>
+    <text class="foot-note">「原文」会把链接复制到剪贴板（小程序不能直接打开外链）</text>
+  </view>
+</view>
+
+<view class="tabbar-holder"></view>

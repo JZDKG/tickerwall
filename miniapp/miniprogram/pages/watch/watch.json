@@ -1,0 +1,16 @@
+{
+  "navigationBarTitleText": "自选",
+  "enablePullDownRefresh": true,
+  "backgroundColor": "#080b10",
+  "backgroundTextStyle": "dark",
+  "usingComponents": {
+    "quote-card": "../../components/quote-card/quote-card",
+    "t-empty": "tdesign-miniprogram/empty/empty",
+    "t-icon": "tdesign-miniprogram/icon/icon",
+    "t-search": "tdesign-miniprogram/search/search",
+    "t-popup": "tdesign-miniprogram/popup/popup",
+    "t-button": "tdesign-miniprogram/button/button",
+    "t-divider": "tdesign-miniprogram/divider/divider",
+    "login-panel": "../../components/login-panel/login-panel"
+  }
+}

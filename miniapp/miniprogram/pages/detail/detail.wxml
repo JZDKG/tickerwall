@@ -1,0 +1,154 @@
+<view class="page-theme page-body">
+  <view class="err-box" wx:if="{{error}}">
+    <t-empty icon="error-circle" description="拿不到详情" />
+    <text class="err-detail mono">{{error}}</text>
+    <view class="retry" bindtap="onRetry">重试</view>
+  </view>
+
+  <block wx:elif="{{loading && priceText === '—'}}">
+    <view class="hero card sk">
+      <view class="sk-line w45 tall"></view>
+      <view class="sk-line w70 taller"></view>
+      <view class="sk-line w55"></view>
+    </view>
+    <view class="card sk block">
+      <view class="sk-line w100 chart"></view>
+    </view>
+  </block>
+
+  <block wx:else>
+    <!-- 顶部：名称 / 价格 / 涨跌 -->
+    <view class="hero">
+      <view class="hero-top">
+        <text class="hero-name">{{name}}</text>
+        <view class="status" wx:if="{{statusLabel}}">
+          <view class="dot {{statusDot ? 'on' : ''}}"></view>
+          <text>{{statusLabel}}</text>
+        </view>
+        <view class="mode-tag" wx:if="{{demo}}">演示</view>
+      </view>
+      <text class="hero-sub">{{sub}}</text>
+
+      <view class="hero-price">
+        <text class="value {{dir}} mono">{{priceText}}</text>
+        <text class="unit">{{unit}}</text>
+      </view>
+
+      <view class="hero-delta">
+        <view class="pct {{dir}} mono">{{pctText}}</view>
+        <text class="abs mono {{dir}}">{{absText}}</text>
+        <view class="fresh-box" wx:if="{{freshText}}">
+          <text class="fresh mono">{{freshText}}</text>
+          <text class="fresh-label">前更新</text>
+        </view>
+      </view>
+
+      <view class="hero-meta">
+        <text wx:if="{{updatedText}}">{{updatedText}}</text>
+        <text class="sep" wx:if="{{updatedText && sourceText}}">·</text>
+        <text wx:if="{{sourceText}}">{{sourceText}}</text>
+      </view>
+    </view>
+
+    <!-- 图表 -->
+    <view class="chart-card card">
+      <view class="chart-head">
+        <view class="seg">
+          <view
+            wx:for="{{tabs}}"
+            wx:key="key"
+            class="seg-item {{tab === item.key ? 'is-on' : ''}}"
+            data-key="{{item.key}}"
+            bindtap="onTab"
+          >{{item.label}}</view>
+        </view>
+        <text class="chart-hint mono">{{tab === 'intraday' ? chartHint : dailyHint}}</text>
+      </view>
+
+      <trend-chart
+        wx:if="{{tab === 'intraday'}}"
+        mode="intraday"
+        points="{{intradayPoints}}"
+        dir="{{chartDir}}"
+        baseline="{{chartBaseline}}"
+        height="{{188}}"
+      />
+      <trend-chart
+        wx:else
+        mode="daily"
+        closes="{{dailyCloses}}"
+        dir="{{chartDir}}"
+        baseline="{{chartBaseline}}"
+        height="{{188}}"
+      />
+
+      <view class="chart-foot">
+        <text class="legend">
+          {{tab === 'intraday' ? '分时：当日逐分钟成交价' : '日线：最近 250 个交易日收盘价'}}
+        </text>
+        <text class="legend dim" wx:if="{{chartBaseline}}">虚线为昨收基准</text>
+      </view>
+    </view>
+
+    <!-- 当日四价 -->
+    <view class="sec">
+      <text class="sec-title">今日</text>
+      <text class="sec-note" wx:if="{{amountText}}">成交额 {{amountText}}</text>
+    </view>
+    <view class="grid card">
+      <view class="cell" wx:for="{{quoteRows}}" wx:key="label">
+        <text class="cell-label">{{item.label}}</text>
+        <text class="cell-value mono">{{item.value}}</text>
+      </view>
+    </view>
+
+    <!-- 区间表现 -->
+    <view class="sec">
+      <text class="sec-title">区间表现</text>
+      <text class="sec-note">用收盘价 + 实时价折算</text>
+    </view>
+    <view class="perf card">
+      <view class="perf-row" wx:for="{{perfRows}}" wx:key="key">
+        <text class="perf-label">{{item.label}}</text>
+        <text class="perf-value mono {{item.dir}}">{{item.text}}</text>
+      </view>
+    </view>
+
+    <!-- 风险 -->
+    <view class="sec">
+      <text class="sec-title">风险</text>
+      <text class="sec-note">近一年日线口径</text>
+    </view>
+    <view class="grid card">
+      <view class="cell" wx:for="{{riskRows}}" wx:key="label">
+        <text class="cell-label">{{item.label}}</text>
+        <text class="cell-value mono">{{item.value}}</text>
+      </view>
+    </view>
+
+    <!-- 相关 -->
+    <block wx:if="{{related.length}}">
+      <view class="sec">
+        <text class="sec-title">同类标的</text>
+        <text class="sec-note">按当日涨跌幅绝对值排序</text>
+      </view>
+      <view class="related">
+        <view
+          class="rel"
+          wx:for="{{related}}"
+          wx:key="id"
+          data-id="{{item.id}}"
+          bindtap="onRelated"
+        >
+          <text class="rel-name">{{item.name}}</text>
+          <text class="rel-pct mono {{item.dir}}">{{item.pct}}</text>
+        </view>
+      </view>
+    </block>
+
+    <view class="foot">
+      <text>涨跌基于昨收（期货为昨结算），非交易时段显示最近成交/收盘价</text>
+      <text class="foot-note">区间与风险指标按日线收盘价计算，不构成投资建议</text>
+    </view>
+  </block>
+</view>

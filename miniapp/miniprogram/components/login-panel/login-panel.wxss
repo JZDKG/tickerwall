@@ -1,0 +1,95 @@
+/* 深色终端风：与 app.wxss 的 tokens 同一套色值，组件内直接取 CSS 变量。
+   自带资产是白底卡片，放进这个产品里会像一块补丁，所以只改视觉、不动逻辑。 */
+
+.login {
+  padding: 28rpx 4rpx 8rpx;
+  background: transparent;
+}
+
+.login-title {
+  display: block;
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.login-desc {
+  display: block;
+  margin-top: 10rpx;
+  font-size: 22rpx;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.login-input {
+  height: 84rpx;
+  padding: 0 24rpx;
+  margin-top: 24rpx;
+  font-size: 27rpx;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1rpx solid var(--line);
+  border-radius: 14rpx;
+}
+
+.login-placeholder {
+  color: var(--muted-2);
+}
+
+.login-row {
+  display: flex;
+  align-items: center;
+}
+
+.login-code {
+  flex: 1;
+  margin-top: 18rpx;
+}
+
+.login-send {
+  flex-shrink: 0;
+  margin: 18rpx 0 0 16rpx;
+  padding: 0 22rpx;
+  height: 84rpx;
+  line-height: 84rpx;
+  font-size: 24rpx;
+  color: var(--accent);
+  background: rgba(110, 168, 254, 0.1);
+  border: 1rpx solid rgba(110, 168, 254, 0.28);
+  border-radius: 14rpx;
+}
+
+.login-send-disabled {
+  color: var(--muted-2);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--line);
+}
+
+.login-button {
+  margin-top: 24rpx;
+  height: 88rpx;
+  line-height: 88rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #080b10;
+  background: #e8edf5;
+  border-radius: 14rpx;
+}
+
+.login-button::after {
+  border: none;
+}
+
+.login-tip {
+  display: block;
+  margin-top: 18rpx;
+  font-size: 22rpx;
+  color: var(--down);
+}
+
+.login-error {
+  display: block;
+  margin-top: 18rpx;
+  font-size: 22rpx;
+  color: var(--up);
+}

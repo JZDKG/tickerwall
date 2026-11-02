@@ -1,0 +1,409 @@
+/* ---------------- 顶部 ---------------- */
+
+.hero {
+  padding: 16rpx 0 20rpx;
+}
+
+.hero-top {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+}
+
+.hero-name {
+  font-size: 42rpx;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  font-size: 19rpx;
+  color: var(--muted);
+  padding: 3rpx 14rpx;
+  border-radius: 999rpx;
+  border: 1rpx solid var(--line);
+  background: var(--panel);
+}
+
+.status .dot {
+  width: 9rpx;
+  height: 9rpx;
+  border-radius: 50%;
+  background: var(--muted-2);
+}
+
+.status .dot.on {
+  background: var(--down);
+  box-shadow: 0 0 0 4rpx rgba(14, 203, 129, 0.16);
+}
+
+.mode-tag {
+  font-size: 18rpx;
+  color: #d8a25a;
+  border: 1rpx solid rgba(216, 162, 90, 0.4);
+  border-radius: 6rpx;
+  padding: 1rpx 8rpx;
+}
+
+.hero-sub {
+  display: block;
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: var(--muted);
+}
+
+.hero-price {
+  display: flex;
+  align-items: baseline;
+  gap: 12rpx;
+  margin-top: 18rpx;
+}
+
+.value {
+  font-size: 76rpx;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.value.up {
+  color: var(--up);
+}
+.value.down {
+  color: var(--down);
+}
+
+.unit {
+  font-size: 22rpx;
+  color: var(--muted-2);
+}
+
+.hero-delta {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  margin-top: 12rpx;
+}
+
+.pct {
+  padding: 5rpx 16rpx;
+  border-radius: 10rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  background: rgba(139, 151, 168, 0.12);
+  color: var(--flat);
+}
+
+.pct.up {
+  background: rgba(245, 69, 92, 0.14);
+  color: var(--up);
+}
+.pct.down {
+  background: rgba(14, 203, 129, 0.13);
+  color: var(--down);
+}
+
+.abs {
+  font-size: 24rpx;
+}
+
+.abs.up {
+  color: var(--up);
+}
+.abs.down {
+  color: var(--down);
+}
+
+.fresh-box {
+  margin-left: auto;
+  display: flex;
+  align-items: baseline;
+  gap: 4rpx;
+}
+
+.fresh {
+  font-size: 21rpx;
+  color: var(--muted);
+}
+
+.fresh-label {
+  font-size: 18rpx;
+  color: var(--muted-2);
+}
+
+.hero-meta {
+  margin-top: 14rpx;
+  padding-top: 12rpx;
+  border-top: 1rpx dashed rgba(255, 255, 255, 0.06);
+  display: flex;
+  gap: 10rpx;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 20rpx;
+  color: var(--muted-2);
+}
+
+.sep {
+  opacity: 0.5;
+}
+
+/* ---------------- 图表卡 ---------------- */
+
+.chart-card {
+  padding: 18rpx 20rpx 16rpx;
+  margin-top: 6rpx;
+}
+
+.chart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  margin-bottom: 8rpx;
+}
+
+/* 两段式切换：比 t-tabs 更省高度，交互语义也只是一次二选一 */
+.seg {
+  display: flex;
+  padding: 3rpx;
+  border-radius: 10rpx;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1rpx solid var(--line);
+}
+
+.seg-item {
+  padding: 6rpx 22rpx;
+  border-radius: 8rpx;
+  font-size: 22rpx;
+  color: var(--muted);
+}
+
+.seg-item.is-on {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+
+.chart-hint {
+  font-size: 19rpx;
+  color: var(--muted-2);
+}
+
+.chart-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+  margin-top: 6rpx;
+}
+
+.legend {
+  font-size: 18rpx;
+  color: var(--muted-2);
+}
+
+/* ---------------- 四价格 / 风险 ---------------- */
+
+.grid {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 6rpx 0;
+}
+
+.cell {
+  width: 50%;
+  padding: 16rpx 22rpx;
+}
+
+.cell:nth-child(odd) {
+  border-right: 1rpx solid rgba(255, 255, 255, 0.05);
+}
+
+.cell:nth-child(n + 3) {
+  border-top: 1rpx solid rgba(255, 255, 255, 0.05);
+}
+
+.cell-label {
+  display: block;
+  font-size: 20rpx;
+  color: var(--muted-2);
+}
+
+.cell-value {
+  display: block;
+  margin-top: 4rpx;
+  font-size: 30rpx;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------- 区间表现 ---------------- */
+
+.perf {
+  padding: 4rpx 0;
+}
+
+.perf-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16rpx 22rpx;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.045);
+}
+
+.perf-row:last-child {
+  border-bottom: none;
+}
+
+.perf-label {
+  font-size: 24rpx;
+  color: var(--muted);
+}
+
+.perf-value {
+  font-size: 28rpx;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.perf-value.up {
+  color: var(--up);
+}
+.perf-value.down {
+  color: var(--down);
+}
+.perf-value.flat {
+  color: var(--flat);
+}
+
+/* ---------------- 同类标的 ---------------- */
+
+.related {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+.rel {
+  width: calc(50% - 6rpx);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10rpx;
+  padding: 16rpx 18rpx;
+  border-radius: 14rpx;
+  background: var(--panel);
+  border: 1rpx solid var(--line);
+}
+
+.rel-name {
+  font-size: 23rpx;
+  color: var(--text);
+}
+
+.rel-pct {
+  font-size: 22rpx;
+  font-variant-numeric: tabular-nums;
+}
+
+.rel-pct.up {
+  color: var(--up);
+}
+.rel-pct.down {
+  color: var(--down);
+}
+.rel-pct.flat {
+  color: var(--flat);
+}
+
+/* ---------------- 骨架 / 错误 ---------------- */
+
+.sk {
+  padding: 24rpx;
+}
+
+.block {
+  margin-top: 20rpx;
+}
+
+.sk-line {
+  height: 22rpx;
+  border-radius: 6rpx;
+  margin-bottom: 16rpx;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05));
+  background-size: 220% 100%;
+  animation: shimmer 1.3s linear infinite;
+}
+
+.sk-line.tall {
+  height: 34rpx;
+}
+.sk-line.taller {
+  height: 64rpx;
+}
+.sk-line.chart {
+  height: 320rpx;
+}
+.sk-line.w45 {
+  width: 45%;
+}
+.sk-line.w55 {
+  width: 55%;
+}
+.sk-line.w70 {
+  width: 70%;
+}
+.sk-line.w100 {
+  width: 100%;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 140% 0;
+  }
+  to {
+    background-position: -40% 0;
+  }
+}
+
+.err-box {
+  padding: 80rpx 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.err-detail {
+  font-size: 20rpx;
+  color: var(--muted-2);
+}
+
+.retry {
+  padding: 12rpx 40rpx;
+  border-radius: 12rpx;
+  border: 1rpx solid var(--line-strong);
+  background: var(--panel-2);
+  font-size: 24rpx;
+}
+
+.foot {
+  margin-top: 32rpx;
+  padding-top: 18rpx;
+  border-top: 1rpx solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+  font-size: 19rpx;
+  color: var(--muted-2);
+  line-height: 1.5;
+}
+
+.foot-note {
+  color: rgba(90, 100, 116, 0.85);
+}

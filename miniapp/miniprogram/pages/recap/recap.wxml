@@ -1,0 +1,80 @@
+<view class="page-theme page-body">
+  <view class="head">
+    <view class="head-left">
+      <text class="head-title">隔夜复盘</text>
+      <text class="head-sub">{{total}} 个标的 · 涨 {{upCount}} / 跌 {{downCount}}</text>
+    </view>
+    <view class="head-right">
+      <text class="stamp mono">{{updatedText}}</text>
+      <view class="mode-tag" wx:if="{{demo}}">演示数据</view>
+    </view>
+  </view>
+
+  <view class="note-bar">
+    <text>口径：各标的当日涨跌幅的分组对比，未做时区对齐 —— A 股收盘时美股还没开盘，这不是严格的「隔夜收益」。</text>
+  </view>
+
+  <view class="err-box" wx:if="{{error && !groups.length}}">
+    <t-empty icon="error-circle" description="拿不到行情" />
+    <text class="err-detail mono">{{error}}</text>
+    <view class="retry" bindtap="onRetry">重试</view>
+  </view>
+
+  <block wx:else>
+    <!-- 最强 / 最弱 -->
+    <view class="extreme">
+      <view class="ext-card">
+        <text class="ext-title up">最强</text>
+        <view
+          class="ext-row"
+          wx:for="{{best}}"
+          wx:key="id"
+          data-id="{{item.id}}"
+          bindtap="onOpen"
+        >
+          <text class="ext-name">{{item.name}}</text>
+          <text class="ext-pct mono {{item.dir}}">{{item.pct}}</text>
+        </view>
+      </view>
+      <view class="ext-card">
+        <text class="ext-title down">最弱</text>
+        <view
+          class="ext-row"
+          wx:for="{{worst}}"
+          wx:key="id"
+          data-id="{{item.id}}"
+          bindtap="onOpen"
+        >
+          <text class="ext-name">{{item.name}}</text>
+          <text class="ext-pct mono {{item.dir}}">{{item.pct}}</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 分组 -->
+    <view class="group" wx:for="{{groups}}" wx:for-item="g" wx:key="key">
+      <view class="group-head">
+        <text class="group-label">{{g.label}}</text>
+        <text class="group-meta">{{g.up}} 涨 / {{g.down}} 跌</text>
+        <text class="group-avg mono {{g.avgDir}}">{{g.avg}}</text>
+      </view>
+      <view class="group-body">
+        <view
+          class="grow"
+          wx:for="{{g.rows}}"
+          wx:key="id"
+          data-id="{{item.id}}"
+          bindtap="onOpen"
+        >
+          <text class="grow-name">{{item.name}}</text>
+          <text class="grow-pct mono {{item.dir}}">{{item.pct}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="foot">
+      <text>分组顺序：亚太 → A股 → 欧洲 → 美股 → 商品 → 汇率利率 → 加密</text>
+      <text class="foot-note">均值是组内各标的当日涨跌幅的简单平均，不做权重</text>
+    </view>
+  </block>
+</view>
