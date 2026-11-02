@@ -61,10 +61,16 @@ function inWindowText(window) {
  */
 function factIds(instrumentId, change, obs) {
   const revisionOf = typeof obs?.revisionOf === 'function' ? obs.revisionOf : null;
+  /**
+   * 库里没有该日期的行 ⇒ 它就是 r1（无后缀），**不能**退回全指标 revision：
+   * 新交易日的首份快照曾因此引用 `指标@新日期#r2`，而落库侧对没见过的
+   * 日期只写 r1，引用校验随即拒收整份快照（2026-11-02 线上复现）。
+   * 退回整体修订号只留给「查不了」（没有 revisionOf / 抛错）的降级路径。
+   */
   const revAt = (date) => {
     if (!revisionOf) return obs?.revision ?? null;
     try {
-      return revisionOf(instrumentId, date) ?? obs?.revision ?? null;
+      return revisionOf(instrumentId, date) ?? null;
     } catch {
       return obs?.revision ?? null;
     }

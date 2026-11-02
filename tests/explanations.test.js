@@ -1135,6 +1135,33 @@ describe('观测不可变 ID（修订号）', () => {
     expect(ids).toContain('gold-intl@2026-10-29#r3');
     expect(ids).toContain('dfii10@2026-10-29#r2');
   });
+
+  it('新日期还没落库时引用无后缀 id（带 #rN 会被落库校验拒收）', () => {
+    // 2026-11-02 复现：旧日期已有 r2 行 → 全指标 revision=2；新日期 11-02
+    // 库里无行 → 引用必须是无后缀 r1，否则 persistReferencedObservations
+    // 的 wanted 过滤匹配不上，writeExplanation 抛 EVIDENCE_REFERENCE_MISSING。
+    const mech = {
+      id: 'M-NEW', version: 'v1', relationType: 'mechanism',
+      from: 'us10y', to: 'gold-intl', sign: -1, label: '名义利率 → 黄金',
+      mechanism: '机会成本渠道',
+    };
+    const mkObs = (def, values) => ({
+      definition: def,
+      revision: 2,
+      revisionOf: (id, date) => (date === '2026-11-02' ? null : 2),
+      series: { dates: ['2026-10-30', '2026-11-02'], values },
+    });
+    const m = new Map([
+      ['gold-intl', mkObs({ short: '黄金', unit: 'usd', comparisonPolicy: 'log-return' }, [4002.95, 4010.2])],
+      ['us10y', mkObs({ short: '名义收益率', unit: 'pct', comparisonPolicy: 'pp-difference' }, [4.9, 4.92])],
+    ]);
+    const h = evaluateMechanism(mech, m, { windowKey: 'session', anchor: { start: '2026-10-30', end: '2026-11-02' } });
+    const ids = h.evidence.flatMap((e) => e.observationIds);
+    expect(ids).toContain('gold-intl@2026-11-02');
+    expect(ids).toContain('us10y@2026-11-02');
+    expect(ids).toContain('gold-intl@2026-10-30#r2');
+    expect(ids.some((x) => x.endsWith('2026-11-02#r2'))).toBe(false);
+  });
 });
 
 /* ================================================================== *
@@ -1255,5 +1282,49 @@ describe('观测修订', () => {
     // 证据层用 observationIdOf 生成引用，带修订号才能与库里的行对上
     const { observationIdOf } = await import('../src/server/domain/explanations/evidence.js');
     expect(observationIdOf(INSTR, '2026-10-29', row.revision)).toBe(row.id);
+  });
+
+  it('新日期首次落库为 r1；引用无后缀 id 时快照不被拒收（2026-11-02 回归）', async () => {
+    const { persistReferencedObservations } = await import('../src/server/services/explanations.service.js');
+    const { writeExplanation, latestObservationFor } = await import('../src/server/db/index.js');
+
+    const mk = (v1030, v1102) => new Map([
+      [INSTR, {
+        definition: { short: '国际金价', unit: 'usd', comparisonPolicy: 'log-return', valueDomain: 'positive' },
+        series: { dates: ['2026-10-30', '2026-11-02'], values: [v1030, v1102] },
+        quality: null,
+        source: null,
+      }],
+    ]);
+
+    // 10-30：r1 落库后值变了 → 产生 #r2（模拟 10 月盘中的副作用写入）
+    const refOld = {
+      id: 'exp-newday-1', assetId: 'gold-intl', window: { key: 'session' },
+      facts: [{ code: 'TARGET_CHANGE', observationIds: [`${INSTR}@2026-10-30`] }], hypotheses: [],
+    };
+    persistReferencedObservations(refOld, mk(4000, 2007), { knownAt: '2026-11-02T01:00:00Z' });
+    persistReferencedObservations(refOld, mk(3999, 2007), { knownAt: '2026-11-02T02:00:00Z' });
+    expect(latestObservationFor(INSTR, '2026-10-30').id).toBe(`${INSTR}@2026-10-30#r2`);
+
+    // 新日期 11-02：生成侧（修复后）引用无后缀 id；落库侧必须写出 r1 行
+    const plain = {
+      id: 'exp-newday-2', assetId: 'gold-intl', window: { key: 'session' },
+      facts: [{ code: 'TARGET_CHANGE', observationIds: [`${INSTR}@2026-10-30#r2`, `${INSTR}@2026-11-02`] }],
+      hypotheses: [],
+    };
+    persistReferencedObservations(plain, mk(3999, 2007), { knownAt: '2026-11-02T03:00:00Z' });
+    const row = latestObservationFor(INSTR, '2026-11-02');
+    expect(row.revision).toBe(1);
+    expect(row.id).toBe(`${INSTR}@2026-11-02`);
+
+    // 引用齐全 → 快照正常写入（修复前这里抛 EVIDENCE_REFERENCE_MISSING）
+    expect(() => writeExplanation({ explanation: plain })).not.toThrow();
+
+    // 反例钉住语义：引用一个不存在的「新日期#r2」仍必须被拒收
+    const bogus = {
+      id: 'exp-newday-3', assetId: 'gold-intl', window: { key: 'session' },
+      facts: [{ code: 'TARGET_CHANGE', observationIds: [`${INSTR}@2026-11-02#r2`] }], hypotheses: [],
+    };
+    expect(() => writeExplanation({ explanation: bogus })).toThrow('证据引用不存在');
   });
 });

@@ -26,12 +26,15 @@ import { CHANNEL_STATUS } from './mechanisms.js';
  * 仍指向它，于是「新结论 + 旧证据」。修订号 > 1 时加上 `#rN`，
  * 让不同修订成为不同事实（r1 保持人类可读的原样，避免全站链接变丑）。
  */
-/** 优先按日期查修订；查不到（或没有这个能力）就退回整体修订号 */
+/**
+ * 优先按日期查修订。库里没有该日期的行 ⇒ 它就是 r1（无后缀）；
+ * 退回整体修订号只留给「查不了」（没有这个能力 / 抛错）的降级路径 ——
+ * 否则新日期会被打上假 `#rN`，落库侧只写 r1，引用校验直接拒收快照。
+ */
 function revisionAt(revisionOf, instrumentId, date, fallback) {
   if (typeof revisionOf === 'function') {
     try {
-      const r = revisionOf(instrumentId, date);
-      if (r != null) return r;
+      return revisionOf(instrumentId, date) ?? null;
     } catch {
       /* 读不到就用兜底值 */
     }
@@ -218,7 +221,7 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
         reasons: ['NO_MATERIAL_TARGET_CHANGE'],
         eventRefs: matched.map((e) => ({ eventId: e.eventId, revision: e.revision })),
         eventMatchCount: matchedAll.length,
-        evidence: [evidenceEntry({ role: 'support', instrumentId: mechanism.to, definition: targetObs?.definition, change: chTo, revision: targetObs?.revision ?? null })].filter(
+        evidence: [evidenceEntry({ role: 'support', instrumentId: mechanism.to, definition: targetObs?.definition, change: chTo, revision: targetObs?.revision ?? null, revisionOf: targetObs?.revisionOf ?? null })].filter(
           (e) => e.change,
         ),
       };
@@ -236,7 +239,7 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
       missing,
       window: { key: windowKey, start: chTo.start, end: chTo.end, observations: targetObs?.series?.dates?.length ?? 0 },
       evidence: [
-        evidenceEntry({ role: ok ? 'support' : 'contrary', instrumentId: mechanism.to, definition: targetObs?.definition, change: chTo, revision: targetObs?.revision ?? null }),
+        evidenceEntry({ role: ok ? 'support' : 'contrary', instrumentId: mechanism.to, definition: targetObs?.definition, change: chTo, revision: targetObs?.revision ?? null, revisionOf: targetObs?.revisionOf ?? null }),
       ].filter((e) => e.change),
       eventRefs: matched.map((e) => ({ eventId: e.eventId, revision: e.revision })),
       eventMatchCount: matchedAll.length,
@@ -402,7 +405,7 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
           window: { key: windowKey, start: windowDates[0], end: windowDates[1], observations: aligned.n },
           evidence: [
             evidenceEntry({ role: 'background', instrumentId: mechanism.from, definition: fromObs.definition, change: chFrom, revision: fromObs?.revision ?? null, revisionOf: fromObs?.revisionOf ?? null }),
-            evidenceEntry({ role: 'background', instrumentId: 'dfii10', definition: realObs.definition, change: { start: windowDates[0], end: windowDates[1], change: dReal / 100, changeUnit: 'pp' }, revision: realObs?.revision ?? null }),
+            evidenceEntry({ role: 'background', instrumentId: 'dfii10', definition: realObs.definition, change: { start: windowDates[0], end: windowDates[1], change: dReal / 100, changeUnit: 'pp' }, revision: realObs?.revision ?? null, revisionOf: realObs?.revisionOf ?? null }),
           ].filter((e) => e.change),
         };
       }

@@ -144,6 +144,29 @@ describe('事实引用的修订号', () => {
     expect(ids).toEqual(['gold-intl@2026-10-28', 'gold-intl@2026-10-29#r2']);
   });
 
+  it('新日期还没落过库（revisionOf 返回 null）⇒ 无后缀 r1，不借全指标最大修订号', () => {
+    // 2026-11-02 线上复现：库里 10 月已有 r2 行 → obs.revision=2，但 11-02 是
+    // 新交易日、尚无任何行。曾因此引用 `gold-intl@2026-11-02#r2`，落库侧只肯写
+    // r1 → 快照被引用校验拒收。正确行为：没见过的日期就是 r1（无后缀）。
+    const targetObs = {
+      definition: { short: '国际金价', unit: 'usd', comparisonPolicy: 'log-return' },
+      series: { dates: ['2026-10-30', '2026-11-02'], values: [4002.95, 4010.2] },
+      revision: 2,
+      revisionOf: (id, date) => (date === '2026-11-02' ? null : 2),
+    };
+    const facts = buildFacts({
+      targetId: 'gold-intl',
+      targetDefinition: targetObs.definition,
+      targetSeries: targetObs.series,
+      targetObs,
+      drivers: [],
+      windowKey: 'session',
+      anchor: { start: '2026-10-30', end: '2026-11-02' },
+    });
+    const ids = facts.find((f) => f.code === 'TARGET_CHANGE').observationIds;
+    expect(ids).toEqual(['gold-intl@2026-10-30#r2', 'gold-intl@2026-11-02']);
+  });
+
   it('没有 revisionOf 时退回可读形式（不编后缀）', () => {
     const facts = buildFacts({
       targetId: 'gold-intl',
