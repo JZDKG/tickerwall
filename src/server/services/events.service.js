@@ -300,7 +300,10 @@ const TOPIC_LABEL_TO_KEY = new Map([
 
 async function llmClassifyBatch(batch) {
   const cfg = readDshLlmConfig();
-  if (!cfg.apiKey) throw new Error('未找到 LLM 凭据');
+  // baseURL 缺失时拼出来的是 null/chat/completions（TypeError），那会走
+  // 无效退避重试把 llmInFlight 占住；消息保持「未找到 LLM 凭据」前缀，
+  // kickLlmClassify 的退避 break 判定靠它识别配置类错误
+  if (!cfg.apiKey || !cfg.baseURL) throw new Error('未找到 LLM 凭据或网关地址');
 
   // 正文截断后一起喂进去：只给标题时，"某公司中东项目交付"这类会被误判成地缘冲突，
   // 带上摘要就能看出是公司动态。每条控制 80 字，避免 token 膨胀。
@@ -457,10 +460,13 @@ export function applyLlmResults(items, cacheMap = llmCache) {
     if (typeof hit.zh === 'string' && hit.zh.trim()) it.zh = hit.zh.trim();
 
     if (hit.state === 'irrelevant') {
-      // 无关：清空主题与标的，等级降到 low，并留下可筛选的状态
+      // 无关：清空主题与标的，等级降到 low，并留下可筛选的状态。
+      // score 必须一并清零 —— 条目带着关键词初筛分进来，留高分就是
+      // 「level low + score 7」的自相矛盾，按分值筛重要快讯的调用方会被坑
       it.topics = [];
       it.symbols = [];
       it.level = 'low';
+      it.score = 0;
       it.llmState = 'irrelevant';
       it.llm = true;
       applied += 1;
@@ -737,18 +743,43 @@ export function eventTimeMs(time) {
  * 时间窗**两头都卡**。上界不是多余的：源里混着「2027-03-22」这种提前发布
  * 的会议公告，把未来事件算进 24h 回放，柱状图的最后一根会凭空多出来。
  */
-export function mergeHistoryRows({ archiveRows = [], liveItems = [], sinceMs, nowMs, limit = 600 }) {
+/**
+ * 归档行的 LLM 回填（读时计算，不回写 JSONL）。
+ *
+ * 为什么需要：归档是不可变追加日志，条目**首轮落盘时 LLM 复核还没跑完**，
+ * zh/score 只能是 null/初筛分；而 archivedIds 按 id 去重保证它不会再写第二遍。
+ * 所以历史行的摘要与复核分只能在读时从 llmCache（落盘 7 天）补回来。
+ *
+ * 与 applyLlmResults 的两处有意差异：
+ *   1. **不检查 6 小时 TTL** —— zh/score 是同一文本的确定性产物，不是会过期
+ *      的「当时判定」；回放窗口 24~72h，套 6h 门槛会把绝大多数历史救不回来。
+ *   2. 只在行缺 zh 时注入 —— 实时行已被 applyLlmResults 盖过，不回退。
+ * score 仅在 classified 态覆盖：irrelevant/uncertain 的缓存行不给分。
+ */
+function hydrateRowFromLlmCache(row, cacheMap) {
+  if (!cacheMap || !row?.id) return row;
+  const hit = cacheMap.get(row.id);
+  if (!hit) return row;
+  if (!row.zh && typeof hit.zh === 'string' && hit.zh.trim()) row.zh = hit.zh.trim();
+  if (hit.state === 'classified') {
+    const s = Number(hit.score);
+    if (Number.isFinite(s) && s >= 0 && s <= 10) row.score = s;
+  }
+  return row;
+}
+
+export function mergeHistoryRows({ archiveRows = [], liveItems = [], sinceMs, nowMs, limit = 600, cacheMap = llmCache }) {
   const seen = new Map();
 
   for (const row of archiveRows) {
     const ms = eventTimeMs(row?.time);
     if (ms == null || ms < sinceMs || ms > nowMs) continue;
-    if (row?.id) seen.set(row.id, normalizeHistoryRow(row));
+    if (row?.id) seen.set(row.id, hydrateRowFromLlmCache(normalizeHistoryRow(row), cacheMap));
   }
   for (const row of liveItems) {
     const ms = eventTimeMs(row?.time);
     if (ms == null || ms < sinceMs || ms > nowMs) continue;
-    if (row?.id) seen.set(row.id, normalizeHistoryRow(row));
+    if (row?.id) seen.set(row.id, hydrateRowFromLlmCache(normalizeHistoryRow(row), cacheMap));
   }
 
   const items = [...seen.values()]
@@ -919,6 +950,9 @@ async function loadEvents({ force = false, limit = 160 } = {}) {
   const okSources = sourceStatus.filter((s) => s.ok);
   const publishers = new Set(items.map((i) => i.publisher).filter(Boolean));
   const revisionCounts = eventRevisionCounts(items.slice(0, limit).map((i) => i.id));
+  // baseURL 也是启用条件：只有 key 没网关地址时每个批次都会失败，
+  // 显示「AI 辅助分类」徽章纯属误导
+  const llmCfg = readDshLlmConfig();
   const data = {
     ok: items.length > 0,
     generatedAt: new Date().toISOString(),
@@ -945,7 +979,7 @@ async function loadEvents({ force = false, limit = 160 } = {}) {
     },
     topics: COMPILED_TOPICS.map((t) => ({ key: t.key, label: t.label })),
     llm: {
-      enabled: Boolean(readDshLlmConfig().apiKey),
+      enabled: Boolean(llmCfg.apiKey && llmCfg.baseURL),
       applied: llmApplied,
       pending: llmInFlight,
       ...llmStats,

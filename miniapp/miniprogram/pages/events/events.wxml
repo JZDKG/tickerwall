@@ -58,13 +58,14 @@
         <view class="focus-top">
           <text class="focus-time mono">{{item.hhmm}}</text>
           <text class="lvl lv-{{item.level}}">{{item.levelText}}</text>
-          <text class="tr-tag" wx:if="{{item.zh}}">AI 译</text>
+          <text class="tr-tag" wx:if="{{item.foreign && item.zh}}">AI 译</text>
+          <text class="tr-tag ai-sum" wx:elif="{{item.origLine}}">AI 摘要</text>
           <text class="focus-src">{{item.source}}</text>
         </view>
         <text class="focus-title" wx:if="{{!item.zh}}">{{item.title}}</text>
         <block wx:else>
           <text class="focus-title">{{item.zh}}</text>
-          <text class="ev-orig">{{item.title}}</text>
+          <text class="ev-orig" wx:if="{{item.origLine}}">{{item.title}}</text>
         </block>
         <view class="focus-topics" wx:if="{{item.topics.length}}">
           <text class="topic" wx:for="{{item.topics}}" wx:for-item="tp" wx:key="key">{{tp.label}}</text>
@@ -118,12 +119,13 @@
         <view class="ev-tags">
           <text class="lvl lv-{{item.level}}">{{item.levelText}}</text>
           <text class="ev-src">{{item.source}}</text>
-          <text class="tr-tag" wx:if="{{item.zh}}">AI 译</text>
+          <text class="tr-tag" wx:if="{{item.foreign && item.zh}}">AI 译</text>
+          <text class="tr-tag ai-sum" wx:elif="{{item.origLine}}">AI 摘要</text>
         </view>
         <text class="ev-title" wx:if="{{!item.zh}}">{{item.title}}</text>
         <block wx:else>
           <text class="ev-title">{{item.zh}}</text>
-          <text class="ev-orig">{{item.title}}</text>
+          <text class="ev-orig" wx:if="{{item.origLine}}">{{item.title}}</text>
         </block>
         <text
           class="ev-body {{expanded[item.id] ? 'is-open' : ''}}"

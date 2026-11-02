@@ -346,6 +346,26 @@ describe('getEvents：缓存与 LLM 复核', () => {
     expect(out.llm.enabled).toBe(false);
   });
 
+  it('env 模式只有 key 没有 baseURL 时，enabled=false 且后台复核不会发起请求', async () => {
+    // 复现审查报告的 P1：只有 key 没网关地址时，旧代码拼出 null/chat/completions
+    // 并在退避重试里占住 llmInFlight。现在 enabled 直接为 false，批次也不会跑
+    process.env.LLM_API_KEY = 'k-only';
+    let called = false;
+    fetchRaw.mockImplementation(async (url) => {
+      if (url.endsWith('/chat/completions')) called = true;
+      if (url.includes('jin10')) {
+        return jin10([{ id: 'jnb', time: '2026-10-26 10:00:00', data: { title: '美联储宣布降息', content: '利率下调' } }]);
+      }
+      if (url.includes('zhibo.sina')) return sinaFeed([]);
+      return wscn([]);
+    });
+    const out = await getEvents({ force: true });
+    expect(out.llm.enabled).toBe(false);
+    await new Promise((r) => setTimeout(r, 30));
+    expect(called).toBe(false);
+    delete process.env.LLM_API_KEY;
+  });
+
   it('配置凭据后后台复核结果会在下一次轮询覆盖关键词判定', async () => {
     process.env.LLM_API_KEY = 'k-test';
     process.env.LLM_BASE_URL = 'https://llm.test/v1';
@@ -437,7 +457,9 @@ describe('applyLlmResults：zh 摘要与 score 的覆盖纪律', () => {
     expect(items[0].score).toBe(9);
     expect(items[0].level).toBe('high');
     expect(items[1].zh).toBe('公司动态摘要'); // 无关条目照样值得读懂它在说什么
-    expect(items[1].score).toBe(4); // 分数不被无关结果覆盖
+    // 无关条目的分数必须清零：留着关键词初筛分就是「level low + score 7」
+    // 的自相矛盾，按分值筛重要快讯的调用方会被已判无关的垃圾稿命中
+    expect(items[1].score).toBe(0);
     expect(items[1].topics).toEqual([]); // 但旧标签被清除（原有纪律）
     expect(items[1].symbols).toEqual([]);
     expect(items[2].zh).toBeUndefined(); // uncertain 且无 zh → 原样保留

@@ -90,6 +90,21 @@ describe('readDshLlmConfig：来源优先级', () => {
     expect(cfg.apiKey).toBe('sk-STOLEN');
   });
 
+  it('dsh 配置完备时不虚标 builtin：source 不含 builtin:magpie', () => {
+    process.env.LLM_CONFIG_SOURCE = 'dsh';
+    const cfg = readDshLlmConfig();
+    // dsh 三字段齐全，没有任何字段落到内置值 —— 标 builtin 就是误导
+    expect(cfg.source).not.toContain('builtin');
+  });
+
+  it('默认模式下部分字段来自 env 时，source 仍标 builtin（其余字段确实落了内置值）', () => {
+    process.env.LLM_API_KEY = 'sk-mine';
+    const cfg = readDshLlmConfig();
+    // key 来自 env，但 baseURL/model 落到内置值 —— 标 builtin 是准确的
+    expect(cfg.source).toBe('env+builtin:magpie');
+    expect(cfg.baseURL).toBe('http://127.0.0.1:3425/v1');
+  });
+
   it('模型名可以由 LLM_MODEL 覆盖，不再只有硬编码那一个', () => {
     process.env.LLM_MODEL = 'whatever-model';
     process.env.LLM_API_KEY = 'sk-x';

@@ -106,7 +106,12 @@ export function readDshLlmConfig() {
   const from = [];
   if (envBase || envKey || envModel) from.push('env');
   if (dsh?.source) from.push(dsh.source);
-  if (!envOnly && !envComplete) from.push('builtin:magpie');
+  // builtin 只在**实际有字段落到内置值**时才标注 —— dsh 配置完备时把
+  // builtin 也写进 source 是虚标，排查「到底用的哪个网关」会被误导
+  const usedBuiltinKey = !envOnly && envKey == null && dsh?.apiKey == null;
+  const usedBuiltinBase = !envOnly && envBase == null && dsh?.baseURL == null && apiKey;
+  const usedBuiltinModel = !envOnly && envModel == null && !dshModel;
+  if (usedBuiltinKey || usedBuiltinBase || usedBuiltinModel) from.push('builtin:magpie');
 
   return {
     baseURL,

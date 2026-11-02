@@ -103,6 +103,12 @@ Page({
     const date = ev.date || (time.length >= 10 ? time.slice(5, 10) : '');
     // 语种判定纯本地算，不花模型；译文优先取缓存，刷新页面不用重译
     const foreign = translate.isForeign(ev.title);
+    // 服务端 LLM 复核已带中文摘要（zh 字段）时直接用，省掉一次翻译调用；
+    // 没有才走本地缓存/批量翻译兜底
+    const zh = ev.zh || (foreign ? translate.lookup(ev.title) : '');
+    // 副行（原标题）只在有独立信息量时显示：外文恒显示（读者读不了原文）；
+    // 中文条目的摘要若被原标题包含（纯压缩），双行冗余，隐藏副行
+    const origLine = Boolean(zh) && (foreign || (ev.title !== zh && !ev.title.includes(zh)));
     return {
       id: ev.id,
       title: ev.title,
@@ -116,9 +122,8 @@ Page({
       date,
       long: (ev.body || '').length > 60,
       foreign,
-      // 服务端 LLM 复核已带中文摘要（zh 字段）时直接用，省掉一次翻译调用；
-    // 没有才走本地缓存/批量翻译兜底
-    zh: ev.zh || (foreign ? translate.lookup(ev.title) : ''),
+      zh,
+      origLine,
     };
   },
 

@@ -76,11 +76,14 @@ export function eventItemHTML(ev) {
         ? html`<span class="ev-origin agg" title="${channelNote || '聚合索引'}｜经 Google News 索引转手，标题与出处由聚合方提供">索引</span>`
         : '';
   const langChip = ev.lang && ev.lang !== 'zh' ? html`<span class="ev-lang">${ev.lang}</span>` : '';
-  // LLM 摘要（zh）：中文摘要为主行、原标题降为副行。摘要缺失（未复核/
-  // 老归档）时保持原标题为主行，回退是静默的、结构不换 —— 两种形态
-  // 共用同一套样式，只是副行出现与否的差别。
-  const titleBlock = ev.zh
-    ? html`<h4 class="ev-title">${ev.zh}</h4><p class="ev-orig" lang="${ev.lang ?? ''}">${ev.title}</p>`
+  // LLM 摘要（zh）：中文摘要为主行、原标题降为副行。但副行只在原标题有
+  // 独立信息量时出现：外文条目（读者读不了原文）恒显示；中文条目的摘要若
+  // 只是原标题的压缩（标题包含摘要），双行就是冗余，隐藏副行只留摘要。
+  const zhText = typeof ev.zh === 'string' ? ev.zh.trim() : '';
+  const foreignTitle = Boolean(ev.lang && ev.lang !== 'zh');
+  const showOrig = Boolean(zhText) && (foreignTitle || (!ev.title.includes(zhText) && ev.title !== zhText));
+  const titleBlock = zhText
+    ? html`<h4 class="ev-title">${zhText}</h4>${showOrig ? html`<p class="ev-orig" lang="${ev.lang ?? ''}">${ev.title}</p>` : ''}`
     : html`<h4 class="ev-title">${ev.title}</h4>`;
   // 原来是 join('') 后判空：只要有一个符号命中就显示分隔符
   const symsExist = symChips.some((x) => x !== '');
