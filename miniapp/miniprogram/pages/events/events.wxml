@@ -59,7 +59,7 @@
           <text class="focus-time mono">{{item.hhmm}}</text>
           <text class="lvl lv-{{item.level}}">{{item.levelText}}</text>
           <text class="tr-tag" wx:if="{{item.foreign && item.zh}}">AI 译</text>
-          <text class="tr-tag ai-sum" wx:elif="{{item.origLine}}">AI 摘要</text>
+          <text class="tr-tag ai-sum" wx:elif="{{item.zh}}">AI 摘要</text>
           <text class="focus-src">{{item.source}}</text>
         </view>
         <text class="focus-title" wx:if="{{!item.zh}}">{{item.title}}</text>
@@ -120,7 +120,7 @@
           <text class="lvl lv-{{item.level}}">{{item.levelText}}</text>
           <text class="ev-src">{{item.source}}</text>
           <text class="tr-tag" wx:if="{{item.foreign && item.zh}}">AI 译</text>
-          <text class="tr-tag ai-sum" wx:elif="{{item.origLine}}">AI 摘要</text>
+          <text class="tr-tag ai-sum" wx:elif="{{item.zh}}">AI 摘要</text>
         </view>
         <text class="ev-title" wx:if="{{!item.zh}}">{{item.title}}</text>
         <block wx:else>

@@ -117,26 +117,28 @@ describe('mergeHistoryRows：合并归档与实时', () => {
 
 /* ================================================================== *
  * P0 回填：归档行落盘时 LLM 复核还没跑完（zh=null），archivedIds 去重
- * 保证它不会重写第二遍 —— 历史行的摘要与复核分只能在读时从 llmCache 补。
+ * 保证它不会重写第二遍 —— 历史行的语义字段只能在读时从 llmCache 补。
  *
- * 关键差异：回填**不受 6 小时 TTL 限制**（zh 是确定性产物不是「当时判定」，
- * 回放窗口 24~72h）；score 只在 classified 态覆盖。
+ * 回填与 applyLlmResults 语义对齐：归档行存的是复核前的初筛结果，只补
+ * zh/score 会造出「irrelevant 复活成 high」「纠偏后 level 旧 + 分数新」
+ * 的怪胎。关键差异仅一处：不受 6 小时 TTL 限制（确定性产物非「当时判定」）。
  * ================================================================== */
 describe('mergeHistoryRows：归档行的 llmCache 回填', () => {
   const cacheMap = new Map([
     // 缓存时间是 20 小时前：超过 applyLlmResults 的 6h TTL，回填必须仍然生效
-    ['arch-1', { state: 'classified', level: 'high', score: 9, zh: '美联储维持利率不变', at: NOW - 20 * HOUR }],
+    ['arch-1', { state: 'classified', level: 'high', score: 9, zh: '美联储维持利率不变', topics: [{ key: 'fed', label: '货币政策', strong: true }], symbols: ['us10y'], region: 'us', at: NOW - 20 * HOUR }],
+    // 复核纠偏：初筛 high/地缘 → classified mid/能源
+    ['arch-fix', { state: 'classified', level: 'mid', score: 5, zh: '双方达成合作', topics: [{ key: 'macro', label: '宏观', strong: true }], symbols: [], region: 'cn', at: NOW - 20 * HOUR }],
+    // 无关：初筛可能给了 high + 标签，复核后必须清干净
     ['arch-2', { state: 'irrelevant', level: 'low', score: 0, zh: '公司动态', at: NOW - 20 * HOUR }],
-    // classified 但没给分（旧格式缓存行）
     ['arch-3', { state: 'classified', level: 'mid', zh: '三菱出售LNG股份', at: NOW - 20 * HOUR }],
-    // 越界分：不给
     ['arch-4', { state: 'classified', level: 'high', score: 42, zh: '   ', at: NOW - 20 * HOUR }],
   ]);
 
-  it('归档行的 zh/score 从缓存补回，不受 6h TTL 限制', () => {
+  it('归档行的语义字段从缓存补回，不受 6h TTL 限制', () => {
     const { items } = mergeHistoryRows({
       archiveRows: [
-        row('arch-1', NOW - 2 * HOUR, { zh: null, score: null }),
+        row('arch-1', NOW - 2 * HOUR, { zh: null, score: null, level: 'mid', topics: ['货币政策'] }),
         row('no-cache', NOW - 3 * HOUR, { zh: null, score: null }),
       ],
       liveItems: [],
@@ -147,27 +149,59 @@ describe('mergeHistoryRows：归档行的 llmCache 回填', () => {
     const hit = items.find((i) => i.id === 'arch-1');
     expect(hit.zh).toBe('美联储维持利率不变');
     expect(hit.score).toBe(9);
-    // 没有缓存行的保持原样：null 就是 null，不编造
+    expect(hit.level).toBe('high'); // 初筛 mid 被复核 high 纠正
+    expect(hit.topics).toEqual([{ key: 'fed', label: '货币政策', strong: true }]);
+    expect(hit.symbols).toEqual(['us10y']);
+    expect(hit.region).toBe('us');
+    expect(hit.llm).toBe(true); // Web 端「AI」徽章在回放里可见
     const miss = items.find((i) => i.id === 'no-cache');
     expect(miss.zh).toBeNull();
     expect(miss.score).toBeNull();
+    expect(miss.llm).toBeUndefined();
   });
 
-  it('score 只在 classified 态覆盖；irrelevant/坏值不注入', () => {
+  it('纠偏条目回放时 level/topics 与分数一致，不出「旧等级配新分数」怪胎', () => {
+    const { items } = mergeHistoryRows({
+      archiveRows: [row('arch-fix', NOW - 2 * HOUR, { level: 'high', score: null, topics: ['地缘政治'] })],
+      liveItems: [],
+      sinceMs: SINCE,
+      nowMs: NOW,
+      cacheMap,
+    });
+    const it = items[0];
+    expect(it.level).toBe('mid');
+    expect(it.score).toBe(5);
+    expect(it.topics[0].key).toBe('macro');
+  });
+
+  it('irrelevant 条目回放不复活：清标签、降 low、清零分', () => {
+    const { items } = mergeHistoryRows({
+      archiveRows: [row('arch-2', NOW - 2 * HOUR, { level: 'high', score: 7.0, topics: ['地缘政治'], symbols: ['oil'] })],
+      liveItems: [],
+      sinceMs: SINCE,
+      nowMs: NOW,
+      cacheMap,
+    });
+    const it = items[0];
+    expect(it.zh).toBe('公司动态'); // zh 全状态都补
+    expect(it.level).toBe('low');
+    expect(it.score).toBe(0);
+    expect(it.topics).toEqual([]);
+    expect(it.symbols).toEqual([]);
+    expect(it.llm).toBe(true);
+  });
+
+  it('缺分/坏值不注入；uncertain 态只补 zh 不动语义', () => {
     const { items } = mergeHistoryRows({
       archiveRows: [
-        row('arch-2', NOW - 2 * HOUR, { score: 7.0 }), // irrelevant：初筛分保留还是清零？
-        row('arch-3', NOW - 2 * HOUR, { score: null }),
-        row('arch-4', NOW - 2 * HOUR, { score: null }),
+        row('arch-3', NOW - 2 * HOUR, { score: null, level: 'low' }),
+        row('arch-4', NOW - 2 * HOUR, { score: null, level: 'low' }),
       ],
       liveItems: [],
       sinceMs: SINCE,
       nowMs: NOW,
       cacheMap,
     });
-    const irr = items.find((i) => i.id === 'arch-2');
-    expect(irr.zh).toBe('公司动态'); // zh 全状态都补
-    expect(irr.score).toBe(7.0); // 非 classified 不覆盖分数
     const noScore = items.find((i) => i.id === 'arch-3');
     expect(noScore.score).toBeNull(); // 缓存行没分就不注入
     const bad = items.find((i) => i.id === 'arch-4');

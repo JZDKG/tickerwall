@@ -399,6 +399,11 @@ async function llmClassifyBatch(batch) {
 /** 异步跑 LLM 分类（不阻塞接口返回），下一轮轮询时前端自然拿到增强结果 */
 function kickLlmClassify(items) {
   if (llmInFlight) return;
+  // 前置守卫：没配网关就根本不该进来。原来的兜底是批次内 break，但那只
+  // 跳出当前批的重试循环 —— 待处理超过一批时，每批都要空转一轮「发起请求
+  // → 抛错 → sleep 1200ms」，期间 llmInFlight 一直被占着
+  const cfg = readDshLlmConfig();
+  if (!cfg.apiKey || !cfg.baseURL) return;
   const now = Date.now();
   const todo = items
     .filter((it) => {
@@ -415,6 +420,7 @@ function kickLlmClassify(items) {
       for (let i = 0; i < todo.length; i += BATCH) {
         const batch = todo.slice(i, i + BATCH);
         // 网关对连续请求会 500，单批失败重试一次，批之间留间隔
+        let fatal = false;
         for (let attempt = 0; attempt < 2; attempt += 1) {
           try {
             await llmClassifyBatch(batch);
@@ -425,10 +431,15 @@ function kickLlmClassify(items) {
             llmStats.lastError = message;
             // 凭据缺失是配置问题，不是瞬时故障：退避重试只会让 llmInFlight
             // 被占住 1.5 秒，期间所有轮询都拿不到复核结果。
-            if (message.includes('未找到 LLM 凭据')) break;
+            // fatal 跳出的是外层分批循环 —— 否则第 2 批还要再空转一遍
+            if (message.includes('未找到 LLM 凭据')) {
+              fatal = true;
+              break;
+            }
             if (attempt === 0) await new Promise((r) => setTimeout(r, 1500));
           }
         }
+        if (fatal) break;
         if (i + BATCH < todo.length) await new Promise((r) => setTimeout(r, 1200));
       }
     } finally {
@@ -748,22 +759,42 @@ export function eventTimeMs(time) {
  *
  * 为什么需要：归档是不可变追加日志，条目**首轮落盘时 LLM 复核还没跑完**，
  * zh/score 只能是 null/初筛分；而 archivedIds 按 id 去重保证它不会再写第二遍。
- * 所以历史行的摘要与复核分只能在读时从 llmCache（落盘 7 天）补回来。
+ * 所以历史行的语义字段只能在读时从 llmCache（落盘 7 天）补回来。
  *
- * 与 applyLlmResults 的两处有意差异：
- *   1. **不检查 6 小时 TTL** —— zh/score 是同一文本的确定性产物，不是会过期
- *      的「当时判定」；回放窗口 24~72h，套 6h 门槛会把绝大多数历史救不回来。
- *   2. 只在行缺 zh 时注入 —— 实时行已被 applyLlmResults 盖过，不回退。
- * score 仅在 classified 态覆盖：irrelevant/uncertain 的缓存行不给分。
+ * 语义覆盖与 applyLlmResults 对齐 —— 归档行存的是**复核前的初筛结果**，
+ * 只回填 zh/score 会造出两类怪胎：
+ *   · irrelevant 条目在回放里「复活」成 level high + 原错误标签；
+ *   · classified 纠偏后 level 仍是旧的 high、分数却变成了 mid 的分。
+ *
+ * 与 applyLlmResults 的差异只有两处（有意）：
+ *   1. **不检查 6 小时 TTL** —— zh/level 等是同一文本的确定性产物，不是
+ *      会过期的「当时判定」；回放窗口 24~72h，套 6h 门槛救不回任何历史。
+ *   2. 归档行的 topics 是 label 数组，缓存行是 { key, label } 对象，
+ *      直接覆盖即可（与实时形状一致）；缓存认不出的 label 不回退归档值。
  */
 function hydrateRowFromLlmCache(row, cacheMap) {
   if (!cacheMap || !row?.id) return row;
   const hit = cacheMap.get(row.id);
   if (!hit) return row;
   if (!row.zh && typeof hit.zh === 'string' && hit.zh.trim()) row.zh = hit.zh.trim();
+
+  if (hit.state === 'irrelevant') {
+    // 与 applyLlmResults 无关分支同纪律：清标签、降级、清分
+    row.level = 'low';
+    row.score = 0;
+    row.topics = [];
+    row.symbols = [];
+    row.llm = true;
+    return row;
+  }
   if (hit.state === 'classified') {
+    if (hit.level) row.level = hit.level;
+    if (hit.topics?.length) row.topics = hit.topics;
+    if (hit.symbols?.length) row.symbols = hit.symbols;
+    if (hit.region) row.region = hit.region;
     const s = Number(hit.score);
     if (Number.isFinite(s) && s >= 0 && s <= 10) row.score = s;
+    row.llm = true;
   }
   return row;
 }

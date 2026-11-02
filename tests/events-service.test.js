@@ -718,7 +718,7 @@ describe('loadLlmStore：重启后恢复 7 天内的分类缓存', () => {
 /* ------------------------------ 24h 回放 ------------------------------ */
 
 describe('getEventHistory：归档 + 实时合并', () => {
-  it('读两份按北京日期命名的归档，hours 夹在 1~72', async () => {
+  it('72h 窗口逐天步进读 4 份北京日期命名的归档（只读首尾两天会丢中间 48h）', async () => {
     const now = Date.parse('2026-10-26T12:00:00+08:00');
     readJsonl.mockResolvedValue([
       { id: 'a', time: '2026-10-26 10:00:00', title: '美联储降息', level: 'high', topics: ['货币政策'], symbols: [], region: 'us' },
@@ -734,7 +734,11 @@ describe('getEventHistory：归档 + 实时合并', () => {
     const out = await getEventHistory({ hours: 999, nowMs: now });
     expect(out.ok).toBe(true);
     expect(out.hours).toBe(72);
-    expect(readJsonl).toHaveBeenCalledTimes(2);
+    // 72h 覆盖 10-23 ~ 10-26 四个北京自然日 —— 曾经只读首尾两天，
+    // 中间 48h 的归档整体消失，5d/1m 解释窗口丢得更狠
+    expect(readJsonl).toHaveBeenCalledTimes(4);
+    const days = readJsonl.mock.calls.map((c) => c[0].match(/(\d{4}-\d{2}-\d{2})\.jsonl$/)?.[1]).sort();
+    expect(days).toEqual(['2026-10-23', '2026-10-24', '2026-10-25', '2026-10-26']);
     expect(out.items.map((i) => i.id).sort()).toEqual(['a', 'b']);
     expect(out.count).toBe(2);
     expect(out.coverageFrom).toBe(new Date(eventTimeMs('2026-10-25 23:00:00')).toISOString());

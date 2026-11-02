@@ -84,13 +84,19 @@ export async function archiveEvents(items) {
  *
  * 跨天边界按北京算（+8h 后取日期），和 todayKey() 的归档命名保持一致 ——
  * 用 UTC 算会导致 0–8 点的归档查不到。
+ *
+ * 文件清单必须**逐天步进**而不是只取首尾两天：解释引擎的 5d/1m 窗口
+ * （explanations.service.js loadEventEvidence）最长跨 31 个自然日，只读
+ * 首尾会让中间 29 天的证据整体消失 —— 而且是静默消失，窗口越长越没人发现。
+ * 文件不存在时 readJsonl 返回空数组，多列几个不存在的日期无害。
  */
 export async function readArchiveRowsForSpan({ sinceMs, nowMs }) {
   const dayOf = (ms) => new Date(ms + 8 * 3600 * 1000).toISOString().slice(0, 10);
-  const files = [...new Set([dayOf(sinceMs), dayOf(nowMs)])].map((d) =>
-    path.join(EVENTS_DIR, `${d}.jsonl`),
-  );
+  const files = new Set();
+  // +8 固定时区无夏令时，24h 步进不会跳日；尾端再补一天兜住不满 24h 的余量
+  for (let ms = sinceMs; ms <= nowMs; ms += 24 * 3600 * 1000) files.add(dayOf(ms));
+  files.add(dayOf(nowMs));
   const rows = [];
-  for (const f of files) rows.push(...(await readJsonl(f)));
+  for (const d of [...files].sort()) rows.push(...(await readJsonl(path.join(EVENTS_DIR, `${d}.jsonl`))));
   return rows;
 }
