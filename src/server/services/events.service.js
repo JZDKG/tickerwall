@@ -735,6 +735,10 @@ function normalizeHistoryRow(ev) {
     region: ev.region ?? 'global',
     source: ev.source,
     url: sanitizeUrl(ev.url),
+    // 归档行持久化过 llm 标志：直接透传 —— 超过 llmCache 的 7 天窗口后
+    // 缓存已被淘汰，归档文件里这 1 bit 是徽章的唯一来源。实时行同样
+    // 依赖这一行：合并前它的 llm 属性此前在这里被静默丢掉
+    llm: Boolean(ev.llm),
     important: Boolean(ev.important),
   };
 }
@@ -791,6 +795,7 @@ function hydrateRowFromLlmCache(row, cacheMap) {
     if (hit.level) row.level = hit.level;
     if (hit.topics?.length) row.topics = hit.topics;
     if (hit.symbols?.length) row.symbols = hit.symbols;
+    else if (hit.symbolReasons?.length) row.symbols = []; // 模型明确驳回初筛标的
     if (hit.region) row.region = hit.region;
     const s = Number(hit.score);
     if (Number.isFinite(s) && s >= 0 && s <= 10) row.score = s;

@@ -112,14 +112,16 @@ describe('业务路由', () => {
     expect(deps.getEvents).toHaveBeenLastCalledWith({ force: false, limit: 300 });
   });
 
-  it('/api/events/history 的 hours 夹在 1..48', async () => {
+  it('/api/events/history 的 hours 夹在 1..72，limit 透传', async () => {
     const { app, deps } = makeApp();
     await call(app, '/api/events/history');
-    expect(deps.getEventHistory).toHaveBeenLastCalledWith({ hours: 24 });
+    expect(deps.getEventHistory).toHaveBeenLastCalledWith({ hours: 24, limit: 600 });
     await call(app, '/api/events/history?hours=0');
-    expect(deps.getEventHistory).toHaveBeenLastCalledWith({ hours: 1 });
-    await call(app, '/api/events/history?hours=999');
-    expect(deps.getEventHistory).toHaveBeenLastCalledWith({ hours: 48 });
+    expect(deps.getEventHistory).toHaveBeenLastCalledWith({ hours: 1, limit: 600 });
+    await call(app, '/api/events/history?hours=999&limit=9999');
+    expect(deps.getEventHistory).toHaveBeenLastCalledWith({ hours: 72, limit: 2000 });
+    await call(app, '/api/events/history?hours=72&limit=1200');
+    expect(deps.getEventHistory).toHaveBeenLastCalledWith({ hours: 72, limit: 1200 });
   });
 
   it('/api/briefing / /api/eventstudy / /api/calendar 都走对应服务', async () => {

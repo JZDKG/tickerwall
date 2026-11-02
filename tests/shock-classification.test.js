@@ -91,4 +91,17 @@ describe('转成解释层的事件证据', () => {
     const rows = [{ id: 'z', revision: 3, title: 'OPEC+ 减产', publishedAt: '2026-10-27T10:00:00Z' }];
     expect(toEventEvidence(rows, { ...span, assetId: 'oil' })[0].revision).toBe(3);
   });
+
+  it('北京墙钟字符串显式按 +08:00 解析，不随进程时区漂移', () => {
+    // 归档行存的是无时区后缀的北京墙钟。TZ=UTC 的容器里裸 Date.parse 会
+    // 按 UTC 解，时间超前 8 小时 —— 近 8h 的快讯被当成未来事件丢弃
+    const bjNow = Date.parse('2026-11-02T16:00:00+08:00');
+    const rows = [
+      { id: 'fresh', title: 'OPEC+ 减产', time: '2026-11-02 15:30:00' },   // 北京 15:30 = UTC 07:30，窗口内
+      { id: 'stale', title: 'OPEC+ 减产', time: '2026-10-20 10:00:00' },  // 远超窗口
+    ];
+    const out = toEventEvidence(rows, { sinceMs: bjNow - 24 * 3600 * 1000, nowMs: bjNow, assetId: 'oil' });
+    expect(out.map((e) => e.eventId)).toEqual(['fresh']);
+    expect(out[0].at).toBe('2026-11-02T07:30:00.000Z');
+  });
 });

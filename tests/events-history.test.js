@@ -157,7 +157,9 @@ describe('mergeHistoryRows：归档行的 llmCache 回填', () => {
     const miss = items.find((i) => i.id === 'no-cache');
     expect(miss.zh).toBeNull();
     expect(miss.score).toBeNull();
-    expect(miss.llm).toBeUndefined();
+    // normalizeHistoryRow 现在恒带 llm 字段：归档行持久化的标志直接透传，
+    // 没复核过的行是 false 而不是 undefined
+    expect(miss.llm).toBe(false);
   });
 
   it('纠偏条目回放时 level/topics 与分数一致，不出「旧等级配新分数」怪胎', () => {

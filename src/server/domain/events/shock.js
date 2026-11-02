@@ -111,13 +111,29 @@ export const ASSET_TOKENS = {
  * @param {Array<object>} events 归档或实时事件条目（{id|eventId, title, body, publishedAt}）
  * @param {{sinceMs:number, nowMs:number}} span
  */
+/**
+ * 归档行的时间是北京墙钟字符串（'YYYY-MM-DD HH:mm:ss'，无时区后缀）。
+ * 裸 Date.parse 会按**进程时区**解：TZ=Asia/Shanghai 下没错，但 Docker /
+ * 云主机默认 TZ=UTC 时整条时间线会超前 8 小时 —— 近 8 小时的快讯被
+ * `ts > nowMs` 当成未来事件丢掉。显式拼 +08:00（与 events.service 的
+ * eventTimeMs 同一纪律）；带时区后缀的 ISO 串仍走 Date.parse 原样解析。
+ */
+function parseEventTs(v) {
+  const s = String(v ?? '').trim();
+  if (/^\d{4}-\d{2}-\d{2} \d{2}(:\d{2}){0,2}$/.test(s)) {
+    const t = Date.parse(`${s.replace(' ', 'T')}+08:00`);
+    if (Number.isFinite(t)) return t;
+  }
+  return Date.parse(s);
+}
+
 export function toEventEvidence(events, { sinceMs, nowMs, assetId = null } = {}) {
   const out = [];
   const relevance = assetId ? ASSET_TOKENS[assetId] ?? null : null;
   for (const ev of events ?? []) {
     const id = ev.eventId ?? ev.id;
     if (!id) continue;
-    const ts = Date.parse(String(ev.publishedAt ?? ev.time ?? ''));
+    const ts = parseEventTs(ev.publishedAt ?? ev.time);
     if (Number.isFinite(ts) && (ts < sinceMs || ts > nowMs)) continue;
     // 必须确实在讲这个品种：否则「某国罢工」会被当成原油供给冲击
     if (relevance) {

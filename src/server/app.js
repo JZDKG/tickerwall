@@ -84,13 +84,17 @@ export function createApp(deps) {
       }
       if (url.pathname === '/api/events/history') {
         /**
-         * 归档只有「今天 + 昨天」两份，超过 48 小时没有数据可给。
-         * 显式写 hours=0 时夹到 1，而不是被 `|| 24` 当成「没传」——
-         * 否则「我要 0 小时」与「我不传」会得到同一个结果，用户以为参数没生效。
+         * 服务层支持 1~72h（上限与 getEventHistory 的夹取一致，归档按天
+         * 步进读取，不再受「只有今天+昨天」的旧约束）。显式写 hours=0 时
+         * 夹到 1，而不是被 `|| 24` 当成「没传」—— 否则「我要 0 小时」与
+         * 「我不传」会得到同一个结果，用户以为参数没生效。
+         * limit 一并透传：72h 窗口的事件量已超 600，用默认值会静默截尾。
          */
         const raw = Number(url.searchParams.get('hours'));
-        const hours = Number.isFinite(raw) && url.searchParams.has('hours') ? Math.max(1, Math.min(48, raw)) : 24;
-        return sendJson(res, 200, await deps.getEventHistory({ hours }));
+        const hours = Number.isFinite(raw) && url.searchParams.has('hours') ? Math.max(1, Math.min(72, raw)) : 24;
+        const rawLimit = Number(url.searchParams.get('limit'));
+        const limit = Number.isFinite(rawLimit) && url.searchParams.has('limit') ? Math.max(1, Math.min(2000, rawLimit)) : 600;
+        return sendJson(res, 200, await deps.getEventHistory({ hours, limit }));
       }
       if (url.pathname === '/api/events') {
         // 默认 200：接入全球源后事件量从 ~14 条涨到 ~130 条，
