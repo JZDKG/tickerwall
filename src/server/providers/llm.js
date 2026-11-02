@@ -11,14 +11,29 @@
  * 凭据来源优先级（逐字段回落，不是整体覆盖）：
  *   LLM_BASE_URL / LLM_API_KEY / LLM_MODEL 环境变量
  *     ↓ 缺哪个补哪个
- *   ~/.dsh/profiles/web/cordis.patch.yml 里的 cline 配置
+ *   内置默认网关（本机 magpie，见下方 BUILTIN_* 常量）
+ *     ↓ 仅 LLM_CONFIG_SOURCE=dsh 时才插在两者之间
+ *   ~/.dsh/profiles/web/cordis.patch.yml 里的 cline 配置（显式 opt-in）
  * ================================================================== */
 
 import { readFileSync } from 'node:fs';
 
 const ENV_LLM = { baseURL: 'LLM_BASE_URL', apiKey: 'LLM_API_KEY', model: 'LLM_MODEL' };
-const FALLBACK_BASE_URL = 'https://api.cline.bot/api/v1';
-const FALLBACK_MODEL = 'cline-pass/deepseek-v4.1-flash-1017';
+
+/**
+ * 内置默认网关：本机 magpie 代理（OpenAI 兼容 Chat Completions）。
+ * 网关信任回环请求，密钥是公共占位值（非机密），写死在代码里不构成泄露。
+ *
+ * 三种模式（LLM_CONFIG_SOURCE）：
+ *   auto（默认）  env 逐字段 → builtin。不再读任何外部文件 —— dsh 那条
+ *                回落从「默认行为」降级为显式选用，默认链路永远不碰它。
+ *   env          只认环境变量，缺字段就是 null。部署隔离与测试都用它
+ *                （严格语义是有意的：说「只用 env」就必须真的什么都不补）。
+ *   dsh          env 逐字段 → ~/.dsh 的 cline 配置 → builtin 兜底。
+ */
+const BUILTIN_BASE_URL = 'http://127.0.0.1:3425/v1';
+const BUILTIN_API_KEY = 'magpie';
+const BUILTIN_MODEL = 'qoder/qfmodel';
 
 export function readDshConfig() {
   const home = process.env.DSH_HOME || `${process.env.HOME}/.dsh`;
@@ -52,34 +67,46 @@ export function readDshConfig() {
 }
 
 export function readDshLlmConfig() {
-  const useEnvOnly = String(process.env.LLM_CONFIG_SOURCE ?? 'auto').toLowerCase() === 'env';
+  const mode = String(process.env.LLM_CONFIG_SOURCE ?? 'auto').toLowerCase();
+  const envOnly = mode === 'env';
+  const useDsh = mode === 'dsh';
 
   const envBase = process.env[ENV_LLM.baseURL] || null;
   const envKey = process.env[ENV_LLM.apiKey] || null;
   const envModel = process.env[ENV_LLM.model] || null;
 
   // 三个字段都在环境变量里给全了，就没有任何理由再碰外部文件 ——
-  // 少一次 IO，也少一处凭据暴露面。只在缺字段时才回落去读 dsh。
+  // 少一次 IO，也少一处凭据暴露面。builtin 同理：用不上就不进 source。
   const envComplete = Boolean(envBase && envKey && envModel);
-  const dsh = useEnvOnly || envComplete ? null : readDshConfig();
+  const dsh = useDsh && !envComplete ? readDshConfig() : null;
 
-  // 逐字段：有了就用，没有才回落
-  const apiKey = envKey ?? dsh?.apiKey ?? null;
+  // dsh 模式沿用原有的模型偏好链；其他模式没有中间层
+  let dshModel = null;
+  if (dsh && !envModel) {
+    const models = dsh?.models ?? [];
+    const preferred = ['cline-pass/deepseek-v4.1-flash-1017', 'cline-pass/glm-5.3-flash'];
+    dshModel = preferred.find((m) => models.includes(m)) ?? models[0] ?? null;
+  }
+
+  // 逐字段：env → dsh（仅显式启用）→ builtin（env 模式不补，缺就是 null）
+  const apiKey = envKey ?? dsh?.apiKey ?? (envOnly ? null : BUILTIN_API_KEY);
   // baseURL 取决于**有没有密钥**，而不是「有没有配置」：
   // 有 key 却没网关地址，请求根本发不出去 —— 这比「用默认地址」更难排查。
-  // 反过来没有 key 时给 null，让 env:missing 一眼看出「压根没配」。
-  const baseURL = envBase ?? dsh?.baseURL ?? (apiKey ? FALLBACK_BASE_URL : null);
-  const models = envModel ? [envModel] : (dsh?.models ?? []);
-
-  let model = envModel;
-  if (!model) {
-    const preferred = ['cline-pass/deepseek-v4.1-flash-1017', 'cline-pass/glm-5.3-flash'];
-    model = preferred.find((m) => models.includes(m)) ?? models[0] ?? FALLBACK_MODEL;
-  }
+  // 反过来没有 key 时给 null，让配置一眼看出「压根没配」。
+  const baseURL = envBase ?? dsh?.baseURL ?? (envOnly || !apiKey ? null : BUILTIN_BASE_URL);
+  const model = envModel ?? dshModel ?? (envOnly ? null : BUILTIN_MODEL);
+  const models = envModel
+    ? [envModel]
+    : dsh?.models?.length
+      ? dsh.models
+      : envOnly
+        ? []
+        : [BUILTIN_MODEL];
 
   const from = [];
   if (envBase || envKey || envModel) from.push('env');
   if (dsh?.source) from.push(dsh.source);
+  if (!envOnly && !envComplete) from.push('builtin:magpie');
 
   return {
     baseURL,
@@ -87,7 +114,7 @@ export function readDshLlmConfig() {
     apiKeyEnv: dsh?.apiKeyEnv ?? 'CLINE_API_KEY',
     models,
     model,
-    source: from.length ? from.join('+') : 'env:missing',
+    source: from.length ? from.join('+') : (envOnly ? 'env:missing' : 'builtin:magpie'),
   };
 }
 

@@ -70,11 +70,24 @@ describe('readDshLlmConfig：来源优先级', () => {
     expect(JSON.stringify(cfg)).not.toContain('sk-STOLEN');
   });
 
-  it('默认 auto：仅在没有环境变量时才回落读 dsh（兼容现状）', () => {
+  it('默认 auto：环境变量缺失时回落到内置 magpie 网关，不读任何文件', () => {
+    const cfg = readDshLlmConfig();
+    expect(cfg.source).toBe('builtin:magpie');
+    expect(cfg.baseURL).toBe('http://127.0.0.1:3425/v1');
+    expect(cfg.apiKey).toBe('magpie');
+    expect(cfg.model).toBe('qoder/qfmodel');
+    // 假 HOME 里的 dsh 配置在默认模式下绝不被读取
+    expect(JSON.stringify(cfg)).not.toContain('sk-STOLEN');
+    expect(JSON.stringify(cfg)).not.toContain('evil.example');
+  });
+
+  it('LLM_CONFIG_SOURCE=dsh：显式 opt-in 后才回落读 dsh 配置', () => {
+    process.env.LLM_CONFIG_SOURCE = 'dsh';
     const cfg = readDshLlmConfig();
     expect(cfg.source).toContain('dsh');
     expect(cfg.baseURL).toBe('https://evil.example/v1');
     expect(cfg.model).toBe('cline-pass/evil-model');
+    expect(cfg.apiKey).toBe('sk-STOLEN');
   });
 
   it('模型名可以由 LLM_MODEL 覆盖，不再只有硬编码那一个', () => {
@@ -89,10 +102,11 @@ describe('readDshLlmConfig：来源优先级', () => {
  *
  * 旧实现只要任何一个 LLM_* 变量存在就提前 return，于是「只想换模型名」的人
  * 连密钥一起丢掉 —— LLM 复核静默失效，而界面上看不出来。这里锁住：
- * 每个字段各自回落。
+ * 每个字段各自回落（dsh 模式下回落到 dsh，其余字段回落到 builtin）。
  * ================================================================== */
 describe('环境变量与 dsh 配置逐字段合并', () => {
-  it('只设 LLM_MODEL 时，密钥仍从 dsh 补上（这是最初的真 bug）', () => {
+  it('dsh 模式下只设 LLM_MODEL 时，密钥仍从 dsh 补上（最初的真 bug 形态）', () => {
+    process.env.LLM_CONFIG_SOURCE = 'dsh';
     process.env.LLM_MODEL = 'my-model';
     const cfg = readDshLlmConfig();
     expect(cfg.model).toBe('my-model');
@@ -102,7 +116,8 @@ describe('环境变量与 dsh 配置逐字段合并', () => {
     expect(cfg.source).toContain('dsh');
   });
 
-  it('只设 LLM_BASE_URL 时，密钥与模型都回落', () => {
+  it('dsh 模式下只设 LLM_BASE_URL 时，密钥与模型都回落到 dsh', () => {
+    process.env.LLM_CONFIG_SOURCE = 'dsh';
     process.env.LLM_BASE_URL = 'https://mine.example/v1';
     const cfg = readDshLlmConfig();
     expect(cfg.baseURL).toBe('https://mine.example/v1');
@@ -110,13 +125,14 @@ describe('环境变量与 dsh 配置逐字段合并', () => {
     expect(cfg.model).toBe('cline-pass/evil-model');
   });
 
-  it('环境变量齐全时全部采用，不再走 dsh', () => {
+  it('环境变量齐全时全部采用，不再走 dsh / builtin', () => {
     process.env.LLM_BASE_URL = 'https://mine.example/v1';
     process.env.LLM_API_KEY = 'sk-mine';
     process.env.LLM_MODEL = 'my-model';
     const cfg = readDshLlmConfig();
     expect(cfg).toMatchObject({ baseURL: 'https://mine.example/v1', apiKey: 'sk-mine', model: 'my-model' });
     expect(JSON.stringify(cfg)).not.toContain('sk-STOLEN');
+    expect(cfg.source).toBe('env');
   });
 
   it('环境变量齐全时确实没读文件：把 DSH_HOME 指向不存在的目录，结果不变', () => {
@@ -131,21 +147,23 @@ describe('环境变量与 dsh 配置逐字段合并', () => {
     expect(cfg.apiKey).toBe('sk-mine');
   });
 
-  it('只设 LLM_API_KEY 时，网关地址回落到默认值（有 key 就必须有地址）', () => {
+  it('默认模式只设 LLM_API_KEY 时，网关地址回落到内置 magpie（有 key 就必须有地址）', () => {
     process.env.LLM_API_KEY = 'sk-mine';
     process.env.DSH_HOME = '/nonexistent-dsh-home-for-this-test';
     const cfg = readDshLlmConfig();
     expect(cfg.apiKey).toBe('sk-mine');
-    // 有密钥却没有 baseURL 会让请求直接失败，所以这里必须是默认网关而不是 null
-    expect(cfg.baseURL).toBe('https://api.cline.bot/api/v1');
+    // 有密钥却没有 baseURL 会让请求直接失败，所以这里必须是内置网关而不是 null
+    expect(cfg.baseURL).toBe('http://127.0.0.1:3425/v1');
+    expect(cfg.model).toBe('qoder/qfmodel');
   });
 
-  it('LLM_CONFIG_SOURCE=env 时即使只设模型也不读文件（无法回落）', () => {
+  it('LLM_CONFIG_SOURCE=env 时即使只设模型也不读文件、不落内置网关（无法回落）', () => {
     process.env.LLM_CONFIG_SOURCE = 'env';
     process.env.LLM_MODEL = 'my-model';
     const cfg = readDshLlmConfig();
     expect(cfg.model).toBe('my-model');
     expect(cfg.apiKey).toBeNull(); // 明说了只用环境变量，就不给密钥
+    expect(cfg.baseURL).toBeNull();
     expect(JSON.stringify(cfg)).not.toContain('sk-STOLEN');
   });
 });

@@ -208,6 +208,18 @@
   color: #ffd9de;
 }
 
+/* LLM 摘要为主行时，原标题降为可读性辅助的小字副行 */
+.ev-orig {
+  margin: -2px 0 4px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--muted-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .ev-body {
   margin: 0 0 6px;
   font-size: 12.5px;

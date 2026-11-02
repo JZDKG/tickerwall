@@ -76,6 +76,12 @@ export function eventItemHTML(ev) {
         ? html`<span class="ev-origin agg" title="${channelNote || '聚合索引'}｜经 Google News 索引转手，标题与出处由聚合方提供">索引</span>`
         : '';
   const langChip = ev.lang && ev.lang !== 'zh' ? html`<span class="ev-lang">${ev.lang}</span>` : '';
+  // LLM 摘要（zh）：中文摘要为主行、原标题降为副行。摘要缺失（未复核/
+  // 老归档）时保持原标题为主行，回退是静默的、结构不换 —— 两种形态
+  // 共用同一套样式，只是副行出现与否的差别。
+  const titleBlock = ev.zh
+    ? html`<h4 class="ev-title">${ev.zh}</h4><p class="ev-orig" lang="${ev.lang ?? ''}">${ev.title}</p>`
+    : html`<h4 class="ev-title">${ev.title}</h4>`;
   // 原来是 join('') 后判空：只要有一个符号命中就显示分隔符
   const symsExist = symChips.some((x) => x !== '');
   return html`<article class="event lv-${ev.level}${isNew ? ' is-new' : ''}" data-id="${ev.id}">
@@ -87,7 +93,7 @@ export function eventItemHTML(ev) {
         ${isNew ? html`<span class="ev-new">NEW</span>` : ''}
         ${topicChips}
       </div>
-      <h4 class="ev-title">${ev.title}</h4>
+      ${titleBlock}
       ${ev.body && ev.body !== ev.title ? html`<p class="ev-body">${ev.body}</p>` : ''}
       <div class="ev-meta">${oneHand}${langChip}<span class="ev-pub"${channelNote ? html` title="经 ${channelNote} 采集"` : ''}>${byline}</span>${symsExist ? html`<span class="ev-sep">·</span>${symChips}` : ''}${revisionChipHTML(ev)}${link}</div>
     </div>

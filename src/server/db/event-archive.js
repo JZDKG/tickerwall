@@ -63,6 +63,10 @@ export async function archiveEvents(items) {
         body: it.body?.slice(0, 300) ?? '',
         url: sanitizeUrl(it.url),
         level: it.level,
+        // LLM 摘要与分数是复核后补的：归档带上，回放 24h 时间轴时才有
+        // 中文摘要可读；没复核过的条目这两项是 null，前端回退原标题
+        zh: it.zh ?? null,
+        score: Number.isFinite(it.score) ? it.score : null,
         topics: it.topics?.map((t) => t.label) ?? [],
         symbols: it.symbols ?? [],
         region: it.region ?? null,

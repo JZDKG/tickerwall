@@ -116,7 +116,9 @@ Page({
       date,
       long: (ev.body || '').length > 60,
       foreign,
-      zh: foreign ? translate.lookup(ev.title) : '',
+      // 服务端 LLM 复核已带中文摘要（zh 字段）时直接用，省掉一次翻译调用；
+    // 没有才走本地缓存/批量翻译兜底
+    zh: ev.zh || (foreign ? translate.lookup(ev.title) : ''),
     };
   },
 

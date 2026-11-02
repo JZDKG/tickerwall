@@ -381,6 +381,70 @@ describe('getEvents：缓存与 LLM 复核', () => {
     vi.useRealTimers();
     await new Promise((r) => setTimeout(r, 20));
   });
+
+  it('LLM 返回的 score 与 zh 摘要随复核结果落到事件上（越界分钳到 10、长摘要截断）', async () => {
+    process.env.LLM_API_KEY = 'k-test';
+    process.env.LLM_BASE_URL = 'https://llm.test/v1';
+    process.env.LLM_MODEL = 'm-test';
+    fetchRaw.mockImplementation(async (url) => {
+      if (url.endsWith('/chat/completions')) {
+        const content = JSON.stringify([
+          { i: 1, topics: ['货币政策'], level: 'high', symbols: ['wti'], region: 'us', score: 99, zh: '美联储维持利率不变。'.repeat(10) },
+        ]);
+        return JSON.stringify({ data: { choices: [{ message: { content } }] } });
+      }
+      if (url.includes('jin10')) {
+        return jin10([{ id: 'jzh', time: '2026-10-26 10:00:00', data: { title: '美联储公布利率决议', content: '维持不变' } }]);
+      }
+      if (url.includes('zhibo.sina')) return sinaFeed([]);
+      return wscn([]);
+    });
+
+    vi.useFakeTimers();
+    await getEvents({ force: true });
+    await vi.advanceTimersByTimeAsync(3200);
+    const second = await getEvents();
+    const it = second.items[0];
+    expect(it.llm).toBe(true);
+    // 99 超出 0-10 量表 → 提取层钳到 10，而不是把坏值透传给前端
+    expect(it.score).toBe(10);
+    // 摘要截断到 60 字，前端主行用它、原标题降为副行
+    expect(it.zh).toHaveLength(60);
+    vi.useRealTimers();
+    await new Promise((r) => setTimeout(r, 20));
+  });
+});
+
+describe('applyLlmResults：zh 摘要与 score 的覆盖纪律', () => {
+  const now = Date.now();
+
+  it('zh 在所有状态都应用；score 只在 classified 应用且只接受 0-10', () => {
+    const cache = new Map([
+      ['a', { state: 'classified', topics: [{ key: 'fed', label: '货币政策', strong: true }], symbols: ['oil'], level: 'high', region: 'us', score: 9, zh: '美联储维持利率不变', at: now }],
+      ['b', { state: 'irrelevant', topics: [], symbols: [], level: 'low', region: null, zh: '公司动态摘要', at: now }],
+      ['c', { state: 'uncertain', topics: [], symbols: [], level: 'low', region: null, at: now }],
+      ['d', { state: 'classified', topics: [], symbols: [], level: 'mid', region: null, score: 42, zh: '   ', at: now }],
+    ]);
+    const items = [
+      { id: 'a', title: 't-a', level: 'low', score: 3.2, topics: [], symbols: [] },
+      { id: 'b', title: 't-b', level: 'mid', score: 4, topics: [{ key: 'fed', label: '货币政策', strong: true }], symbols: ['us10y'] },
+      { id: 'c', title: 't-c', level: 'low', topics: [], symbols: [] },
+      { id: 'd', title: 't-d', level: 'low', score: 2, topics: [], symbols: [] },
+    ];
+    // uncertain 不计入 applied（原有纪律），classified a/d 与 irrelevant b 各计 1
+    expect(events.applyLlmResults(items, cache)).toBe(3);
+    expect(items[0].zh).toBe('美联储维持利率不变');
+    expect(items[0].score).toBe(9);
+    expect(items[0].level).toBe('high');
+    expect(items[1].zh).toBe('公司动态摘要'); // 无关条目照样值得读懂它在说什么
+    expect(items[1].score).toBe(4); // 分数不被无关结果覆盖
+    expect(items[1].topics).toEqual([]); // 但旧标签被清除（原有纪律）
+    expect(items[1].symbols).toEqual([]);
+    expect(items[2].zh).toBeUndefined(); // uncertain 且无 zh → 原样保留
+    // 脏缓存最后拦一道：42 超量表不落、空白摘要不算数（缓存要落盘 7 天）
+    expect(items[3].score).toBe(2);
+    expect(items[3].zh).toBeUndefined();
+  });
 });
 
 /* ------------------------------ 分类与 LLM 细化 ------------------------------ */

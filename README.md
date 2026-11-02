@@ -465,17 +465,15 @@ RV20 还会给出它在**过去 5 年滚动分布中的分位**，并落成一�
 
 **喂的是标题 + 正文摘要**：只给标题时，「某公司中东项目仍有交付」会被判成地缘冲突；带上正文前 80 字就能看出是公司动态。代价是 token 翻倍（约 200 个 prompt token/批）。
 
-同时让模型输出 `region`（us/cn/eu/uk/jp/me/asia/latam/africa/global），作为地图落点的依据。关键词分类时也会用地理词表先兜一个底。
+同时让模型输出 `region`（us/cn/eu/uk/jp/me/asia/latam/africa/global），作为地图落点的依据，外加两个正交字段：`score`（0–10 连续重要度分，与关键词分同一量表，同档内排序/密度控制用）和 `zh`（一句话中文摘要，非中文条目在事件卡上以摘要为主行、原标题降为副行；摘要不参与四态判定，也**不进修订哈希**——重译措辞变化不算内容变化）。
 
-**实际做法**：从 dsh 的 web profile 配置里直接提取网关参数，然后走同一个 provider：
+**网关来源**（`src/server/providers/llm.js`，逐字段回落）：
 
-```js
-// 读 ~/.dsh/profiles/web/cordis.patch.yml，拿到 baseURL / apiKeyEnv / 模型列表
-// key 从 ~/.dsh/.credentials.yaml 的 refs 段取
-// 模型优先 cline-pass/deepseek-v4.1-flash-1017
-```
+1. `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` 环境变量；
+2. 缺的字段落**内置 magpie 网关**（`http://127.0.0.1:3425/v1`，`qoder/qfmodel`，本机回环、key 为公共占位值）；
+3. 仅 `LLM_CONFIG_SOURCE=dsh` 时才在 1、2 之间插入 dsh profile 的 cline 配置（读 `~/.dsh/profiles/web/cordis.patch.yml` 与 `~/.dsh/.credentials.yaml`）。
 
-这样 dsh 换了 provider 或模型，看板会跟着走，不用改代码。实测 3.4 秒、108 prompt tokens、成本约 $0.0003/批。
+`LLM_CONFIG_SOURCE=env` 表示只用环境变量、缺字段即停（部署隔离与测试用）。默认链路永不读外部文件。
 
 几个踩过的坑，都写进代码注释了：
 

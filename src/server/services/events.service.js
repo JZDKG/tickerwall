@@ -197,7 +197,7 @@ const LLM_REGIONS = ['us', 'cn', 'eu', 'uk', 'jp', 'me', 'asia', 'latam', 'afric
 
 const LLM_SYSTEM = `你是金融市场的新闻分类器。输入是一批编号的财经快讯，格式为「编号. 标题 ｜ 正文摘要」，判断每条对市场的影响。
 
-对每条输出四个字段：
+对每条输出六个字段：
 - topics: 最相关的 1-2 个，取值必须来自 [${LLM_TOPICS.join(',')}]
 - level: high / mid / low
 - symbols: 受影响的标的，取值必须来自 [${LLM_SYMBOLS.join(',')}]
@@ -205,6 +205,11 @@ const LLM_SYSTEM = `你是金融市场的新闻分类器。输入是一批编号
   · us=美国/北美 · cn=中国 · eu=欧洲（地理口径，含非欧元区国家） · uk=英国 · jp=日本 · me=中东
   · asia=亚太其他地区（含澳大利亚、印度，不等于东南亚） · latam=拉美 · africa=非洲 · global=全球性/无明确地点
   · 这些是**事件发生地**，不是资产交易地，也不是经济组织（欧元区 / 欧盟 / 东盟）
+- score: 0-10 整数，市场重要度连续分值
+  · 9-10 重大拐点（决议落地、战争爆发、危机级事件） · 7-8 显著且方向明确的影响
+  · 5-6 有参考价值 · 3-4 边缘动态 · 0-2 噪声
+- zh: 简体中文一句话摘要（不超过 40 字）。只压缩标题与正文里已有的事实，
+  不补背景、不加评论、不给预测；输入已是中文的条目同样输出压缩后的一句话
 
 判断标准：
 - high：央行货币政策、通胀/就业数据、重大地缘冲突、能源供给中断、监管重大变化
@@ -215,7 +220,7 @@ const LLM_SYSTEM = `你是金融市场的新闻分类器。输入是一批编号
 - region 按「事件主体所在地」判断，不是按媒体报道来源
 
 只输出 JSON 数组，不要任何解释文字、不要 markdown 代码块：
-[{"i":1,"topics":["货币政策"],"level":"high","symbols":["us10y","dxy"],"region":"us"}]`;
+[{"i":1,"topics":["货币政策"],"level":"high","symbols":["us10y","dxy"],"region":"us","score":8,"zh":"美联储宣布维持利率不变，点阵图暗示年内不急于降息"}]`;
 
 /**
  * 从 dsh 的 web profile 里提取 cline 网关配置，而不是硬编码。
@@ -309,7 +314,7 @@ async function llmClassifyBatch(batch) {
     .join('\n');
   const payload = JSON.stringify({
     model: cfg.model,
-    max_tokens: 2500, // reasoning 模型会先思考，预算给小了 content 会被截断
+    max_tokens: 4000, // reasoning 模型会先思考；zh 摘要每条多 ~50 token，预算给小了 content 会被截断
     messages: [
       { role: 'system', content: LLM_SYSTEM },
       { role: 'user', content: list },
@@ -361,6 +366,15 @@ async function llmClassifyBatch(batch) {
       // 模型给的是「影响候选」，不是「已核实的影响」：只拦实体冲突
       requireMention: false,
     });
+    /**
+     * score / zh 与四态判定正交：分数和摘要不参与 classified/irrelevant 的
+     * 判定，从原始行直接取（normalizeLlmRow 有意不知道这两个字段）。
+     * 模型没给或给坏 → null，字段整个不写入缓存 —— 宁可没有，不可错值。
+     */
+    const scoreNum = Number(row?.score);
+    const score = Number.isFinite(scoreNum) ? Math.max(0, Math.min(10, Math.round(scoreNum))) : null;
+    const zhRaw = typeof row?.zh === 'string' ? row.zh.replace(/\s+/g, ' ').trim() : '';
+    const zh = zhRaw ? zhRaw.slice(0, 60) : null;
     llmCache.set(ev.id, {
       state: normalized.state,
       topics: normalized.topics,
@@ -370,6 +384,8 @@ async function llmClassifyBatch(batch) {
       level: normalized.level,
       region: normalized.region,
       reason: normalized.reason ?? null,
+      ...(score != null ? { score } : {}),
+      ...(zh ? { zh } : {}),
       at: now,
     });
     hitCount += 1;
@@ -424,13 +440,21 @@ function kickLlmClassify(items) {
  * 关键变化：**成功且明确无关的结果可以清除旧标签**。
  * 原来只有 `if (hit.topics.length)` 才覆盖，于是「这条其实无关」永远无法
  * 撤销关键词误判，一条被错标成「美债」的稿子会一直留着那个标签。
+ *
+ * zh 摘要与分类状态正交：irrelevant / uncertain 的条目照样值得读懂
+ * 它在说什么，所以在分支判断之前先盖。score 只在 classified 时盖 ——
+ * 「无关」给分没有意义，「说不清」不该被分数升级，这与 level 的覆盖纪律一致。
  */
-function applyLlmResults(items) {
+export function applyLlmResults(items, cacheMap = llmCache) {
   let applied = 0;
   for (const it of items) {
-    const hit = llmCache.get(it.id);
+    const hit = cacheMap.get(it.id);
     if (!hit) continue;
     if (Date.now() - hit.at > LLM_CACHE_TTL_MS) continue;
+
+    // 缓存要落盘 7 天（loadLlmStore 回读）：旧格式或脏值在这里最后拦一道，
+    // 分数只接受 0-10、摘要 trim 后非空才算数 —— 宁可回退关键词结果，不可错值
+    if (typeof hit.zh === 'string' && hit.zh.trim()) it.zh = hit.zh.trim();
 
     if (hit.state === 'irrelevant') {
       // 无关：清空主题与标的，等级降到 low，并留下可筛选的状态
@@ -454,6 +478,8 @@ function applyLlmResults(items) {
     else if (hit.symbolReasons?.length) it.symbols = [];
     if (hit.region) it.region = hit.region;
     it.level = hit.level;
+    const hitScore = Number(hit.score);
+    if (Number.isFinite(hitScore) && hitScore >= 0 && hitScore <= 10) it.score = hitScore;
     it.llmState = 'classified';
     it.llm = true;
     applied += 1;
@@ -489,6 +515,9 @@ export function resetEventRevisionCache() {
 }
 
 function eventContentHash(ev) {
+  // zh 摘要**有意不在哈希里**：它是衍生字段，6 小时缓存过期重译后的措辞
+  // 变化不算内容变化，不该刷出一条新修订版本。事实字段（标题/正文/等级/
+  // 标的/主题/状态）变了才留痕。
   return createHash('sha256')
     .update(
       JSON.stringify([
@@ -681,6 +710,9 @@ function normalizeHistoryRow(ev) {
     time: ev.time,
     title: ev.title,
     level: ev.level ?? 'low',
+    // 归档行带 LLM 摘要与分数就透传；老归档没有这两项，前端回退原标题
+    zh: ev.zh ?? null,
+    score: Number.isFinite(ev.score) ? ev.score : null,
     topics,
     symbols: ev.symbols ?? [],
     region: ev.region ?? 'global',
@@ -865,7 +897,9 @@ async function loadEvents({ force = false, limit = 160 } = {}) {
       topics: info.topics,
       symbols: info.symbols,
       region: guessRegion(`${ev.title} ${textForClassify}`, ev.sourceRegion),
-      score: Math.round(info.rawScore * 10) / 10,
+      // 关键词分 ×2 归一到 0-10 量表：LLM 复核的 score 是同一量表，
+      // 两个来源的分数在同一列表里必须可比，否则排序/筛选会静默错位
+      score: Math.min(10, Math.round(info.rawScore * 20) / 10),
       level: toLevel(info, ev.important),
     });
   }
