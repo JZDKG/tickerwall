@@ -55,3 +55,27 @@ export {
   parseFredCsvOrThrow,
   fredQuoteFromRows,
 } from './fred.js';
+
+export {
+  SH_INDEX_CODES,
+  TENCENT_FIELD,
+  TENCENT_KLINE_HOSTS,
+  EM_MIN_INTERVAL_MS,
+  EM_POOL_SORT,
+  aShareSymbol,
+  emSecid,
+  parseTencentBatchQuotes,
+  fetchTencentBatchQuotes,
+  parseTencentKline,
+  fetchTencentKline,
+  resetTencentKlineCooldown,
+  parseTencentTickPage,
+  parseTencentSnapshot,
+  fetchTencentTicks,
+  emGet,
+  eastmoneyDatacenter,
+  parseEmPool,
+  fetchEmPool,
+  fetchEmFundFlowMinute,
+  fetchNorthbound,
+} from './a-share.js';

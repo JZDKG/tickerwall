@@ -54,6 +54,29 @@ export const SOURCES = {
     auth: { required: false },
     notes: '港股指数在部分时段只有这条腿是活的。',
   },
+  // ---- A 股（腾讯主源 + 东财限流源，见 providers/a-share.js）----
+  'tencent-a': {
+    id: 'tencent-a',
+    label: '腾讯行情（A 股全字段）',
+    kinds: ['quote', 'series'],
+    params: { timeoutMs: 10_000, concurrency: 4, budgetPerMinute: 300 },
+    capabilities: { requiresReferer: true, htmlFallback: false, resumable: false },
+    cache: { refreshMs: 15_000, maxServeAgeMs: 5 * MINUTE },
+    auth: { required: false },
+    notes:
+      'A 股主源：批量估值（88 字段）+ 日/周/月前后复权与 1~60 分钟 K 线 + 当日逐笔。实测不封 IP；单个 K 线入口约 600 次后返回空，代码里按域名冷却 120s 轮换三个入口。',
+  },
+  'eastmoney-a': {
+    id: 'eastmoney-a',
+    label: '东方财富（A 股独有数据）',
+    kinds: ['quote', 'series'],
+    params: { timeoutMs: 15_000, concurrency: 1, budgetPerMinute: 50 },
+    capabilities: { requiresReferer: true, htmlFallback: false, resumable: true },
+    cache: { refreshMs: 60_000, maxServeAgeMs: 10 * MINUTE },
+    auth: { required: false },
+    notes:
+      '涨停四池 / 个股资金流 / 龙虎榜 / 两融 / 研报等别处拿不到的数据。有风控：每秒 >5 次或并发 ≥10 会封 IP，必须经 emGet() 串行限流；403 是风控信号，不重试。',
+  },
   eastmoney: {
     id: 'eastmoney',
     label: '东方财富',
