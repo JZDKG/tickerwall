@@ -50,8 +50,13 @@ export function createRealtime(opts = {}) {
     } catch {
       return; // 坏帧忽略，不打断连接
     }
-    if (!payload || !Array.isArray(payload.quotes)) return;
-    store.quotes = payload.quotes;
+    // 服务端 /api/quotes 的报价数组叫 items，SSE 旧帧与测试桩里叫 quotes：
+    // 两种形状都收，别让生产帧被当成坏帧静默丢掉。
+    const list = Array.isArray(payload?.quotes)
+      ? payload.quotes
+      : Array.isArray(payload?.items) ? payload.items : null;
+    if (!list) return;
+    store.quotes = list;
     if (Number.isFinite(payload.ttlMs)) store.ttl = payload.ttlMs;
     if (payload.updatedAt) store.updatedAt = payload.updatedAt;
     try {

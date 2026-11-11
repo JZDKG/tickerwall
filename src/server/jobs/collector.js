@@ -113,7 +113,7 @@ export function createCollector(opts = {}) {
         if (key === 'quotes' && alertsService?.evaluate) {
           try {
             alertsService.evaluate({
-              quotes: out?.quotes ?? [],
+              quotes: out?.quotes ?? out?.items ?? [],
               synthetics: out?.synthetics ?? [],
               divergences: out?.divergences ?? [],
             });

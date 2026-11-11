@@ -94,7 +94,9 @@ export function createSseHub(opts = {}) {
   /** 采集完成后由 jobs/collector.js 调用 */
   function publishJobResult(key, result) {
     if (key === 'quotes') {
-      const payload = result?.quotes ? result : getLatestQuotes();
+      // 生产 getQuotes() 返回 { items, synthetics }，测试桩常给 { quotes }：
+      // 两种形状都算有效负载，缺任一个才回落到最新快照。
+      const payload = (result?.quotes || result?.items) ? result : getLatestQuotes();
       return broadcast('quotes', payload ?? { at: new Date(now()).toISOString() });
     }
     if (key === 'events') {

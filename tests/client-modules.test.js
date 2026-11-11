@@ -40,6 +40,52 @@ function specifiers(code) {
   return out;
 }
 
+/** 解析出文件对外提供的具名导出（含 `export { a as b } [from ...]` 与 `export * from`） */
+function exportsOf(code) {
+  const names = new Set();
+  let star = false;
+  for (const m of code.matchAll(/^export\s+(?:async\s+)?(?:function\*?|const|let|var|class)\s+([A-Za-z_$][\w$]*)/gm)) {
+    names.add(m[1]);
+  }
+  for (const m of code.matchAll(/^export\s*\{([\s\S]*?)\}/gm)) {
+    for (const part of m[1].split(',')) {
+      const t = part.trim();
+      if (!t) continue;
+      // 导出名优先取 `as` 右侧；否则就是这段里的第一个标识符
+      const as = /\s+as\s+([A-Za-z_$][\w$]*)\s*$/.exec(t);
+      const first = /^([A-Za-z_$][\w$]*)/.exec(t);
+      if (as) names.add(as[1]);
+      else if (first) names.add(first[1]);
+    }
+  }
+  if (/^export\s*\*\s*(?:as\s+[A-Za-z_$][\w$]*\s+)?from\s/m.test(code)) star = true;
+  return { names, star };
+}
+
+/** 只解析相对 `.` 与 `/src/client/` 这一类「浏览器会真的去链接」的 import */
+function namedImports(code, fromPath) {
+  const out = [];
+  const re = /^\s*import\s+([\s\S]*?)\s+from\s+['"]([^'"]+)['"]/gm;
+  for (const m of code.matchAll(re)) {
+    const clause = m[1].trim();
+    const spec = m[2];
+    let target = null;
+    if (spec.startsWith('.')) target = new URL(spec, `file://${fromPath}`).pathname;
+    else if (spec.startsWith('/src/client/')) target = `${ROOT}${spec.slice(1)}`;
+    if (!target || !existsSync(target)) continue;
+    const brace = /\{([\s\S]*?)\}/.exec(clause);
+    if (!brace) continue;
+    for (const part of brace[1].split(',')) {
+      const t = part.trim();
+      if (!t) continue;
+      // `a as b` 里被导入的是 a；裸名就是它本身
+      const name = t.replace(/\s+as\s+[A-Za-z_$][\w$]*\s*$/, '').trim();
+      if (/^[A-Za-z_$][\w$]*$/.test(name)) out.push({ name, spec, target });
+    }
+  }
+  return out;
+}
+
 describe('客户端模块：import 路径解析', () => {
   it('每个相对 import 都指向真实存在的文件', () => {
     const missing = [];
@@ -90,6 +136,22 @@ describe('客户端模块：import 路径解析', () => {
     }
     return seen;
   })();
+
+  it('浏览器可达模块的每个具名 import 在目标文件里都有对应 export', () => {
+    // 浏览器原生 ESM 在「模块链接期」就校验具名导出：缺一个 export，
+    // 不是某一行报错，而是整张模块图拒绝执行 —— 页面冻结在「连接中…」，
+    // #rows 永远空着（Phase 4 的 `import { bus }` 就是这么崩的）。
+    // 这条断言把「导入名 ⊆ 目标导出名」钉成契约，避免同类静默白屏复发。
+    const missing = [];
+    for (const file of browserReachable) {
+      for (const { name, spec, target } of namedImports(read(file), file)) {
+        const { names, star } = exportsOf(read(target));
+        if (star) continue; // 转出全部导出，静态无法逐个枚举，跳过
+        if (!names.has(name)) missing.push(`${rel(file)} → ${spec} 缺少 export { ${name} }`);
+      }
+    }
+    expect(missing, `具名 import 找不到对应 export：\n${missing.join('\n')}`).toEqual([]);
+  });
 
   it('浏览器可达模块用的裸模块名都在 import map 里声明', () => {
     // 浏览器原生加载 ES 模块，没有构建期改写。裸模块名一旦不在 import map 里，

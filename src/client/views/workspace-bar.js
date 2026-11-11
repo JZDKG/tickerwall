@@ -67,6 +67,11 @@ export function workspaceBarHTML(prefs) {
 /**
  * 挂载控制条。host 是常驻容器；onChange 供列表重绘（默认重画控制条自身）。
  * 返回解绑函数。
+ *
+ * 变更统一走 workspace.setState：控制条内的点击只写 store，重绘与 onChange
+ * 全交给下面的订阅，避免「点击直接调一次 + 订阅又调一次」的重复回调。
+ * Cmd+K 命令面板等外部入口同样直接 setState，订阅让控制条和列表密度/行内
+ * 标注即时跟上，而不只认控制条自己的点击。
  */
 export function mountWorkspaceBar(host, { workspace = getWorkspaceStore(), onChange } = {}) {
   if (!host) return () => {};
@@ -81,13 +86,18 @@ export function mountWorkspaceBar(host, { workspace = getWorkspaceStore(), onCha
       if (v != null) { patch = { [g.key]: v }; break; }
     }
     if (!patch) return;
-    const before = workspace.getState();
-    const next = workspace.setState(patch);
-    host.innerHTML = workspaceBarHTML(next).toString();
-    // 非法值被 normalize 过滤时 setState 返回当前态：不该触发重绘回调
-    if (onChange && next !== before) onChange(next);
+    // 非法值被 normalize 过滤时 setState 不 publish，订阅自然不会误触发重绘回调
+    workspace.setState(patch);
   };
 
+  const unsubscribe = workspace.subscribe((next) => {
+    host.innerHTML = workspaceBarHTML(next).toString();
+    if (onChange) onChange(next);
+  });
+
   host.addEventListener('click', onClick);
-  return () => host.removeEventListener('click', onClick);
+  return () => {
+    host.removeEventListener('click', onClick);
+    unsubscribe();
+  };
 }

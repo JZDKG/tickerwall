@@ -32,3 +32,8 @@ export function emit(event, payload) {
     }
   }
 }
+
+// main.js 里 `import { bus }` 走的是单例对象（createRealtime、mountDesktopBridge
+// 等都把它当依赖传进去）。浏览器原生 ESM 在链接期就会校验具名导出，缺这一个
+// 会让整张模块图加载失败 —— 页面停在「连接中…」，#rows 永远是空的。
+export const bus = { on, off, emit };
