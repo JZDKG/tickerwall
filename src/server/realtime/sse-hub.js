@@ -34,7 +34,7 @@ export function createSseHub(opts = {}) {
   const getLatestQuotes = opts.getLatestQuotes ?? (() => null);
   const now = opts.now ?? (() => Date.now());
   const heartbeatMs = opts.heartbeatMs ?? SSE_HEARTBEAT_MS;
-  const stats = { quotes: 0, events: 0, explanation: 0, connections: 0 };
+  const stats = { quotes: 0, events: 0, explanation: 0, alert: 0, connections: 0 };
 
   function safeWrite(client, text) {
     try {

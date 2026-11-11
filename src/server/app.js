@@ -15,9 +15,12 @@ import { serveStatic, sendJson, takeForce } from './http.js';
 import { handleExplanationRoutes } from './routes.js';
 import { COMPARISON_WINDOWS } from './services/comparison.service.js';
 import { handleSystemRoutes } from './routes/system.js';
+import { handleAlertsRoutes } from './routes/alerts.js';
 
 /** 允许 POST 的路径前缀：只有维护端点会写 */
 export const WRITE_PATHS = '/api/maintenance/';
+/** P3-T2：预警规则 CRUD 也需要 POST，但必须是精确路径，不是前缀 */
+export const ALERTS_PATH = '/api/alerts';
 
 /**
  * 造一个 handle(req, res)。
@@ -57,7 +60,8 @@ export function createApp(deps) {
     // 会一路落到 /api/quotes 的 GET 分支被当成正常请求处理。
     // 例外只到维护端点前缀，别的路径仍然只读。
     const methodAllowed =
-      req.method === 'GET' || req.method === 'HEAD' || (req.method === 'POST' && url.pathname.startsWith(WRITE_PATHS));
+      req.method === 'GET' || req.method === 'HEAD'
+      || (req.method === 'POST' && (url.pathname.startsWith(WRITE_PATHS) || url.pathname === ALERTS_PATH));
     if (!methodAllowed) {
       res.writeHead(405, { Allow: 'GET, HEAD' });
       return res.end();
@@ -74,6 +78,10 @@ export function createApp(deps) {
       }
       if (url.pathname === '/api/quotes') {
         return sendJson(res, 200, await deps.getQuotes({ force: takeForce(url) }));
+      }
+      // Phase 3 / P3-T2：预警规则 CRUD 与手动评估（GET/POST 都在 routes/alerts.js）
+      if (url.pathname === ALERTS_PATH) {
+        return await handleAlertsRoutes(req, res, { service: deps.alertsService ?? null });
       }
       if (url.pathname === '/api/briefing') {
         return sendJson(res, 200, await deps.buildBriefing());

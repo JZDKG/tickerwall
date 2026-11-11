@@ -91,13 +91,15 @@ describe('sqlite：连接与建表', () => {
   const MAINTENANCE_TABLES = ['collection_jobs', 'import_ledger', 'schema_migrations', 'sqlite_sequence'];
   /** 迁移 v4（Phase 1 / P1-T1）：分时点与 LLM 分类缓存从 JSON 文件收进 SQLite */
   const STORAGE_TABLES = ['intraday_ring', 'llm_headline_cache'];
+  /** 迁移 v5（Phase 3 / P3-T2）：四维预警引擎的规则与触发台账 */
+  const ALERT_TABLES = ['alert_rules', 'alert_events'];
 
-  it('老表仍在，解释相关的 7 张表、运维表与 Phase 1 存储表都由版本化迁移建出', () => {
+  it('老表仍在，解释相关的 7 张表、运维表、Phase 1 存储表与预警表都由版本化迁移建出', () => {
     const names = getDb()
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
       .all()
       .map((r) => r.name);
-    const expected = [...LEGACY_TABLES, ...EXPLANATION_TABLES, ...MAINTENANCE_TABLES, ...STORAGE_TABLES];
+    const expected = [...LEGACY_TABLES, ...EXPLANATION_TABLES, ...MAINTENANCE_TABLES, ...STORAGE_TABLES, ...ALERT_TABLES];
     for (const t of expected) expect(names).toContain(t);
     expect(names).toEqual(expected.sort());
   });

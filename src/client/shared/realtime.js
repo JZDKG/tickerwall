@@ -61,6 +61,25 @@ export function createRealtime(opts = {}) {
     }
   }
 
+  /**
+   * P3-T2：服务端预警命中帧。只做一件事 —— 交给 bus，由告警横幅与系统
+   * Notification 自己决定怎么展示（视图层不该反过来依赖 SSE 实现）。
+   */
+  function onAlert(raw) {
+    let payload;
+    try {
+      payload = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    if (!payload || typeof payload !== 'object') return;
+    try {
+      bus?.emit?.('alert', payload);
+    } catch (err) {
+      log('[realtime] alert 广播失败', err);
+    }
+  }
+
   function connect() {
     if (!EventSourceImpl || source) return source;
     try {
@@ -74,6 +93,7 @@ export function createRealtime(opts = {}) {
       open = true;
     });
     source.addEventListener('quotes', (ev) => onQuotes(ev?.data));
+    source.addEventListener('alert', (ev) => onAlert(ev?.data));
     source.addEventListener('error', () => {
       open = false;
       // 浏览器会自动重连；重连成功后 open 事件再次把节奏降下来
@@ -91,5 +111,5 @@ export function createRealtime(opts = {}) {
     source = null;
   }
 
-  return { connect, disconnect, isOpen, pollIntervalMs, onQuotes };
+  return { connect, disconnect, isOpen, pollIntervalMs, onQuotes, onAlert };
 }

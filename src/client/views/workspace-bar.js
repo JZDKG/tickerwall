@@ -58,6 +58,9 @@ export function workspaceBarHTML(prefs) {
       <span class="ws-label">${g.label}</span>
       <div class="ws-seg">${groupButtons(g, prefs)}</div>
     </div>`)}
+    <div class="ws-group ws-desktop">
+      <button type="button" data-action="toggle-pip" title="切换画中画盯盘（桌面端置顶）">画中画</button>
+    </div>
   </div>`;
 }
 

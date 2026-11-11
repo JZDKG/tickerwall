@@ -115,3 +115,202 @@
   .ws-bar { gap: 6px 10px; }
   .ws-seg button { padding: 4px 7px; font-size: 11px; }
 }
+
+/* ------------------------------------------------------------------ *
+ * 画中画盯盘模式（P3-T1）
+ *
+ * dataset.pip 由 desktop-bridge.js 的 togglePipMode 切换。目标是把 420×640
+ * 的副屏窗口压成「只有核心卡片」：隐藏全局顶栏、脚注、宽边距与次要说明，
+ * 让用户把窗口钉在屏幕角落时不必再手动缩放。
+ * ------------------------------------------------------------------ */
+html[data-pip="1"] body {
+  margin: 0;
+  padding: 8px;
+  background: var(--bg, #0b1017);
+}
+
+html[data-pip="1"] .topbar,
+html[data-pip="1"] #topbar,
+html[data-pip="1"] #ws-bar,
+html[data-pip="1"] .ws-bar,
+html[data-pip="1"] .footnote,
+html[data-pip="1"] .muted-footnote,
+html[data-pip="1"] footer,
+html[data-pip="1"] #questions,
+html[data-pip="1"] #home-brief {
+  display: none !important;
+}
+
+html[data-pip="1"] .card,
+html[data-pip="1"] .panel,
+html[data-pip="1"] .row {
+  margin-bottom: 6px;
+  padding: 8px 10px;
+}
+
+html[data-pip="1"] .ws-label,
+html[data-pip="1"] .secondary,
+html[data-pip="1"] .detail-footnote {
+  display: none !important;
+}
+
+/* ------------------------------------------------------------------ *
+ * 实时预警横幅（P3-T2）
+ *
+ * 固定在顶部、不参与文档流：告警到达时只覆盖状态簇，不把整页行情推下去。
+ * ------------------------------------------------------------------ */
+.tw-alert-banner {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 999;
+  max-width: min(720px, calc(100vw - 32px));
+  padding: 10px 14px;
+  color: var(--text, #e6edf3);
+  background: var(--panel-2, #172130);
+  border: 1px solid var(--up, #f5455c);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 45%);
+}
+
+.tw-alert-banner[hidden] { display: none; }
+
+.tw-alert-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.tw-alert-inner strong { white-space: nowrap; }
+
+.tw-alert-inner span:not(.tw-alert-dot) {
+  color: var(--muted, #9aa7b5);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tw-alert-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--up, #f5455c);
+}
+
+.tw-alert-inner button {
+  margin-left: auto;
+  padding: 0 6px;
+  color: var(--muted, #9aa7b5);
+  background: transparent;
+  border: 0;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* ------------------------------------------------------------------ *
+ * 嵌入挂件模式（P3-T3）
+ *
+ * dataset.embed 由 router.js 的 applyEmbedFromLocation 设置。目标是把
+ * 看板塞进 Notion / 博客的 iframe 时只留核心卡片与一条轻量水印栏：
+ * 全局顶栏、问题区、关注简报、控制条、脚注全部收起。
+ * ------------------------------------------------------------------ */
+html[data-embed="1"] body {
+  margin: 0;
+  padding: 12px;
+  background: var(--bg, #0b1017);
+}
+
+html[data-embed="1"] .topbar,
+html[data-embed="1"] #topbar,
+html[data-embed="1"] #questions,
+html[data-embed="1"] #home-brief,
+html[data-embed="1"] #ws-bar,
+html[data-embed="1"] .ws-bar,
+html[data-embed="1"] .footnote,
+html[data-embed="1"] footer {
+  display: none !important;
+}
+
+html[data-embed="1"] .card,
+html[data-embed="1"] .panel,
+html[data-embed="1"] .row {
+  margin-bottom: 8px;
+}
+
+/* 底部轻量水印栏：嵌入出去也要能追溯来源 */
+html[data-embed="1"] body::after {
+  content: "TickerWall · Explainable Cross-Asset Terminal";
+  display: block;
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line, #26364c);
+  color: var(--muted, #6f8299);
+  font-size: 11px;
+  text-align: right;
+}
+
+/* ------------------------------------------------------------------ *
+ * 分享卡预览浮层（P3-T3）
+ * ------------------------------------------------------------------ */
+.tw-share-host {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+}
+
+.tw-share-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgb(4 8 14 / 78%);
+}
+
+.tw-share-dialog {
+  position: relative;
+  width: min(92vw, 980px);
+  max-height: 92vh;
+  overflow: auto;
+  padding: 14px;
+  background: var(--panel, #131d2b);
+  border: 1px solid var(--line, #26364c);
+  border-radius: 14px;
+  box-shadow: 0 24px 70px rgb(0 0 0 / 60%);
+}
+
+.tw-share-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  color: var(--text, #e6edf3);
+}
+
+.tw-share-actions { display: inline-flex; gap: 8px; }
+
+.tw-share-actions button {
+  padding: 5px 12px;
+  color: var(--text, #e6edf3);
+  background: var(--panel-2, #172130);
+  border: 1px solid var(--line, #26364c);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.tw-share-body svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+
+.tw-share-note {
+  margin: 10px 0 0;
+  color: var(--muted, #9aa7b5);
+  font-size: 12px;
+}

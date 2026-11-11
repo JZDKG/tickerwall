@@ -402,6 +402,7 @@ export function explanationCardHTML(state = {}) {
           ex.versions?.language ?? '—',
         )}
         <button type="button" class="explain-refresh" data-explain-refresh="1">重新获取最新解释</button>
+        <button type="button" class="explain-share" data-action="share-card">生成分享卡</button>
       </p>
       <p class="explain-dim">「观测一致」只说明这次窗口里方向相同，不表示因果已被证实。</p>
     </div>

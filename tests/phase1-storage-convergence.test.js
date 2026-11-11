@@ -2,7 +2,7 @@
  * Phase 1 / P1-T1：双轨 JSON 存储收敛到 SQLite
  *
  * 验收：
- *   · SCHEMA_VERSION = 4，v4 建出 intraday_ring 与 llm_headline_cache；
+ *   · v4 建出 intraday_ring 与 llm_headline_cache（当前 SCHEMA_VERSION = 5，见 v5 预警表）；
  *   · 分时点用一次 BEGIN IMMEDIATE ... COMMIT 批量写入，按品种保留 240 点；
  *   · 旧 history.json 启动时导入一次，且文件缺失时兼容回退；
  *   · LLM 标题分类缓存读写走 llm_headline_cache 表（不再整文件重写）。
@@ -51,17 +51,17 @@ afterEach(() => {
   closeDb();
 });
 
-describe('迁移 v4：两张收敛表', () => {
-  it('SCHEMA_VERSION 升到 4，且 v4 的名字与版本匹配', () => {
-    expect(SCHEMA_VERSION).toBe(4);
+describe('迁移 v4：两张收敛表（当前 SCHEMA_VERSION 已升到 5）', () => {
+  it('v4 仍是 sqlite-storage-convergence；当前版本为 5', () => {
+    expect(SCHEMA_VERSION).toBe(5);
     const v4 = MIGRATIONS.find((m) => m.version === 4);
     expect(v4?.name).toMatch(/storage|ring|sqlite/i);
   });
 
-  it('空库升到 v4 建出 intraday_ring 与 llm_headline_cache', () => {
+  it('空库升到最新版建出 intraday_ring 与 llm_headline_cache（v4 表不丢）', () => {
     const db = new DatabaseSync(':memory:');
     const out = migrateDatabase(db);
-    expect(out.to).toBe(4);
+    expect(out.to).toBe(SCHEMA_VERSION);
     expect(tables(db)).toContain('intraday_ring');
     expect(tables(db)).toContain('llm_headline_cache');
     expect(columns(db, 'intraday_ring')).toEqual(['instrument_id', 'ts', 'price']);
@@ -69,12 +69,12 @@ describe('迁移 v4：两张收敛表', () => {
     db.close();
   });
 
-  it('v0 老库增量升到 v4，v1~v3 的表都还在', () => {
+  it('v0 老库增量升到最新版，v1~v3 的表都还在', () => {
     const db = new DatabaseSync(':memory:');
     db.exec('PRAGMA user_version = 2');
     const out = migrateDatabase(db);
     expect(out.from).toBe(2);
-    expect(out.to).toBe(4);
+    expect(out.to).toBe(SCHEMA_VERSION);
     expect(out.applied).toContain('job-queue-and-watermarks');
     expect(tables(db)).toContain('collection_jobs');
     expect(tables(db)).toContain('intraday_ring');

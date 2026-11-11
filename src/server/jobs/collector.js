@@ -37,7 +37,7 @@ export function backoffFor(fails, { baseMs = 60_000, maxMs = 30 * 60_000 } = {})
 }
 
 /**
- * @param {{jobs:Array<object>, store?:object, now?:()=>number, onError?:Function, log?:Function, sseHub?:object}} opts
+ * @param {{jobs:Array<object>, store?:object, now?:()=>number, onError?:Function, log?:Function, sseHub?:object, alertsService?:object}} opts
  */
 export function createCollector(opts = {}) {
   const jobs = new Map((opts.jobs ?? []).map((j) => [j.key, j]));
@@ -46,6 +46,7 @@ export function createCollector(opts = {}) {
   const onError = opts.onError ?? (() => {});
   const log = opts.log ?? (() => {});
   const sseHub = opts.sseHub ?? null;
+  const alertsService = opts.alertsService ?? null;
 
   /** 进行中的任务：key → Promise。这是「同键合并」的实现位置 */
   const inflight = new Map();
@@ -104,6 +105,20 @@ export function createCollector(opts = {}) {
             sseHub.publishJobResult(key, out);
           } catch (err) {
             log(`[collector] ${key} SSE 广播失败：${err?.message ?? err}`);
+          }
+        }
+        // Phase 3 / P3-T2：报价到位后评估四维预警规则。只在 quotes 任务上跑：
+        // 新闻/日历采集不带报价上下文，拿半份数据评估会误报。
+        // 评估失败只记录日志，绝不把一次成功的采集判成失败。
+        if (key === 'quotes' && alertsService?.evaluate) {
+          try {
+            alertsService.evaluate({
+              quotes: out?.quotes ?? [],
+              synthetics: out?.synthetics ?? [],
+              divergences: out?.divergences ?? [],
+            });
+          } catch (err) {
+            log(`[collector] ${key} 预警评估失败：${err?.message ?? err}`);
           }
         }
         // 成功之后把依赖它的任务提前到「现在可跑」
@@ -169,8 +184,8 @@ export function createCollector(opts = {}) {
  * 用单一 setInterval 逐任务判断是否到期，而不是每个任务各起一个定时器：
  * 后者在「任务变多 + 退避」时很难统一观察，也不方便在测试里推进。
  */
-export function startCollector({ jobs, store, now, onError, log, sseHub, everyMs = 15_000 } = {}) {
-  const collector = createCollector({ jobs, store, now, onError, log, sseHub });
+export function startCollector({ jobs, store, now, onError, log, sseHub, alertsService, everyMs = 15_000 } = {}) {
+  const collector = createCollector({ jobs, store, now, onError, log, sseHub, alertsService });
   // 启动即跑一轮：进程刚起来时不该等一个周期才有数据
   void collector.tick();
   const timer = setInterval(() => {

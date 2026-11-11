@@ -106,7 +106,8 @@ export async function openBriefing({ force = false } = {}) {
         <button type="button" class="briefing-close" aria-label="关闭">×</button>
       </div>
       ${briefingRows(data.items ?? [])}
-      <p class="briefing-foot">按变动幅度排序 · 数据来自本机快照</p>`.toString();
+      <p class="briefing-foot">按变动幅度排序 · 数据来自本机快照</p>
+      <button type="button" class="briefing-share" data-action="share-card">生成分享卡</button>`.toString();
     panel.querySelector('.briefing-close')?.addEventListener('click', closeBriefing);
   } catch (err) {
     if (briefingOpen) {

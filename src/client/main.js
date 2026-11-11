@@ -20,6 +20,9 @@ import { applyNavActive } from './nav.js';
 import { bus } from './shared/bus.js';
 import { createRealtime } from './shared/realtime.js';
 import { getWorkspaceStore } from './shared/workspace-store.js';
+import { mountDesktopBridge, togglePipMode } from './shared/desktop-bridge.js';
+import { mountAlertBanner } from './shared/alert-banner.js';
+import { mountShareCard } from './shared/share-card-ui.js';
 
 /** 首页问题优先区（产品 2.3 + 2.4）：容器不存在时整段跳过 */
 const homeBriefEl = document.getElementById('home-brief');
@@ -158,6 +161,19 @@ setInterval(paintCountdown, 250);
 
 // SSE 连接：支持 EventSource 时接管实时推送，轮询自动降频为兜底
 realtime.connect();
+
+// P3-T1：桌面桥接。Web 端只是把菜单栏报价写进 document.title；
+// Tauri 下额外推给系统托盘。PiP 按钮走事件委托，控制条重绘后依然有效。
+mountDesktopBridge({ bus });
+// P3-T2：SSE alert 帧 → 顶部横幅 + 已授权时的系统通知
+mountAlertBanner({ bus });
+// P3-T3：解释卡 / 隔夜复盘里的「生成分享卡」按钮（事件委托，重绘不失效）
+mountShareCard();
+document.addEventListener('click', (e) => {
+  if (e.target?.closest?.('[data-action="toggle-pip"]')) {
+    togglePipMode(document.documentElement);
+  }
+});
 
 // P2-T1：先恢复工作台偏好（dataset 决定 CSS 变量），再画骨架 —— 否则首屏
 // 会闪一帧默认深色/红涨绿跌，浅色与 OLED 用户看到的是跳变。

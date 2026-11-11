@@ -198,8 +198,7 @@ export const MIGRATIONS = [
   },
   {
     version: 4,
-    name: 'sqlite-storage-convergence',
-    up(db) {
+    name: 'sqlite-storage-convergence',    up(db) {
       /**
        * Phase 1 / P1-T1：把仍在全量 JSON 覆盖写的两份内存状态收进 SQLite。
        *
@@ -223,6 +222,47 @@ export const MIGRATIONS = [
         payload_json TEXT NOT NULL,
         updated_at INTEGER NOT NULL
       )`);
+    },
+  },
+  {
+    version: 5,
+    name: 'alerts-engine',
+    up(db) {
+      /**
+       * Phase 3 / P3-T2：四维智能预警引擎。
+       *
+       * alert_rules —— 用户配置的规则（价格 / 涨跌幅 / 合成价差 / 传导背离）。
+       * last_triggered_at 与 cooldown_ms 一起做去重：行情每 15s 来一次，
+       * 不在规则层挡住就会同一个条件轰炸一整天。
+       *
+       * alert_events —— 触发台账。只追加不覆盖：用户要能回看「过去报过什么」，
+       * 而规则可以删，事件留下来自带 rule_id / kind / target_id 快照字段。
+       */
+      db.exec(`CREATE TABLE IF NOT EXISTS alert_rules (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        operator TEXT NOT NULL,
+        threshold REAL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        cooldown_ms INTEGER NOT NULL DEFAULT 300000,
+        last_triggered_at INTEGER,
+        created_at INTEGER NOT NULL
+      )`);
+      db.exec('CREATE INDEX IF NOT EXISTS idx_alert_rules_enabled ON alert_rules(enabled, kind)');
+      db.exec(`CREATE TABLE IF NOT EXISTS alert_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rule_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        observed_value REAL,
+        triggered_at INTEGER NOT NULL
+      )`);
+      db.exec('CREATE INDEX IF NOT EXISTS idx_alert_events_at ON alert_events(triggered_at DESC)');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_alert_events_rule ON alert_events(rule_id, triggered_at DESC)');
     },
   },
 ];

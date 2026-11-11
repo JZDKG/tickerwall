@@ -19,6 +19,7 @@ import { mountEvents, unmountEvents } from './views/events.js';
 import { mountMacro, unmountMacro } from './views/macro.js';
 import { mountMap, unmountMap } from './views/map.js';
 import { applyNavActive } from './nav.js';
+import { isEmbedMode, stripEmbedParam, applyEmbedMode } from './shared/share-card.js';
 
 /**
  * 列表页：它是默认视图，DOM 由 main 的轮询持续维护。
@@ -86,21 +87,47 @@ const macroView = { el: macroEl, mount: mountMacro, unmount: unmountMacro };
 let mounted = null;
 
 function resolve(hash) {
-  if (hash.startsWith('#/map')) return { name: 'map', view: mapView };
-  if (hash.startsWith('#/events')) return { name: 'events', view: eventsView };
+  // hash 内可能带 ?embed=1 / ?foo=1：视图名只看 '?' 之前的部分，
+  // 否则 #/d/gold-intl?embed=1 会被当成 id="gold-intl?embed=1" 的未知标的。
+  const h = String(hash ?? '').split('?')[0];
+  if (h.startsWith('#/map')) return { name: 'map', view: mapView };
+  if (h.startsWith('#/events')) return { name: 'events', view: eventsView };
   // 「我的关注」是独立任务：参与幂等键（watch ≠ list），切回首页会重新挂载
-  if (hash.startsWith('#/watch')) return { name: 'watch', view: watchView };
-  if (hash.startsWith('#/macro')) return { name: 'macro', view: macroView };
-  const m = /^#\/d\/(.+)$/.exec(hash);
+  if (h.startsWith('#/watch')) return { name: 'watch', view: watchView };
+  if (h.startsWith('#/macro')) return { name: 'macro', view: macroView };
+  const m = /^#\/d\/(.+)$/.exec(h);
   if (m) return { name: 'detail', view: detailView, arg: decodeURIComponent(m[1]) };
   return { name: 'list', view: listView };
 }
 
 const ALL = { list: listView, watch: watchView, detail: detailView, map: mapView, events: eventsView, macro: macroView };
 
+/**
+ * P3-T3：嵌入挂件模式。
+ *
+ * embed=1 可能落在 query（?embed=1#/d/x）或 hash 内（#/d/x?embed=1）。
+ * 激活时设 dataset.embed='1'（CSS 隐藏顶栏/脚注），并把参数从地址栏剥掉：
+ * 否则用户复制地址栏的链接会把嵌入模式一起粘走，在别处又开一个无边框页。
+ * 只在真的带参数时才动 history，避免每次 route() 都写一条历史记录。
+ */
+export function applyEmbedFromLocation() {
+  const href = `${location.pathname ?? ''}${location.search ?? ''}${location.hash ?? ''}`;
+  const on = applyEmbedMode(document.documentElement, href);
+  if (on && isEmbedMode(href)) {
+    const clean = stripEmbedParam(href);
+    try {
+      history.replaceState(null, '', clean);
+    } catch {
+      /* file:// 下 replaceState 可能抛：dataset 已经生效，不影响显示 */
+    }
+  }
+  return on;
+}
+
 export function route() {
   // 导航收敛（产品 §3.2）：当前任务由 hash 反推，不另存状态
   applyNavActive(document.getElementById('tasks'), location.hash);
+  applyEmbedFromLocation();
 
   const { name, view, arg } = resolve(location.hash);
 
@@ -119,6 +146,8 @@ export function route() {
 }
 
 window.addEventListener('hashchange', route);
+// 首屏直接进入 ?embed=1 时也要生效：hashchange 不会因「地址栏本来就带参数」而触发
+applyEmbedFromLocation();
 
 document.addEventListener('keydown', (e) => {
   const overlayOpen = !detailEl.hidden || !macroEl.hidden || !eventsEl.hidden || !mapEl.hidden;
