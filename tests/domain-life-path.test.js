@@ -16,13 +16,16 @@ import {
 } from '../src/server/domain/life-path.js';
 
 describe('场景定义', () => {
-  it('首版只有一个地区 × 一个场景（方案要求先做透一个）', () => {
-    expect(LIFE_SCENARIOS.length).toBe(1);
-    expect(LIFE_SCENARIOS[0].region).toBe('cn');
+  it('Phase 4：4 大民生场景，fuel-cost 保持默认第一项，全部为 cn 地区', () => {
+    expect(LIFE_SCENARIOS.map((s) => s.id)).toEqual([
+      'fuel-cost', 'gold-saving', 'fx-tuition', 'tech-valuation',
+    ]);
+    for (const s of LIFE_SCENARIOS) expect(s.region).toBe('cn');
   });
 
-  it('每一步都标明依据类型，且类型在词汇表内', () => {
+  it('每个场景都有完整传导链：≥4 步、每步 basis 合法、note 有内容', () => {
     for (const s of LIFE_SCENARIOS) {
+      expect(s.steps.length).toBeGreaterThanOrEqual(4);
       for (const st of s.steps) {
         expect(Object.keys(STEP_BASIS)).toContain(st.basis);
         expect(st.note.length).toBeGreaterThan(4);
@@ -30,18 +33,25 @@ describe('场景定义', () => {
     }
   });
 
-  it('链条里必须有「取决于当地规则」或「取决于合同」的步骤（否则就是假装实时传导）', () => {
-    const bases = LIFE_SCENARIOS[0].steps.map((s) => s.basis);
-    expect(bases).toContain('policy');
-    expect(bases).toContain('contract');
+  it('新场景的 chain 覆盖规格书要求的资产节点', () => {
+    const byId = Object.fromEntries(LIFE_SCENARIOS.map((s) => [s.id, s]));
+    expect(byId['gold-saving'].chain).toEqual(['gold-intl', 'usdcny', 'gold-cn']);
+    expect(byId['fx-tuition'].chain).toEqual(['us10y', 'dxy', 'usdcny']);
+    expect(byId['tech-valuation'].chain).toEqual(['us10y', 'dfii10', 'ndx100', 'sp500']);
   });
 
-  it('缺口清单不为空（这一段不许空）', () => {
-    for (const s of LIFE_SCENARIOS) expect(s.gaps.length).toBeGreaterThan(1);
+  it('每条链都有「取决于当地规则」或「取决于合同」的步骤（不是假装实时传导）', () => {
+    for (const s of LIFE_SCENARIOS) {
+      const bases = s.steps.map((x) => x.basis);
+      expect(bases.includes('policy') || bases.includes('contract'), s.id).toBe(true);
+    }
   });
 
-  it('缺口里明确写出「没有本地数据，所以不给数字」', () => {
-    expect(LIFE_SCENARIOS[0].gaps.join('')).toContain('没有当地零售价数据');
+  it('每个场景的缺口清单不为空，且明确写出「没有本地数据，所以不给数字」', () => {
+    for (const s of LIFE_SCENARIOS) {
+      expect(s.gaps.length).toBeGreaterThan(1);
+      expect(s.gaps.join('')).toContain('本页没有');
+    }
   });
 });
 
@@ -115,13 +125,18 @@ describe('入口清单', () => {
     expect(list[0].stepCount).toBeGreaterThan(3);
   });
 
-  it('按上游资产反查场景（只回「有关系」，不回幅度）', () => {
-    expect(scenariosForAsset('oil')).toHaveLength(1);
-    expect(scenariosForAsset('gold-intl')).toHaveLength(0);
+  it('按上游资产反查场景（含链路中间节点；只回「有关系」，不回幅度）', () => {
+    expect(scenariosForAsset('oil').map((s) => s.id)).toEqual(['fuel-cost']);
+    expect(scenariosForAsset('gold-intl').map((s) => s.id)).toEqual(['gold-saving']);
+    expect(scenariosForAsset('us10y').map((s) => s.id)).toEqual(['fx-tuition', 'tech-valuation']);
+    expect(scenariosForAsset('usdcny').map((s) => s.id)).toEqual(['gold-saving', 'fx-tuition']);
+    expect(scenariosForAsset('不存在的资产')).toEqual([]);
   });
 
-  it('scenarioOf 认已知 id，未知给 null', () => {
-    expect(scenarioOf('fuel-cost')?.id).toBe('fuel-cost');
+  it('scenarioOf 认 4 个已知 id，未知给 null', () => {
+    for (const id of ['fuel-cost', 'gold-saving', 'fx-tuition', 'tech-valuation']) {
+      expect(scenarioOf(id)?.id).toBe(id);
+    }
     expect(scenarioOf('nope')).toBeNull();
   });
 });

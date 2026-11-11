@@ -69,6 +69,9 @@
       <span class="tasks-status">
         <span id="updated" class="updated">连接中…</span>
         <span id="countdown" class="muted"></span>
+        <!-- P4-T1：全局命令面板与智能预警中心入口。未读徽章由 alerts-panel.js 维护 -->
+        <button id="cmd-palette-btn" type="button" class="nav-link btn-link" title="搜索标的 / 视图 / 工作台动作（⌘K）">⌘K 搜索/命令</button>
+        <button id="alerts-btn" type="button" class="nav-link btn-link" title="智能预警中心：规则与最近触发">预警中心<span id="alerts-unread" class="al-unread" hidden></span></button>
         <button id="refresh" type="button" title="立即刷新（快捷键 R）">刷新</button>
       </span>
     </nav>

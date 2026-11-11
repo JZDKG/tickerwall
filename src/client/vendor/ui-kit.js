@@ -16,6 +16,13 @@ export {
   QueryClientProvider,
   useQuery,
 } from '@tanstack/react-query';
-export { createChart, createSeriesMarkers } from 'lightweight-charts';
+export {
+  createChart,
+  createSeriesMarkers,
+  CandlestickSeries,
+  LineSeries,
+  AreaSeries,
+  HistogramSeries,
+} from 'lightweight-charts';
 export { createElement, useState, useEffect, useMemo } from 'react';
 export { createRoot } from 'react-dom/client';

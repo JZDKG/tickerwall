@@ -1000,3 +1000,11 @@
   line-height: 1.55;
   color: var(--text);
 }
+
+/* P4-T3：传导边 → 详情归因解释卡的一键跳转 */
+.mg-explain-link {
+  display: inline-block; margin: 2px 0 10px; padding: 4px 10px;
+  font-size: 12px; text-decoration: none; color: var(--accent, #6ea8fe);
+  border: 1px solid var(--line, #26364c); border-radius: 999px;
+}
+.mg-explain-link:hover { border-color: var(--accent, #6ea8fe); }

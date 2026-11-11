@@ -27,6 +27,7 @@ import { attachGlossary, termHTML } from '../shared/glossary.js';
 import { followupsHTML, scopedFollowups } from '../shared/followups.js';
 import { OVERLAY_ASSETS, toBase100, alignOverlay, overlayPathHTML } from './detail-chart-tools.js';
 import { bindChartRangeRuler } from './detail-ruler.js';
+import { toLightweightSeriesData, mountLightweightChart } from './detail-lwchart.js';
 
 /**
  * 术语化的标签片段（产品 2.5）。
@@ -43,6 +44,19 @@ import { loadCalendarCached } from '../shared/calendar.js';
 
 export let detailTimer = null;
 export let detailState = null; // { id, data, period, tableRows }
+
+/** P4-T2：Canvas 图表实例。renderDetail 重绘 / 离开详情页前必须先回收 */
+let lwChart = null;
+
+/** 测试与调试：观察当前双模图表的模式（'canvas' / 'svg' / null） */
+export function currentChartMode() {
+  return lwChart?.mode ?? null;
+}
+
+function disposeLightweightChart() {
+  try { lwChart?.remove?.(); } catch { /* 已销毁 */ }
+  lwChart = null;
+}
 
 export const WEEK_MS = 7 * 86400000;
 
@@ -1071,6 +1085,11 @@ export function renderDetail(data) {
             <button type="button" data-t="candle" class="${chartType === 'candle' ? 'on' : ''}">蜡烛</button>
             <button type="button" data-t="line" class="${chartType === 'line' ? 'on' : ''}">折线</button>
           </div>
+          <!-- P4-T2：Canvas 双模。默认 SVG，开启后才按需加载 ui-kit 的 lightweight-charts -->
+          <div class="seg" id="chart-mode-seg">
+            <button type="button" data-cm="svg" class="${detailState?.chartMode === 'canvas' ? '' : 'on'}">SVG</button>
+            <button type="button" data-cm="canvas" class="${detailState?.chartMode === 'canvas' ? 'on' : ''}">Canvas</button>
+          </div>
         </div>
       </div>
       <div class="chart-legend">
@@ -1156,6 +1175,21 @@ export function renderDetail(data) {
     </footer>
   `.toString();
 
+  // P4-T2：先回收上一轮的实例（重绘会替换 #chart-host 的 DOM，旧 chart 不
+  // 主动 remove 会留着 ResizeObserver 与 canvas 引用），再按当前模式挂载。
+  disposeLightweightChart();
+  if (detailState?.chartMode === 'canvas') {
+    const host = document.getElementById('chart-host');
+    const lwData = toLightweightSeriesData(series);
+    void mountLightweightChart(host, lwData, {
+      type: chartType, showMA, width: chartW, height: chartH,
+    }).then((mounted) => {
+      // 异步挂载期间用户可能已切走 / 切回 SVG：只保留与当前模式一致的结果
+      if (detailState?.chartMode !== 'canvas') { mounted.remove?.(); return; }
+      lwChart = mounted;
+    });
+  }
+
   document.getElementById('back')?.addEventListener('click', () => {
     location.hash = '';
   });
@@ -1223,6 +1257,14 @@ export function renderDetail(data) {
   document.querySelectorAll('#type-seg button').forEach((btn) => {
     btn.addEventListener('click', () => {
       detailState.type = btn.dataset.t;
+      renderDetail(detailState.data);
+    });
+  });
+
+  // P4-T2：SVG ↔ Canvas 切换只改状态重绘，不重新取详情数据
+  document.querySelectorAll('#chart-mode-seg button').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      detailState.chartMode = btn.dataset.cm === 'canvas' ? 'canvas' : 'svg';
       renderDetail(detailState.data);
     });
   });
@@ -1413,7 +1455,7 @@ export async function loadDetail(id, { force = false } = {}) {
     });
     await calPromise;
     if (!detailState || detailState.id !== id) {
-      detailState = { id, data, period: 'day', range: 'all', scale: 'lin', ma: true, type: 'line', tableRows: 30 };
+      detailState = { id, data, period: 'day', range: 'all', scale: 'lin', ma: true, type: 'line', chartMode: 'svg', tableRows: 30 };
     } else {
       detailState.data = data;
     }
@@ -1484,7 +1526,7 @@ export function mountDetail(id) {
   detailEl.hidden = false;
   window.scrollTo({ top: 0 });
   if (!detailState || detailState.id !== id) {
-    detailState = { id, data: null, period: 'day', range: 'all', scale: 'lin', ma: true, type: 'line', tableRows: 30 };
+    detailState = { id, data: null, period: 'day', range: 'all', scale: 'lin', ma: true, type: 'line', chartMode: 'svg', tableRows: 30 };
     // 换标的就换解释状态：旧资产的解释不能留在新页面上
     explainState = null;
     detailEl.innerHTML = html`<div class="d-loading">正在加载历史数据…</div>`.toString();
@@ -1498,6 +1540,7 @@ export function mountDetail(id) {
 export function resetDetailForTests() {
   explainEpoch = 0;
   stopDetailTimer();
+  disposeLightweightChart();
   detailState = null;
   explainState = null;
   if (typeof document !== 'undefined' && detailEl) detailEl.innerHTML = '';
@@ -1506,6 +1549,7 @@ export function resetDetailForTests() {
 /** 离开详情页：停表 + 清空容器（清空是为了下次进来重新渲染，也放掉旧 DOM） */
 export function unmountDetail() {
   stopDetailTimer();
+  disposeLightweightChart();
   detailEl.hidden = true;
   detailEl.innerHTML = '';
   detailState = null;

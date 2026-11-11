@@ -126,7 +126,8 @@ describe('样式分片：层叠前提', () => {
     // 第 21 条（2026-10-29）：内外盘对照卡片在 ≤640px 收起第三列
     // 第 22 条（2026-11-11 / P2-T2）：ticker-list.css 的磁贴墙窄屏列宽
     // 第 23 条（2026-11-11 / P2-T2）：workspace.css 的窄屏控制条排版
-    expect((all.match(/@media/g) ?? []).length).toBe(23);
+    // 第 24 条（2026-11-11 / P4-T1）：workspace.css 的命令面板 / 预警中心窄屏排版
+    expect((all.match(/@media/g) ?? []).length).toBe(24);
     // @keyframes：拆分时 16 个。地图 v2 加了 sunPulse（太阳直射点呼吸）、
     // maBreath（城市锚点开市呼吸）、bcPulse/bcProgress（播报台呼吸灯与 6s
     // 进度条），所以是 20。改这个数字时请确认是「新增动画」而不是

@@ -50,7 +50,9 @@ export function homeBriefSummary(brief, ledger, lifePath = null) {
   else if (brief?.hasWatch) parts.push('关注简报：暂时没有新变化');
   else parts.push('关注简报：还没选关注项');
   if (ledger?.total > 0) parts.push(`预期台账 ${ledger.total} 条待公布`);
-  if (lifePath && lifePath.ok !== false) parts.push('油价与出行成本');
+  // P4-T3：四个民生场景共用同一块折叠区，摘要要用当前场景标题，
+  // 不能写死「油价与出行成本」（切到攒金/换汇场景就成了错的）。
+  if (lifePath && lifePath.ok !== false) parts.push(lifePath.title || '油价与出行成本');
   return parts.join(' · ');
 }
 

@@ -228,104 +228,146 @@ export const MODES = [
  * sign: +1 同向 / -1 反向；weight 1~3 只影响线宽与默认不透明度（纯视觉）。
  * 注意：这里**没有** bend / pill.t / pill.dy —— 连线路由由 X6 的 manhattan
  * 正交路由器在端口之间自动求折点，胶囊钉在路径弧长的固定比例上。
+ *
+ * Phase 4 / P4-T3：每条边补 explainAssetId + mechanismHint ——
+ * 「这条边的机制该去哪个标的的详情归因解释卡里读」。explainAssetId 一律
+ * 指向可解释资产页（#/d/:id），不是画布节点 id；同源子标的（brent/vxn/
+ * gold-cn）映射到宿主卡，因为只有宿主有解释快照。
  * ------------------------------------------------------------------ */
 export const MACRO_TRANSMISSION_EDGES = [
   {
     id: 'E01', from: 'dxy', to: 'gold-intl', sign: -1, weight: 3, label: '计价压制',
+    explainAssetId: 'gold-intl', mechanismHint: '美元计价与实际利率对金价的机会成本渠道',
     mechanism: '国际黄金以美元计价。美元走强一方面抬高非美买家的本币成本，另一方面说明美元信用相对走强，两者共同压制金价。',
     divergence: '地缘危机 / 主权债务担忧：爆发战争或市场担忧美债信用时，资金同时涌入美元与黄金避险，出现罕见的「同涨」。',
   },
   {
     id: 'E02', from: 'dxy', to: 'oil', sign: -1, weight: 2, label: '计价效应',
+    explainAssetId: 'oil', mechanismHint: '石油美元计价与新兴市场购买力渠道',
     mechanism: '原油贸易以美元结算（石油美元）。美元升值直接削弱新兴市场与欧洲的原油进口购买力，压制以美元计价的油价。',
     divergence: '供给端强冲击：OPEC+ 大幅减产或中东航道受阻时，供给短缺压倒汇率计价，油价与美元同时走强。',
   },
   {
     id: 'E03', from: 'dxy', to: 'copper', sign: -1, weight: 2, label: '计价与流动性',
+    explainAssetId: 'dxy', mechanismHint: '美元流动性与工业金属投机需求',
     mechanism: '美元走强往往伴随全球美元流动性收紧，抑制工业金属的投机需求与非美制造业的原料采购。',
     divergence: '中美制造业共振复苏：全球工业补库需求极强时，基本面拉动铜价无视美元走强。',
   },
   {
     id: 'E04', from: 'dxy', to: 'btc', sign: -1, weight: 2, label: '流动性虹吸',
+    explainAssetId: 'btc', mechanismHint: '美元流动性与高 Beta 风险资产',
     mechanism: '美元指数走强代表全球风险资金回流美元现金资产。高风险、高 Beta 的加密资产首当其冲失血。',
     divergence: '加密原生叙事 / ETF 资金流入：现货 ETF 大规模净流入或监管利好期间，BTC 可走出独立行情。',
   },
   {
     id: 'E05', from: 'us10y', to: 'gold-intl', sign: -1, weight: 3, label: '机会成本',
+    explainAssetId: 'gold-intl', mechanismHint: '实际收益率与持有黄金的机会成本',
     mechanism: '黄金是零息资产，美债收益率就是持有黄金的直接机会成本。美债利率上行（尤其实际利率上行）对金价构成强压制。',
     divergence: '去美元化与央行购金：全球央行战略性增持黄金、或市场担忧财政赤字货币化时，金价经常顶着高美债利率创新高。',
   },
   {
     id: 'E06', from: 'us10y', to: 'ndx100', sign: -1, weight: 3, label: '估值折现',
+    explainAssetId: 'ndx100', mechanismHint: '无风险利率与长久期成长股折现率',
     mechanism: '美债 10Y 是全球风险资产定价的「分母」。科技成长股远期现金流占比高（长久期），对利率上行极其敏感。',
     divergence: '经济强劲复苏 / AI 盈利爆发：利率温和上行源于经济繁荣、企业盈利（分子端）增速远超利率涨幅时，纳指可与利率同涨。',
   },
   {
     id: 'E07', from: 'us10y', to: 'dxy', sign: 1, weight: 3, label: '利差吸引',
+    explainAssetId: 'dxy', mechanismHint: '美债利差与套息资金流入美元',
     mechanism: '美债收益率上升扩大了美元对欧元、日元、人民币的利差优势，吸引全球套息与配置资金流入美元。',
     divergence: '美国财政可持续性危机：美债遭抛售（收益率飙升）若源于市场质疑财政纪律，美元反而可能随美债价格一同下跌（股债汇三杀）。',
   },
   {
     id: 'E08', from: 'oil', to: 'gold-intl', sign: 1, weight: 2, label: '通胀驱动',
+    explainAssetId: 'gold-intl', mechanismHint: '通胀预期与黄金抗通胀需求',
     mechanism: '原油是「通胀之母」。油价上涨直接推升 CPI 与通胀预期，激发黄金作为硬通货的抗通胀保值需求。',
     divergence: '衰退型油价下跌 / 紧缩抢跑：衰退担忧升温时原油因需求坍塌暴跌，而黄金因避险与降息预期反而上涨（金油比飙升）。',
   },
   {
     id: 'E09', from: 'oil', to: 'us10y', sign: 1, weight: 2, label: '通胀与加息',
+    explainAssetId: 'us10y', mechanismHint: '通胀补偿与美债收益率定价',
     mechanism: '油价大涨推升全面通胀预期，迫使美联储推迟降息甚至维持高利率；债券投资者要求更高的通胀补偿，推升美债收益率。',
     divergence: '地缘恐慌下的避险买债：油价暴涨若由突发战争引起，避险资金短期涌入美债，反而压低美债收益率。',
   },
   {
     id: 'E10', from: 'oil', to: 'sp500', sign: -1, weight: 1, label: '能源成本税',
+    explainAssetId: 'sp500', mechanismHint: '能源成本对企业盈利与消费的挤压',
     mechanism: '高油价相当于对全社会企业和居民征收「能源税」，挤压航空、物流、制造利润并削弱消费能力（能源板块除外）。',
     divergence: '需求驱动型温和上涨：经济复苏早期需求回暖带动油价与股市同步温和上涨，此时油价反映的是景气而非供给冲击。',
   },
   {
     id: 'E11', from: 'copper', to: 'sp500', sign: 1, weight: 2, label: '经济晴雨表',
+    explainAssetId: 'sp500', mechanismHint: '实体需求与企业盈利验证',
     mechanism: '铜广泛用于电力、建筑、新能源与制造业，被称为「铜博士」。铜价走强验证全球实体需求扩张，利好企业盈利。',
     divergence: '供给侧矿端罢工 / 逼仓：铜价暴涨若纯由矿山停产或期货逼仓导致，并不代表实体需求好转。',
   },
   {
     id: 'E12', from: 'copper', to: 'sh000001', sign: 1, weight: 2, label: '中国需求映射',
+    explainAssetId: 'sh000001', mechanismHint: '中国总需求与 A 股顺周期板块',
     mechanism: '中国消耗全球约一半的精炼铜。地产基建与制造业景气度同时驱动铜价与 A 股周期 / 顺周期板块。',
     divergence: '国内纯流动性 / 题材行情：A 股由微盘股或科技主题驱动、而宏观总需求偏弱时，两者相关性明显减弱。',
   },
   {
     id: 'E13', from: 'ndx100', to: 'btc', sign: 1, weight: 3, label: '科技与流动性',
+    explainAssetId: 'btc', mechanismHint: '风险偏好与美元流动性共同驱动',
     mechanism: '两者同属全球美元流动性与风险偏好的最前沿晴雨表，机构投资者画像高度重叠，呈显著正相关。',
     divergence: '加密行业独立黑天鹅：交易所暴雷或专属监管事件会导致 BTC 脱离美股独立剧烈波动。',
   },
   {
     id: 'E14', from: 'sp500', to: 'vix', sign: -1, weight: 3, label: '恐慌期权对冲',
+    explainAssetId: 'vix', mechanismHint: '看跌期权对冲需求与隐含波动率',
     mechanism: '标普 500 下跌时机构恐慌性抢购看跌期权（Put）做尾部保护，直接推升隐含波动率 VIX（实测相关性约 −0.75）。',
     divergence: '极少失效（结构性负相关）：仅在极端逼空行情中，可能出现股指暴涨而看涨期权隐含波动率短暂抬升。',
   },
   {
     id: 'E15', from: 'vix', to: 'gold-intl', sign: 1, weight: 2, label: '避险买盘',
+    explainAssetId: 'gold-intl', mechanismHint: '尾部风险对冲与黄金避险配置',
     mechanism: 'VIX 飙升、全球风险资产剧烈动荡时，避险资金从股市撤出并配置黄金，以对冲尾部风险。',
     divergence: '流动性枯竭危机（Cash is King）：极端崩盘初期（如 2020 年 3 月熔断），机构为补交保证金无差别抛售黄金换现金，黄金随股市短暂同跌。',
   },
   {
     id: 'E16', from: 'gold-intl', to: 'gold-cn', sign: 1, weight: 3, label: '内外盘折算', cluster: true,
     relationType: 'valuation-conversion',
+    explainAssetId: 'gold-intl', mechanismHint: '伦敦金 × 汇率 ÷ 31.1035 的内外盘折算',
     mechanism: '沪金由伦敦金通过「÷ 31.1035 × 美元兑人民币汇率」传导定价，长周期周频相关性在 +0.72 以上。',
     divergence: '人民币汇率大幅波动 / 境内外溢价：人民币单日大幅波动，或国内春节购金旺季、进口配额收紧时，内外盘出现明显价差偏离。',
   },
   {
     id: 'E17', from: 'sp500', to: 'ndx100', sign: 1, weight: 3, label: '权重重叠',
     relationType: 'co-driver',
+    explainAssetId: 'ndx100', mechanismHint: '权重股重叠与共同宏观驱动（非单向因果）',
     mechanism: '纳指 100 的权重股（科技七巨头）同时占标普 500 近三成权重，两者被同一批美国宏观与企业盈利因素推动。这是共同驱动与成分重叠，不是「标普推动了纳指」。',
     divergence: '风格高低切换（价值 vs 成长）：利率急升引发科技股杀估值、资金轮动去能源 / 金融 / 道指时，纳指显著弱于标普。',
   },
   {
     id: 'E18', from: 'oil', to: 'brent', sign: 1, weight: 3, label: '全球原油双锚', cluster: true,
     relationType: 'valuation-conversion',
+    explainAssetId: 'oil', mechanismHint: 'WTI 与布伦特同源供需、区域基准差异',
     mechanism: '同受全球原油供需与 OPEC+ 政策驱动（相关性 > +0.92）。WTI 偏重美国内陆供需，布伦特偏重欧洲与中东海运。',
     divergence: '美湾库欣交割库拥堵 / 地缘航运割裂：地缘冲突封锁红海或霍尔木兹海峡时，布伦特溢价会显著扩大。',
   },
 ];
 
 export const EDGE_BY_ID = new Map(MACRO_TRANSMISSION_EDGES.map((e) => [e.id, e]));
+
+/**
+ * Phase 4 / P4-T3：传导边 → 可解释资产详情归因卡的一键跳转。
+ *
+ * 纯函数，返回 { assetId, href }。assetId 一律落在「有解释快照」的资产页上：
+ *   · 优先用边上显式登记的 explainAssetId；
+ *   · 没登记时退回边的终点 to（同源子标的按 SUB_HOST 映射到宿主卡）；
+ *   · 再没有就返回 null，调用方据此不渲染链接（不造死链）。
+ *
+ * href 固定为 `#/d/${assetId}`，与 router.js 的详情路由口径一致。
+ */
+export function resolveEdgeExplanationLink(edge) {
+  if (!edge || typeof edge !== 'object') return null;
+  const raw = edge.explainAssetId ?? edge.to ?? edge.from ?? null;
+  if (typeof raw !== 'string' || !raw.trim()) return null;
+  const assetId = (SUB_HOST.get(raw) ?? raw).trim();
+  if (!assetId) return null;
+  return { assetId, href: `#/d/${assetId}` };
+}
 
 /** 全局视图只画主干边：簇内联动（E16/E18）留到单点导图 */
 export const CORE_EDGES = MACRO_TRANSMISSION_EDGES.filter((e) => !e.cluster);

@@ -314,3 +314,119 @@ html[data-embed="1"] body::after {
   color: var(--muted, #9aa7b5);
   font-size: 12px;
 }
+
+/* ================================================================== *
+ * P4-T1：全局命令面板（Cmd/Ctrl+K）与智能预警中心
+ * ================================================================== */
+
+.al-unread {
+  display: inline-block;
+  min-width: 16px;
+  margin-left: 6px;
+  padding: 0 4px;
+  color: #fff;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  background: var(--up, #f5455c);
+  border-radius: 999px;
+}
+.al-unread[hidden] { display: none; }
+
+/* 命令面板 ---------------------------------------------------------- */
+.cp-host, .al-host, .al-toast {
+  position: fixed;
+  z-index: 90;
+  font-family: inherit;
+}
+.cp-host { inset: 0; display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh; }
+.cp-backdrop, .al-backdrop { position: absolute; inset: 0; background: rgba(3, 7, 14, .66); }
+.cp-dialog {
+  position: relative;
+  width: min(640px, calc(100vw - 32px));
+  max-height: 68vh;
+  display: flex;
+  flex-direction: column;
+  color: var(--text, #e6edf3);
+  background: var(--panel, #101826);
+  border: 1px solid var(--line, #26364c);
+  border-radius: 12px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, .5);
+}
+.cp-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line, #26364c); }
+.cp-kbd { flex: none; font-size: 11px; color: var(--muted, #9aa7b5); border: 1px solid var(--line, #26364c); border-radius: 6px; padding: 2px 6px; }
+.cp-input {
+  flex: 1; min-width: 0; padding: 8px 10px; font: inherit; font-size: 14px;
+  color: inherit; background: var(--bg-elev, #172130); border: 1px solid var(--line, #26364c); border-radius: 8px;
+}
+.cp-input:focus { outline: 2px solid var(--accent, #5b9cf8); outline-offset: 1px; }
+.cp-results { overflow: auto; padding: 6px; }
+.cp-list { display: flex; flex-direction: column; gap: 2px; }
+.cp-item {
+  display: grid; grid-template-columns: 64px minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 10px; align-items: center; width: 100%; padding: 8px 10px;
+  color: inherit; text-align: left; text-decoration: none; font: inherit; font-size: 13px;
+  background: transparent; border: 1px solid transparent; border-radius: 8px; cursor: pointer;
+}
+.cp-item:hover, .cp-item.is-active { background: var(--bg-elev, #172130); border-color: var(--line, #26364c); }
+.cp-cat { font-size: 11px; color: var(--muted, #9aa7b5); }
+.cp-label { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-hint { color: var(--muted, #9aa7b5); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-empty { padding: 24px; text-align: center; color: var(--muted, #9aa7b5); }
+
+/* 预警中心 ---------------------------------------------------------- */
+.al-host { inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.al-dialog {
+  position: relative;
+  width: min(880px, 100%); max-height: 86vh; overflow: auto;
+  padding: 18px 20px 22px; color: var(--text, #e6edf3);
+  background: var(--panel, #101826); border: 1px solid var(--line, #26364c);
+  border-radius: 12px; box-shadow: 0 24px 64px rgba(0, 0, 0, .5);
+}
+.al-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.al-head h3 { margin: 0 0 4px; font-size: 17px; }
+.al-sub { margin: 0; color: var(--muted, #9aa7b5); font-size: 12px; }
+.al-head button, .al-form button, .al-rule button, .al-toast-inner button {
+  font: inherit; cursor: pointer; color: inherit;
+  background: var(--panel-2, #172130); border: 1px solid var(--line, #26364c); border-radius: 8px; padding: 5px 12px;
+}
+.al-error { margin: 12px 0 0; padding: 8px 10px; color: var(--up, #f5455c); background: rgba(245, 69, 92, .1); border-radius: 8px; font-size: 13px; }
+.al-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin: 16px 0; padding: 12px; background: var(--bg-elev, #172130); border-radius: 10px; }
+.al-form label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted, #9aa7b5); }
+.al-form input, .al-form select {
+  font: inherit; font-size: 13px; padding: 6px 8px; min-width: 120px;
+  color: inherit; background: var(--panel, #101826); border: 1px solid var(--line, #26364c); border-radius: 6px;
+}
+.al-form button { margin-left: auto; }
+.al-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.al-col h4 { margin: 0 0 8px; font-size: 13px; }
+.al-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.al-rule, .al-event {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  background: var(--bg-elev, #172130); border: 1px solid var(--line, #26364c); border-radius: 8px; font-size: 12px;
+}
+.al-rule-main { flex: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.al-tag { font-size: 11px; padding: 1px 6px; border: 1px solid var(--line, #26364c); border-radius: 999px; }
+.al-dim, .al-rule-meta, .al-event time { color: var(--muted, #9aa7b5); }
+.al-event-body { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.al-event-dot, .al-toast-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--up, #f5455c); }
+.al-empty { padding: 14px; text-align: center; color: var(--muted, #9aa7b5); font-size: 12px; }
+
+/* 实时告警横幅（SSE alert 帧） --------------------------------------- */
+.al-toast { top: 12px; left: 50%; transform: translateX(-50%); width: min(720px, calc(100vw - 24px)); }
+.al-toast[hidden] { display: none; }
+.al-toast-inner {
+  display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+  color: var(--text, #e6edf3); background: var(--panel, #101826);
+  border: 1px solid var(--up, #f5455c); border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .45); font-size: 13px;
+}
+.al-toast-inner strong { white-space: nowrap; }
+.al-toast-inner span:not(.al-toast-dot) { flex: 1; min-width: 0; }
+
+@media (max-width: 720px) {
+  .cp-item { grid-template-columns: 52px 1fr; }
+  .cp-hint { display: none; }
+  .al-cols { grid-template-columns: 1fr; }
+  #cmd-palette-btn, #alerts-btn { padding: 4px 6px; }
+}

@@ -54,3 +54,40 @@
 .home-brief-accordion[open] .hb-more { font-size: 0; }
 .home-brief-accordion[open] .hb-more::after { font-size: 12px; }
 .hb-body { padding: 0 12px 12px; }
+
+/* ================================================================== *
+ * P4-T3：生活传导场景卡（4 大民生场景 + 切换胶囊）
+ * ================================================================== */
+.lp-card { padding: 14px 16px; }
+.lp-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.lp-tab {
+  font: inherit; font-size: 12px; padding: 5px 12px; cursor: pointer;
+  color: var(--muted, #9aa4b2); background: var(--bg-elev, #172130);
+  border: 1px solid var(--line, #26364c); border-radius: 999px;
+}
+.lp-tab:hover { color: var(--text, #e6edf3); }
+.lp-tab.on { color: #fff; background: var(--accent, #5b9cf8); border-color: var(--accent, #5b9cf8); }
+.lp-card[data-loading="1"] .lp-body { opacity: .55; }
+.lp-headline { font-size: 14px; font-weight: 600; margin: 4px 0 12px; }
+.lp-chain { list-style: none; margin: 0 0 14px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.lp-step {
+  display: grid; grid-template-columns: 22px minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1.6fr);
+  gap: 8px; align-items: center; padding: 7px 10px; font-size: 12px;
+  background: var(--bg-elev, #172130); border: 1px solid var(--line, #26364c); border-radius: 8px;
+}
+.lp-idx { color: var(--accent, #5b9cf8); font-weight: 700; }
+.lp-label { font-weight: 600; }
+.lp-basis.pos { color: var(--up, #f5455c); }
+.lp-basis.dim { color: var(--muted, #9aa4b2); }
+.lp-note, .lp-lag { color: var(--muted, #9aa4b2); }
+.lp-lag { grid-column: 2 / -1; font-size: 11px; }
+.lp-gaps { padding: 10px 12px; border-left: 3px solid var(--warn, #f59e0b); background: rgba(245, 158, 11, .07); border-radius: 6px; }
+.lp-gaps h4 { margin: 0 0 6px; font-size: 12px; }
+.lp-gaps ul { margin: 0; padding-left: 18px; font-size: 12px; color: var(--muted, #9aa4b2); }
+.lp-needs, .lp-disclaimer { font-size: 12px; color: var(--muted, #9aa4b2); }
+.lp-switch-err { color: var(--up, #f5455c); font-size: 12px; }
+@media (max-width: 720px) {
+  .lp-step { grid-template-columns: 20px 1fr; }
+  .lp-basis, .lp-note { grid-column: 2; }
+  .lp-lag { grid-column: 2; }
+}

@@ -776,3 +776,8 @@
 .overlay-line {
   opacity: 0.9;
 }
+
+/* P4-T2：SVG / Canvas 双模切换（与 #type-seg 同组，靠间距区分） */
+#chart-mode-seg { margin-left: 4px; }
+#chart-mode-seg button { font-size: 11px; }
+.lw-fallback { display: block; width: 100%; height: auto; }

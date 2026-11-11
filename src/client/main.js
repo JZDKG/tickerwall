@@ -23,6 +23,13 @@ import { getWorkspaceStore } from './shared/workspace-store.js';
 import { mountDesktopBridge, togglePipMode } from './shared/desktop-bridge.js';
 import { mountAlertBanner } from './shared/alert-banner.js';
 import { mountShareCard } from './shared/share-card-ui.js';
+// P4-T1：全局命令面板 + 智能预警中心。两者都挂在 document 上做事件委托，
+// 顶栏按钮重绘后依然有效；偏好写入统一经 workspace store，避免两份状态。
+import { mountCommandPalette } from './views/command-palette.js';
+import { mountAlertsPanel } from './views/alerts-panel.js';
+import { mountLifePathSwitcher } from './views/life-path.js';
+import { fetchLifePath } from './views/home-brief-wiring.js';
+import { openBriefing } from './views/briefing.js';
 
 /** 首页问题优先区（产品 2.3 + 2.4）：容器不存在时整段跳过 */
 const homeBriefEl = document.getElementById('home-brief');
@@ -169,6 +176,22 @@ mountDesktopBridge({ bus });
 mountAlertBanner({ bus });
 // P3-T3：解释卡 / 隔夜复盘里的「生成分享卡」按钮（事件委托，重绘不失效）
 mountShareCard();
+// P4-T1：面板用统一的 document 级入口 id 互相唤起，不需要各自持有对方引用
+const openAlerts = () => document.getElementById('alerts-btn')?.click();
+mountCommandPalette({
+  bus,
+  getQuotes: () => store.quotes ?? [],
+  getSynthetics: () => store.synthetics ?? [],
+  getPreferences: () => getWorkspaceStore().getState(),
+  onPatch: (patch) => getWorkspaceStore().setState(patch),
+  onAction: (name) => {
+    if (name === 'briefing') void openBriefing();
+    if (name === 'alerts') openAlerts();
+  },
+});
+mountAlertsPanel({ bus });
+// P4-T3：生活场景切换胶囊。事件委托在 document 上，首页补充区重绘后仍有效
+mountLifePathSwitcher({ fetchLifePath });
 document.addEventListener('click', (e) => {
   if (e.target?.closest?.('[data-action="toggle-pip"]')) {
     togglePipMode(document.documentElement);

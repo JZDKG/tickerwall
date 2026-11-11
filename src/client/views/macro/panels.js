@@ -30,6 +30,7 @@ import {
   esc,
   signChar,
   relationTypeOf,
+  resolveEdgeExplanationLink,
   SHOCK_CONDITIONS,
   shockConditionSet,
 } from './knowledge-base.js';
@@ -165,6 +166,12 @@ export function edgeCard(data, edge, reality, state) {
 
   const explanation = state?.explanation ?? null;
   const rel = relationTypeOf(edge);
+  // P4-T3：任一条边都能一键跳到对应资产的详情归因解释卡
+  const link = resolveEdgeExplanationLink(edge);
+  const explainLink = link
+    ? `<a class="mg-explain-link" data-edge-explain="${esc(link.assetId)}" href="${esc(link.href)}"
+        title="${esc(edge.mechanismHint ?? '查看该资产的解释卡')}">→ 看 ${esc(link.assetId)} 的解释卡</a>`
+    : '';
   // 日期错位必须显式说出来：共同日期可能是更早的那一天
   const asOfNote = r?.unaligned
     ? `<div class="mg-kv warn"><span>当期比较日期</span><b>${esc(r.asOf ?? '—')}（有一侧最新观测更晚，未参与比较）</b></div>`
@@ -196,6 +203,7 @@ export function edgeCard(data, edge, reality, state) {
     </div>
 
     ${edgeExplainRow(edge, r, explanation)}
+    ${explainLink}
     <div class="mg-sect"><i class="dot"></i><h4>${esc(corrCaption(r?.n ?? 0))}</h4>
       ${asOfNote}
       ${row(`${A?.short ?? edge.from} 本窗口`, `<span class="${pctCls(r?.lastA)}">${esc(fmtChg(r?.lastA, A?.kind))}</span>`)}
