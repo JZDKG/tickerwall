@@ -10,19 +10,41 @@
  * 统一走 store.xxx 这个可变对象。
  * ================================================================== */
 
-/** 标的元数据表（列表顺序 + 名称/分组/小数位/类别） */
+/**
+ * 标的元数据表（列表顺序 + 名称/分组/小数位/类别）。
+ *
+ * P2-T1：与服务端 providers/instruments.js 的 INSTRUMENTS **逐项对齐**（23 个），
+ * 首屏骨架不再从 11 行暴涨到 23 行造成 Layout Shift。group 用于「分组列表」
+ * 密度模式：核心跨资产锚点一组，12 个区域股指按时段再分两组。
+ */
+const meta = (id, name, sub, unit, decimals, group) => ({ id, name, sub, unit, decimals, group });
+
 export const PLACEHOLDER = [
-  { id: 'gold-cn', name: '国内金价', sub: '上海黄金交易所 Au99.99 现货', unit: '元/克', decimals: 2 },
-  { id: 'gold-intl', name: '国际金价', sub: '伦敦金 XAU/USD 现货', unit: '美元/盎司', decimals: 2 },
-  { id: 'oil', name: '国际原油', sub: 'WTI 纽约原油', unit: '美元/桶', decimals: 2 },
-  { id: 'sp500', name: '标普500', sub: 'S&P 500 指数', unit: '点', decimals: 2 },
-  { id: 'ndx100', name: '纳斯达克100', sub: 'NASDAQ 100 指数', unit: '点', decimals: 2 },
-  { id: 'sh000001', name: '上证指数', sub: '上海证券交易所 000001', unit: '点', decimals: 2 },
-  { id: 'vix', name: '市场波动率', sub: 'CBOE VIX 恐慌指数', unit: '点', decimals: 2 },
-  { id: 'dxy', name: '美元指数', sub: 'ICE 美元指数（DINIW）', unit: '点', decimals: 2 },
-  { id: 'us10y', name: '美债10年期', sub: '美国 10 年期国债收益率', unit: '%', decimals: 3 },
-  { id: 'usdcny', name: '离岸人民币', sub: 'USD/CNH 离岸人民币', unit: '元', decimals: 4 },
-  { id: 'btc', name: '比特币', sub: 'BTC/USDT · 24 小时', unit: '美元', decimals: 2 },
+  // ── 核心跨资产（免滚动就能看全宏观定价锚）────────────────────────────
+  meta('gold-cn', '国内金价', '上海黄金交易所 Au99.99 现货', '元/克', 2, 'core'),
+  meta('gold-intl', '国际金价', '伦敦金 XAU/USD 现货', '美元/盎司', 2, 'core'),
+  meta('oil', '国际原油', 'WTI 纽约原油', '美元/桶', 2, 'core'),
+  meta('sp500', '标普500', 'S&P 500 指数', '点', 2, 'core'),
+  meta('ndx100', '纳斯达克100', 'NASDAQ 100 指数', '点', 2, 'core'),
+  meta('sh000001', '上证指数', '上海证券交易所 000001', '点', 2, 'core'),
+  meta('vix', '市场波动率', 'CBOE VIX 恐慌指数', '点', 2, 'core'),
+  meta('dxy', '美元指数', 'ICE 美元指数（DINIW）', '点', 2, 'core'),
+  meta('us10y', '美债10年期', '美国 10 年期国债收益率', '%', 3, 'core'),
+  meta('usdcny', '离岸人民币', 'USD/CNH 离岸人民币', '元', 4, 'core'),
+  meta('btc', '比特币', 'BTC/USDT · 24 小时', '美元', 2, 'core'),
+  // ── 亚太 / 欧洲 / 美洲区域股指（12 项，按交易时段）──────────────────
+  meta('hsi', '恒生指数', '香港恒生指数', '点', 2, 'asia'),
+  meta('n225', '日经225', '东京日经225指数', '点', 2, 'asia'),
+  meta('kospi', '韩国KOSPI', '首尔KOSPI指数', '点', 2, 'asia'),
+  meta('twii', '台湾加权', '台湾加权股价指数', '点', 2, 'asia'),
+  meta('asx', '澳洲ASX200', '悉尼ASX 200指数', '点', 2, 'asia'),
+  meta('nifty', '印度NIFTY', '印度NIFTY 50指数', '点', 2, 'asia'),
+  meta('dax', '德国DAX', '法兰克福DAX指数', '点', 2, 'europe'),
+  meta('ftse', '英国富时100', '伦敦富时100指数', '点', 2, 'europe'),
+  meta('cac', '法国CAC40', '巴黎CAC40指数', '点', 2, 'europe'),
+  meta('dji', '道琼斯', '道琼斯工业平均指数', '点', 2, 'americas'),
+  meta('tsx', '加拿大TSX', '多伦多S&P/TSX指数', '点', 2, 'americas'),
+  meta('bvsp', '巴西Bovespa', '圣保罗Bovespa指数', '点', 2, 'americas'),
 ];
 
 

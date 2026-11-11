@@ -23,7 +23,7 @@
  * 缺失标记（`.`、空串、`null`、`ND`）在任何值域下都不是数字，绝不能补成 0。
  * ================================================================== */
 
-import { toNum } from './http.js';
+import { toNum, fetchRaw } from './http.js';
 
 /** 历史短于这个条数视为失败（FRED 正常都是几千条） */
 export const FRED_MIN_ROWS = 30;
@@ -123,5 +123,89 @@ export function fredQuoteFromRows(rows, opts = {}) {
     prevClose: prevValid ? prevNum : null,
     sessionTime: last.date,
     stale: true,
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * Phase 1 / P1-T2：FRED 官方 JSON API
+ *
+ * CSV 下载页（fredgraph.csv）是免鉴权的，但会限流、返回的列结构也随
+ * 序列变。配置 FRED_API_KEY 后改走 fred/series/observations：
+ *   · sort_order=desc + limit 只取最近 N 条，不必拖回几千行；
+ *   · file_type=json 结构稳定，缺值仍是 "."，解析口径与 CSV 完全一致；
+ *   · 没配 Key（本地开发 / 离线回放）平滑回退到原 CSV 端点。
+ * ------------------------------------------------------------------ */
+
+export const FRED_API_BASE = 'https://api.stlouisfed.org/fred/series/observations';
+
+/** 官方 JSON → { rows, meta }；复用 parseFredCsv 的值域与缺失标记口径 */
+export function parseFredJson(text, seriesId = '', opts = {}) {
+  const valueDomain = opts.valueDomain ?? fredValueDomain(seriesId);
+  let payload;
+  try {
+    payload = JSON.parse(String(text ?? ''));
+  } catch {
+    throw new Error('FRED JSON 解析失败');
+  }
+  const observations = Array.isArray(payload?.observations) ? payload.observations : [];
+  if (!observations.length) throw new Error('FRED JSON 没有 observations');
+  // 官方按 sort_order=desc 返回，这里按日期升序还原成与 CSV 一样的顺序
+  const rows = observations
+    .filter((o) => /^\d{4}-\d{2}-\d{2}$/.test(String(o?.date ?? '')))
+    .map((o) => ({ date: o.date, close: parseFredCell(o?.value) }))
+    .filter((r) => r.close != null)
+    .filter((r) => valueDomain !== 'positive' || r.close > 0)
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  if (!rows.length) throw new Error('FRED JSON 没有有效观测');
+  return {
+    rows,
+    meta: {
+      source: `fred:${seriesId}`,
+      name: seriesId,
+      code: seriesId,
+      valueDomain,
+      frequency: 'daily',
+      startDate: rows[0].date,
+      endDate: rows[rows.length - 1].date,
+      transport: 'official-json',
+    },
+  };
+}
+
+/**
+ * 取一个 FRED 序列：有 Key 走官方 JSON，没 Key 回退 CSV。
+ * @returns {Promise<{rows:Array<{date,close}>, meta:object}>}
+ */
+export async function fetchFredObservations(seriesId, { limit = 30, valueDomain, fetcher = fetchRaw } = {}) {
+  const key = String(process.env.FRED_API_KEY ?? '').trim();
+  const id = encodeURIComponent(seriesId);
+  if (key) {
+    const url = `${FRED_API_BASE}?series_id=${id}&api_key=${encodeURIComponent(key)}&file_type=json&sort_order=desc&limit=${Math.max(1, Number(limit) || 30)}`;
+    const text = await fetcher(url, { headers: { Accept: 'application/json' }, timeoutMs: 25_000 });
+    return parseFredJson(text, seriesId, valueDomain ? { valueDomain } : {});
+  }
+  const csv = await fetcher(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${id}`, {
+    timeoutMs: 25_000,
+    omitUa: true,
+    headers: { Accept: 'text/csv' },
+  });
+  // CSV 是整段历史的回退路径。这里也按 limit 的语义只取最近若干条，
+  // 所以不套用 parseFredCsvOrThrow 的「至少 30 条」门槛（那是日线缓存用的）。
+  const domain = valueDomain ?? fredValueDomain(seriesId);
+  const all = parseFredCsv(csv, { valueDomain: domain });
+  const rows = all.slice(-Math.max(1, Number(limit) || 30));
+  if (!rows.length) throw new Error('FRED CSV 没有有效观测');
+  return {
+    rows,
+    meta: {
+      source: `fred:${seriesId}`,
+      name: seriesId,
+      code: seriesId,
+      valueDomain: domain,
+      frequency: 'daily',
+      startDate: rows[0].date,
+      endDate: rows[rows.length - 1].date,
+      transport: 'csv',
+    },
   };
 }

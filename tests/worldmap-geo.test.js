@@ -348,11 +348,14 @@ describe('赛区：与后端 REGION_WORDS 一致', () => {
     expect(normalizeIso(null)).toBeNull();
   });
 
-  it('查表接口对未知国家返回 null / undefined，不抛', () => {
-    expect(regionOfCountry('804')).toBeNull(); // 乌克兰：后端词表没有
-    expect(countryNameCn('804')).toBeUndefined();
+  it('查表接口对真正的未知国家返回 null / undefined，不抛', () => {
+    expect(regionOfCountry('999')).toBeNull(); // 未收录的 ISO
+    expect(countryNameCn('999')).toBeUndefined();
     expect(regionOfCountry('156')).toBe('cn');
     expect(countryNameCn('156')).toBe('中国');
+    // P2-T4：乌克兰曾经是「未归属」，现在归 eu，不能再拿它当未知样本
+    expect(regionOfCountry('804')).toBe('eu');
+    expect(countryNameCn('804')).toBe('乌克兰');
     expect(regionOfCountry(undefined)).toBeNull();
   });
 

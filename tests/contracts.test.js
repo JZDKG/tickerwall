@@ -25,6 +25,7 @@ import {
   cachePolicyOf,
   validateRegistry,
 } from '../src/server/providers/registry.js';
+import { assessObservationQuality } from '../src/server/domain/explanations/quality.js';
 
 const OBS = {
   id: 'gold-intl@2026-10-20',
@@ -224,5 +225,63 @@ describe('来源注册表 ↔ 标的绑定', () => {
     expect(unmatched).toEqual([]);
     // 适配器覆盖面本身也要对得上：新适配器漏映射会在上面那条先红，这里兜底
     expect([...usedAdapters].every((a) => ADAPTER_TO_SOURCE[a])).toBe(true);
+  });
+});
+
+/* ================================================================== *
+ * B5 回归：schema 必须接受 assessObservationQuality 的真实输出
+ *
+ * 故障形态：assessObservationQuality 会返回 status:'unavailable' 和
+ * notRealtime:boolean，而 data-quality.schema.json 的 status 枚举只有
+ * fresh/stale/missing 且没声明 notRealtime（additionalProperties:false）——
+ * 真实输出一校验就失败。契约漂移还因为 validateDataQuality 从未被调用而
+ * 一直没人发现。
+ * ================================================================== */
+describe('B5：DataQuality 契约与真实质量输出对齐', () => {
+  it('unavailable 状态与 notRealtime 字段都通过校验', () => {
+    const unavailable = assessObservationQuality({ instrumentId: 'dfii10', lastObservedAt: null });
+    expect(unavailable.status).toBe('unavailable');
+    expect(unavailable.notRealtime).toBe(true);
+    expect(validateDataQuality(unavailable)).toEqual({ ok: true, errors: [] });
+  });
+
+  it('fresh / stale 的真实输出也逐个通过校验', () => {
+    const now = Date.parse('2026-10-28T00:00:00Z');
+    const fresh = assessObservationQuality(
+      { instrumentId: 'gold-intl', lastObservedAt: '2026-10-27', frequency: 'daily' }, { now },
+    );
+    const stale = assessObservationQuality(
+      { instrumentId: 'oil', lastObservedAt: '2026-10-01', frequency: 'daily' }, { now },
+    );
+    expect(fresh.status).toBe('fresh');
+    expect(stale.status).toBe('stale');
+    expect(validateDataQuality(fresh).ok).toBe(true);
+    expect(validateDataQuality(stale).ok).toBe(true);
+  });
+
+  it('非法 status 仍然被拒（放宽枚举没有把校验关掉）', () => {
+    const q = assessObservationQuality({ instrumentId: 'x', lastObservedAt: null });
+    expect(validateDataQuality({ ...q, status: 'ok' }).ok).toBe(false);
+  });
+
+  it('schema 明确声明了 notRealtime 与 unavailable 枚举值', async () => {
+    const { readFileSync } = await import('node:fs');
+    const schema = JSON.parse(readFileSync(new URL('../src/contracts/data-quality.schema.json', import.meta.url), 'utf8'));
+    expect(schema.properties.status.enum).toContain('unavailable');
+    expect(schema.properties.notRealtime).toEqual({ type: 'boolean' });
+  });
+});
+
+describe('B5：validatedQualityDetails 失败不丢数据', () => {
+  it('非法质量项保留在列表里，只把 ok:false 与字段路径挂上去', async () => {
+    const { validatedQualityDetails } = await import('../src/server/services/explanations.service.js');
+    const good = assessObservationQuality({ instrumentId: 'gold-intl', lastObservedAt: null });
+    const bad = { ...good, status: 'ok' };
+    const out = validatedQualityDetails([good, bad]);
+    expect(out).toHaveLength(2);
+    expect(out[0].contract.ok).toBe(true);
+    expect(out[1].contract.ok).toBe(false);
+    expect(out[1].contract.errors.join(' ')).toContain('/status');
+    expect(out[1].instrumentId).toBe(good.instrumentId);
   });
 });

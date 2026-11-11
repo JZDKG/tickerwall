@@ -39,9 +39,9 @@ async function handleMaintenanceBackup(url, res, opts) {
  * @param {import('node:http').ServerResponse} res
  * @param {{ ttlMs:number, jobs:() => object[], debug?:boolean }} deps
  *        debug 默认取配置；测试里可以直接传，避免为了改一个开关重新 import 整个模块链
- * @returns {boolean} 是否已处理
+ * @returns {Promise<boolean>} 是否已处理（异步：维护备份要等写完才算处理完）
  */
-export function handleSystemRoutes(
+export async function handleSystemRoutes(
   url,
   res,
   { ttlMs, jobs, debug = DEBUG_API, maintenance = MAINTENANCE_API, method = 'GET' },
@@ -85,7 +85,9 @@ export function handleSystemRoutes(
       sendJson(res, 405, { ok: false, error: '请用 POST 触发备份' });
       return true;
     }
-    void handleMaintenanceBackup(url, res, {
+    // 必须 await：以前 `void handleMaintenanceBackup(...)` 发完就返回，
+    // 备份还在写请求就结束了，异常还会变成未处理的 Promise 拒绝。
+    await handleMaintenanceBackup(url, res, {
       outDir: url.searchParams.get('out') ?? undefined,
       keep: Number(url.searchParams.get('keep')) || undefined,
       appVersion: url.searchParams.get('v') ?? undefined,

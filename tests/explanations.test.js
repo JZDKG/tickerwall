@@ -776,7 +776,8 @@ describe('原油：事件型机制（供给 / 需求）', () => {
   });
 
   it('未登记机制库的资产仍然 400（能力边界可测）', async () => {
-    for (const asset of ['btc', 'sp500']) {
+    // Phase 1 / P1-T4：btc / sp500 已扩面启用，未登记的换成 vix / brent
+    for (const asset of ['vix', 'brent']) {
       const out = await getExplanationResponse({ asset, windowKey: 'session', observations: new Map() });
       expect(out.status).toBe(400);
     }
@@ -875,7 +876,7 @@ describe('美元指数：利差与避险', () => {
     expect(h.reasons).toContain('STATISTICAL_ONLY');
   });
 
-  it('四个资产都能取到解释，未知资产仍然是 400', async () => {
+  it('四个锚点都能取到解释，未登记的资产仍然是 400', async () => {
     for (const asset of ['gold-intl', 'oil', 'us10y', 'dxy']) {
       const out = await getExplanationResponse({
         asset,
@@ -884,7 +885,9 @@ describe('美元指数：利差与避险', () => {
       });
       expect(out.status, asset).toBe(200);
     }
-    expect((await getExplanationResponse({ asset: 'btc', windowKey: '5d', observations: new Map() })).status).toBe(400);
+    expect((await getExplanationResponse({ asset: 'vix', windowKey: '5d', observations: new Map() })).status).toBe(400);
+    // Phase 1 / P1-T4：btc 已扩面启用，不再是 400（空观测时是 202 等待态）
+    expect((await getExplanationResponse({ asset: 'btc', windowKey: '5d', observations: new Map() })).status).not.toBe(400);
   });
 });
 
@@ -1326,5 +1329,38 @@ describe('观测修订', () => {
       facts: [{ code: 'TARGET_CHANGE', observationIds: [`${INSTR}@2026-11-02#r2`] }], hypotheses: [],
     };
     expect(() => writeExplanation({ explanation: bogus })).toThrow('证据引用不存在');
+  });
+});
+
+/* ================================================================== *
+ * B5 回归：解释生成时真的跑一遍 DataQuality 契约校验
+ *
+ * 故障形态：validateDataQuality 编译好了却从没人调用，schema 与
+ * assessObservationQuality 的真实输出漂了（unavailable / notRealtime）也没人发现。
+ * 现在 metaFor 生成观测质量后逐个校验，把结果挂在 meta.qualityContracts 上。
+ * ================================================================== */
+describe('B5：运行时挂载 DataQuality 契约校验', () => {
+  it('200 响应里带 qualityContracts：每项是真实质量输出 + 校验结果', async () => {
+    const m = goldWithRealYield();
+    const out = await getExplanationResponse({ asset: 'gold-intl', windowKey: '5d', observations: m });
+    expect(out.status).toBe(200);
+    const contracts = out.body.meta.qualityContracts;
+    expect(Array.isArray(contracts)).toBe(true);
+    expect(contracts.length).toBeGreaterThan(0);
+    for (const row of contracts) {
+      expect(['fresh', 'stale', 'missing', 'unavailable']).toContain(row.status);
+      expect(typeof row.notRealtime).toBe('boolean');
+      expect(row.contract).toMatchObject({ ok: true });
+      expect(row.contract.errors).toEqual([]);
+    }
+  });
+
+  it('历史版本读取时同样跑校验（不是只有新生成的解释才校验）', async () => {
+    const m = goldWithRealYield();
+    const made = await getExplanationResponse({ asset: 'gold-intl', windowKey: '5d', observations: m });
+    const byId = getExplanationById(made.body.explanation.id);
+    expect(byId.status).toBe(200);
+    expect(Array.isArray(byId.body.meta.qualityContracts)).toBe(true);
+    expect(byId.body.meta.qualityContracts.every((r) => r.contract.ok)).toBe(true);
   });
 });

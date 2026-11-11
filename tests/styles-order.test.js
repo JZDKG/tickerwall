@@ -23,6 +23,8 @@ const linkOrder = [...HTML.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="\.\/(s
 
 const EXPECTED = [
   'styles/tokens.css',
+  // P2-T2：工作台控制条（配色 / 主题 / 密度 / 锚点），必须紧跟 tokens
+  'styles/workspace.css',
   'styles/base.css',
   'styles/ticker-list.css',
   'styles/responsive.css',
@@ -40,7 +42,7 @@ const EXPECTED = [
 const read = (rel) => readFileSync(`${ROOT}public/${rel}`, 'utf8');
 
 describe('样式分片：文件与顺序', () => {
-  it('index.html 正好按契约顺序挂了 12 个分片', () => {
+  it('index.html 正好按契约顺序挂了 13 个分片', () => {
     expect(linkOrder).toEqual(EXPECTED);
   });
 
@@ -108,7 +110,7 @@ describe('样式分片：层叠前提', () => {
     expect(seen.size).toBeGreaterThan(10);
   });
 
-  it('拆分前后规则数守恒：12 个文件里没有丢失 @media / @keyframes', () => {
+  it('拆分前后规则数守恒：13 个文件里没有丢失 @media / @keyframes', () => {
     const all = EXPECTED.map(read).join('\n');
     // @media 拆分时 13 个。地图 v2 加了第 14 条（播报台在 ≤720px 让位给
     // 标题）、第 15 条（宏观胶囊在窄屏换行）和第 16 条（时间轴格子在窄屏
@@ -122,7 +124,9 @@ describe('样式分片：层叠前提', () => {
      * 改这个数字时请确认是「新增响应式规则」，不是「拆分时丢了又补回来」。
      */
     // 第 21 条（2026-10-29）：内外盘对照卡片在 ≤640px 收起第三列
-    expect((all.match(/@media/g) ?? []).length).toBe(21);
+    // 第 22 条（2026-11-11 / P2-T2）：ticker-list.css 的磁贴墙窄屏列宽
+    // 第 23 条（2026-11-11 / P2-T2）：workspace.css 的窄屏控制条排版
+    expect((all.match(/@media/g) ?? []).length).toBe(23);
     // @keyframes：拆分时 16 个。地图 v2 加了 sunPulse（太阳直射点呼吸）、
     // maBreath（城市锚点开市呼吸）、bcPulse/bcProgress（播报台呼吸灯与 6s
     // 进度条），所以是 20。改这个数字时请确认是「新增动画」而不是

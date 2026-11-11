@@ -129,7 +129,7 @@ describe('取数：与详情页同一接口', () => {
 
   it('未登记机制库的资产不发请求（不浪费一次往返）', async () => {
     const fetchImpl = vi.fn();
-    expect(await loadGraphExplanation('btc', { fetchImpl })).toBeNull();
+    expect(await loadGraphExplanation('vix', { fetchImpl })).toBeNull();
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 

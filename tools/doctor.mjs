@@ -148,6 +148,7 @@ function checkStatic() {
     'src/client/main.js',
     'public/vendor/macro-flow.js',
     'public/vendor/geo-kit.js',
+    'public/vendor/ui-kit.js',
   ];
   const missing = need.filter((f) => !existsSync(path.join(ROOT, f)));
   if (missing.length) {

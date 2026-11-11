@@ -17,6 +17,7 @@ import {
   humanAge,
 } from '../domain/market-hours.js';
 import { MOVE_SUSPECT_PCT } from '../domain/instruments.js';
+import { computeSynthetics } from '../domain/spreads.js';
 import { readDailyCache, takeSnapshot } from '../db/index.js';
 import {
   fetchRaw,
@@ -479,6 +480,8 @@ export async function refresh() {
     generatedAt: new Date().toISOString(),
     ttlMs: CACHE_TTL_MS,
     items,
+    // P2-T3：同批次报价现算的四大宏观合成指标（零额外 HTTP）
+    synthetics: computeSynthetics(items),
   };
 }
 

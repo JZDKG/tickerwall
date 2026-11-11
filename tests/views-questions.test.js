@@ -272,11 +272,12 @@ describe('取数：只读快照，功能开关可关掉', () => {
       max: 3,
       fetchImpl,
     });
-    // 比特币没有机制库 → 不请求；黄金与原油各一张
-    expect(cards).toHaveLength(2);
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    // Phase 1 / P1-T4：btc 已扩面启用，三个资产都请求，再按 max 截断到 3
+    expect(cards).toHaveLength(3);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
     const urls = fetchImpl.mock.calls.map((c) => c[0]);
     expect(urls.some((u) => u.includes('asset=gold-intl'))).toBe(true);
+    expect(urls.some((u) => u.includes('asset=btc'))).toBe(true);
     expect(urls.some((u) => u.includes('asset=oil'))).toBe(true);
     expect(urls.every((u) => u.includes('window=session'))).toBe(true);
   });
@@ -349,5 +350,44 @@ describe('剩余分支：未知段的两句兜底与排序原因', () => {
     expect(reasons).toContain('DATA_UNAVAILABLE');
     expect(reasons).toContain('DATA_PENDING');
     expect(reasons).toContain('DATA_READY');
+  });
+});
+
+/* ================================================================== *
+ * B4 回归：/api/quotes 的 q.history 是 Array<{ t, p }>，不是裸数字
+ *
+ * 故障形态：sigmaOfHistory 直接 `Number.isFinite(v)` 过滤对象点，全部被丢掉
+ * → vals.length < 8 → 永远返回 null，首页问题卡永远走 NO_SIGMA_FALLBACK。
+ * 这里用真实报价历史结构验它能算出正的日波动。
+ * ================================================================== */
+describe('B4：sigmaOfHistory 读得懂报价历史的 {t, p} 结构', () => {
+  const points = [
+    { t: 1, p: 100 }, { t: 2, p: 101 }, { t: 3, p: 100.5 }, { t: 4, p: 101.2 },
+    { t: 5, p: 100.8 }, { t: 6, p: 101.5 }, { t: 7, p: 101.1 }, { t: 8, p: 100.9 },
+    { t: 9, p: 101.3 },
+  ];
+
+  it('{t, p} 点数组（>=8 个）返回有效正数，而不是 null', () => {
+    const sigma = sigmaOfHistory(points);
+    expect(sigma).not.toBeNull();
+    expect(sigma).toBeGreaterThan(0);
+    expect(Number.isFinite(sigma)).toBe(true);
+  });
+
+  it('与等价的裸数字序列算出同一个 sigma（提取 p 没改变数学）', () => {
+    expect(sigmaOfHistory(points)).toBeCloseTo(sigmaOfHistory(points.map((x) => x.p)), 12);
+  });
+
+  it('也接受 close / value 别名，且过滤掉非正与无效点', () => {
+    const aliased = [
+      { close: 100 }, { value: 101 }, { p: 102 }, { p: 0 }, { p: -1 },
+      { p: 103 }, { p: 'x' }, { p: 104 }, { p: 105 }, { p: 106 },
+      { p: 107 }, { p: 108 },
+    ];
+    expect(sigmaOfHistory(aliased)).toBeGreaterThan(0);
+  });
+
+  it('样本不足 8 个时仍返回 null（不猜波动率）', () => {
+    expect(sigmaOfHistory(points.slice(0, 5))).toBeNull();
   });
 });

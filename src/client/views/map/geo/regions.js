@@ -117,6 +117,9 @@ export const COUNTRY_META = {
   203: { cn: '捷克', region: 'eu', lexicon: '捷克' },
   348: { cn: '匈牙利', region: 'eu', lexicon: '匈牙利' },
   643: { cn: '俄罗斯', region: 'eu', lexicon: 'Russia' },
+  // P2-T4：俄乌地缘 / 东欧事件要能点亮对应国家，词表里补了 Ukraine / Belarus
+  804: { cn: '乌克兰', region: 'eu', lexicon: '乌克兰' },
+  112: { cn: '白俄罗斯', region: 'eu', lexicon: '白俄罗斯' },
 
   // ---- 英国 ----
   826: { cn: '英国', region: 'uk', lexicon: '英国' },
@@ -133,7 +136,7 @@ export const COUNTRY_META = {
   368: { cn: '伊拉克', region: 'me', lexicon: '伊拉克' },
   634: { cn: '卡塔尔', region: 'me', lexicon: '卡塔尔' },
   760: { cn: '叙利亚', region: 'me', lexicon: '叙利亚' },
-  792: { cn: '土耳其', region: 'me', lexicon: '土耳其' },
+  792: { cn: '土耳其', region: 'eu', lexicon: '土耳其' },
   4: { cn: '阿富汗', region: 'me', lexicon: '阿富汗' },
   422: { cn: '黎巴嫩', region: 'me', lexicon: '黎巴嫩' },
   400: { cn: '约旦', region: 'me', lexicon: '约旦' },
@@ -156,6 +159,8 @@ export const COUNTRY_META = {
   104: { cn: '缅甸', region: 'asia', lexicon: '缅甸' },
   116: { cn: '柬埔寨', region: 'asia', lexicon: '柬埔寨' },
   36: { cn: '澳大利亚', region: 'asia', lexicon: 'Australia' },
+  // P2-T4：澳储行 / 新西兰联储事件不该让国家灰着
+  554: { cn: '新西兰', region: 'asia', lexicon: '新西兰' },
 
   // ---- 拉美 ----
   76: { cn: '巴西', region: 'latam', lexicon: '巴西' },

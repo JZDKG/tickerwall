@@ -190,3 +190,28 @@ describe('观测的落库与拒绝', () => {
     expect(out.written + out.rejected.length).toBeGreaterThanOrEqual(0);
   });
 });
+
+/* ================================================================== *
+ * B8 回归：questionCandidates 的驱动因子按资产自己取，不再全用黄金的
+ *
+ * 故障形态：四个 enabled 资产都返回 GOLD_DRIVERS，原油页拿到的驱动清单里
+ * 全是对金价有用的序列（dfii10/t10yie/...），与 OIL_DRIVERS 毫无关系。
+ * ================================================================== */
+describe('B8：questionCandidates 动态驱动因子', () => {
+  it('每个资产的 drivers 来自自己的 instruments（去掉自身）', async () => {
+    const { questionCandidates } = await import('../src/server/services/explanations.service.js');
+    const { EXPLAINABLE_ASSETS } = await import('../src/server/domain/explanations/instruments.js');
+    const byId = new Map(questionCandidates().map((c) => [c.assetId, c]));
+    for (const a of EXPLAINABLE_ASSETS.filter((x) => x.enabled)) {
+      const expected = a.instruments.filter((x) => x !== a.id);
+      expect(byId.get(a.id).drivers, a.id).toEqual(expected);
+      expect(byId.get(a.id).drivers).not.toContain(a.id);
+    }
+  });
+
+  it('不同资产的驱动清单不全是同一份（不是把 GOLD_DRIVERS 复制四遍）', async () => {
+    const { questionCandidates } = await import('../src/server/services/explanations.service.js');
+    const sets = questionCandidates().map((c) => c.drivers.join(','));
+    expect(new Set(sets).size).toBeGreaterThan(1);
+  });
+});

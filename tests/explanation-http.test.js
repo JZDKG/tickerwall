@@ -219,7 +219,7 @@ describe('GET /api/explanations/history', () => {
   });
 
   it('不存在的资产 / 窗口 → 400，而不是空列表', async () => {
-    const bad = await fetch(`${base}/api/explanations/history?asset=btc&window=session`);
+    const bad = await fetch(`${base}/api/explanations/history?asset=vix&window=session`);
     expect(bad.status).toBe(400);
     const badWin = await fetch(`${base}/api/explanations/history?asset=gold-intl&window=2y`);
     expect(badWin.status).toBe(400);

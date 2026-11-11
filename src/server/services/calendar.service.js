@@ -6,6 +6,8 @@
  * ================================================================== */
 
 import { fetchRaw } from '../providers/index.js';
+import { fetchFredObservations } from '../providers/fred.js';
+import { fetchReleaseNumbers } from './bls-series.service.js';
 import {
   BEIJING_TZ,
   EASTERN_TZ,
@@ -19,7 +21,9 @@ import { MACRO_UNIVERSE, fetchMacroSeries, toChanges } from './macro.service.js'
 
 /* ------------------------------------------------------------------ *
  * 宏观日历：FOMC（美联储官网）+ BLS 数据发布日程（CPI/非农/PPI/GDP）
- * —— FOMC 直接解析美联储官网；BLS 页面有反爬，走文本代理读取官方页
+ *
+ * Phase 1 / P1-T2：不再走第三方文本代理，直连官方源。BLS 页面有
+ * 反爬（403）时由 fetch 的重试 / 官方 ICS 与确定性种子表兜底，绝不空白。
  * ------------------------------------------------------------------ */
 
 
@@ -44,7 +48,7 @@ export function blsReleaseBeijing(year, month, day) {
  */
 export async function fetchFomcMeetings() {
   const text = await fetchRaw(
-    'https://r.jina.ai/https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm',
+    'https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm',
     { headers: { 'User-Agent': 'Mozilla/5.0' } },
   );
   return parseFomcCalendar(text);
@@ -126,7 +130,7 @@ export function parseFomcCalendar(text) {
  * BLS 对直连有反爬（403），走文本代理读。
  */
 export async function fetchBlsIcsEvents() {
-  const text = await fetchRaw('https://r.jina.ai/https://www.bls.gov/schedule/news_release/bls.ics', {
+  const text = await fetchRaw('https://www.bls.gov/schedule/news_release/bls.ics', {
     headers: { 'User-Agent': 'Mozilla/5.0' },
   });
   return parseBlsIcs(text);
@@ -189,7 +193,7 @@ export function parseBlsIcs(text) {
 export async function fetchBlsMonth(year, month) {
   const pad = String(month).padStart(2, '0');
   const target = `https://www.bls.gov/schedule/${year}/${pad}_sched.htm`;
-  const text = await fetchRaw(`https://r.jina.ai/${target}`, {
+  const text = await fetchRaw(target, {
     headers: { 'User-Agent': 'Mozilla/5.0' },
   });
   const out = [];
@@ -251,6 +255,118 @@ export async function fetchBlsMonth(year, month) {
   return out;
 }
 
+/* ------------------------------------------------------------------ *
+ * Phase 1 / P1-T2：确定性种子表与「预期与实际」结构化数据
+ *
+ * 官方源（美联储 HTML / BLS ICS / BLS 月度页）可能被反爬或断网挡住。
+ * 与其让日历空白，不如内置一份「按法定日程可推导」的种子：FOMC 用
+ * 每年 8 次的固定节奏、BLS 用月度发布的固定日位，再用与线上完全相同的
+ * 时区换算生成 releaseAt / date / time。种子只做保底，网络正常时不启用。
+ * ------------------------------------------------------------------ */
+
+/** FOMC：8 次会议（月, 起始日, 结束日, 是否含 SEP）。年份由调用时补齐。 */
+const FOMC_SEED_SPEC = [
+  [1, 27, 28, false], [3, 17, 18, true], [5, 5, 6, false], [6, 16, 17, true],
+  [7, 28, 29, false], [9, 15, 16, true], [10, 27, 28, false], [12, 8, 9, true],
+];
+
+function fomcSeedForYear(year) {
+  const pad = (n) => String(n).padStart(2, '0');
+  const out = [];
+  for (const [month, startDay, endDay, projection] of FOMC_SEED_SPEC) {
+    const releaseUtc = zonedTimeToUtc(year, month, endDay, 14, 0, EASTERN_TZ);
+    const bj = releaseUtc == null ? null : toBeijingRelease(releaseUtc);
+    if (!bj) continue;
+    out.push({
+      date: bj.date,
+      time: bj.time,
+      releaseAt: bj.releaseAt,
+      startDate: `${year}-${pad(month)}-${pad(startDay)}`,
+      meetingEnd: `${year}-${pad(month)}-${pad(endDay)}`,
+      kind: 'fomc',
+      title: `美联储 FOMC 利率决议（${startDay}-${endDay} 日会议）`,
+      note: projection ? '含经济预测摘要 SEP 与点阵图' : null,
+      importance: 3,
+      source: 'Federal Reserve (seed)',
+      symbols: ['us10y', 'dxy', 'sp500', 'ndx100', 'gold-intl', 'btc'],
+    });
+  }
+  return out;
+}
+
+/** BLS：CPI 每月 13 日、非农每月第一个周五（用固定日位近似）、PPI 每月 11 日 */
+const BLS_SEED_SPEC = [
+  { day: 13, kind: 'cpi', title: '美国 CPI 消费者物价指数', importance: 3, symbols: ['us10y', 'gold-intl', 'dxy', 'sp500'] },
+  { day: 4, kind: 'nfp', title: '美国非农就业报告', importance: 3, symbols: ['us10y', 'dxy', 'sp500', 'ndx100'] },
+  { day: 11, kind: 'ppi', title: '美国 PPI 生产者物价指数', importance: 2, symbols: ['us10y', 'gold-intl'] },
+];
+
+function blsSeedForMonths(months) {
+  const out = [];
+  for (const { year, month } of months) {
+    for (const spec of BLS_SEED_SPEC) {
+      const rel = blsReleaseBeijing(year, month, spec.day);
+      if (!rel) continue;
+      out.push({
+        date: rel.date, time: rel.time, releaseAt: rel.releaseAt,
+        kind: spec.kind, title: spec.title,
+        importance: spec.importance,
+        source: 'U.S. BLS (seed)',
+        symbols: spec.symbols,
+      });
+    }
+  }
+  return out;
+}
+
+/** 导出给测试与诊断：固定年份的 FOMC 种子、以及某年的 BLS 种子 */
+export const FOMC_SEED = fomcSeedForYear(2026);
+export const BLS_SEED = blsSeedForMonths(Array.from({ length: 12 }, (_, i) => ({ year: 2026, month: i + 1 })));
+
+/**
+ * 给日历项挂 expected / actual / previous / tolerance。
+ *
+ * expected 在没有一致预期数据源时取「前值」作为市场隐含基准 —— 这是可
+ * 核对的、不编造的基线；一旦有真实一致预期接入，只需替换这个字段。
+ * 未公布的事件绝不挂 actual（不能提前泄露结果）。
+ */
+export function attachReleaseNumbers(ev, numbers, { nowMs = Date.now() } = {}) {
+  const out = { ...ev };
+  const n = numbers?.[ev?.kind] ?? null;
+  if (!n) return out;
+  const atMs = Date.parse(String(ev?.releaseAt ?? ''));
+  const released = !Number.isFinite(atMs) || atMs <= nowMs;
+  if (Number.isFinite(n.expected)) out.expected = n.expected;
+  else if (Number.isFinite(n.previous)) out.expected = n.previous;
+  if (Number.isFinite(n.previous)) out.previous = n.previous;
+  if (Number.isFinite(n.tolerance)) out.tolerance = n.tolerance;
+  if (released && Number.isFinite(n.actual)) out.actual = n.actual;
+  if (n.unit) out.unit = out.unit ?? n.unit;
+  return out;
+}
+
+/** 把官方数值表整理成 kind → { actual, previous, expected, tolerance, unit } */
+async function loadReleaseNumbers(fetcher = fetchRaw) {
+  try {
+    const raw = await fetchReleaseNumbers({ fetcher, fredFetch: fetchFredObservations });
+    const out = {};
+    for (const [kind, n] of Object.entries(raw)) {
+      out[kind] = {
+        actual: n.actual,
+        previous: n.previous,
+        expected: Number.isFinite(n.previous) ? n.previous : null,
+        // 容差随量级缩放：CPI/利率用 1%，就业人数用 2%（单位大、修订常见）
+        tolerance: kind === 'nfp' ? 0.02 : 0.01,
+        unit: n.unit,
+        source: n.source,
+      };
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 /**
  * 把缓存里的原始事件列表投影成响应。
  *
@@ -292,7 +408,11 @@ export async function getCalendar({ force = false } = {}) {
     months.push({ year: y, month: m });
   }
 
-  const [fomcRes, icsRes] = await Promise.allSettled([fetchFomcMeetings(), fetchBlsIcsEvents()]);
+  const [fomcRes, icsRes, numbersRes] = await Promise.allSettled([
+    fetchFomcMeetings(),
+    fetchBlsIcsEvents(),
+    loadReleaseNumbers(),
+  ]);
 
   const events = [];
   const errors = [];
@@ -312,11 +432,23 @@ export async function getCalendar({ force = false } = {}) {
     });
   }
 
-  events.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  /**
+   * 官方源全挂时的确定性种子保底（Phase 1 / P1-T2）：绝不让日历空白。
+   * 只补「网上一条都没抓到」的那类事件，网络正常时完全不启用。
+   */
+  if (!events.length) {
+    const seedMonths = months.map(({ year, month }) => ({ year, month }));
+    events.push(...fomcSeedForYear(bjYear), ...blsSeedForMonths(seedMonths));
+    errors.push('官方源不可用：已启用确定性日程种子（FOMC_SEED / BLS_SEED）');
+  }
+
+  const numbers = numbersRes.status === 'fulfilled' ? numbersRes.value : {};
+  const enriched = events.map((ev) => attachReleaseNumbers(ev, numbers, { nowMs: now.getTime() }));
+  enriched.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 
   const entry = {
     at: Date.now(),
-    events,
+    events: enriched,
     errors,
     coverage: { monthsFetched: months.map((m) => `${m.year}-${String(m.month).padStart(2, '0')}`) },
   };

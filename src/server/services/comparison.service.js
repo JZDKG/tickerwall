@@ -14,7 +14,7 @@
  * ================================================================== */
 
 import { isDailyCacheFresh, readDailyCache } from '../db/index.js';
-import { INSTRUMENTS } from '../providers/instruments.js';
+import { findInstrument } from '../providers/instruments.js';
 import { buildGoldComparison } from '../domain/explanations/comparison.js';
 import { createCoalescer } from '../jobs/coalesce.js';
 
@@ -30,8 +30,6 @@ export const COMPARISON_WINDOWS = {
   '5d': { label: '近 5 日', points: 5 },
   '20d': { label: '近 20 日', points: 20 },
 };
-
-const findInstrument = (id) => (INSTRUMENTS ?? []).find((i) => i.id === id) ?? null;
 
 /**
  * 从日线里截出「截止到 cutoff、跨 N 个交易日」的窗口。
@@ -123,7 +121,11 @@ export async function buildComparison({ windowKey = 'session', deps = {} } = {})
     const inst = findInstrument(id) ?? { id };
     const cached = await read(id).catch(() => null);
     const rows = cached?.rows ?? cached ?? null;
-    return { inst, rows: Array.isArray(rows) ? rows : null, fresh: Boolean(freshCheck?.(id)?.fresh) };
+    // 真实 isDailyCacheFresh(cache, now) 直接返回 boolean；测试桩历史上也返回
+    // 过 { fresh }。两种都认，不再对布尔值取 .fresh（那样永远判过期）。
+    const rawFresh = freshCheck ? freshCheck(cached, now()) : false;
+    const fresh = typeof rawFresh === 'object' && rawFresh !== null ? Boolean(rawFresh.fresh) : Boolean(rawFresh);
+    return { inst, rows: Array.isArray(rows) ? rows : null, fresh };
   };
 
   const [intlRaw, domRaw, fxRaw] = await Promise.all([load(ids.intl), load(ids.domestic), load(ids.fx)]);

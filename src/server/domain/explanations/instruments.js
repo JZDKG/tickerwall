@@ -160,6 +160,40 @@ export const INSTRUMENT_DEFINITIONS = [
     comparisonUnit: 'pct',
     decimals: 4,
   },
+  /* ---------------- Phase 1 / P1-T4：跨资产锚点补齐 ---------------- */
+  {
+    id: 'brent', name: '布伦特原油', short: '布伦特', kind: 'price', unit: '美元/桶',
+    currency: 'USD', frequency: 'daily', calendarId: 'ice-bre', valueDomain: 'positive',
+    comparisonPolicy: 'log-return', comparisonUnit: 'pct', decimals: 2,
+    note: '与 WTI 交割地不同，长期同向但价差会走阔；只作基准对照，不单独判方向。',
+  },
+  {
+    id: 'copper', name: '铜价', short: '铜', kind: 'price', unit: '美元/吨',
+    currency: 'USD', frequency: 'daily', calendarId: 'comex', valueDomain: 'positive',
+    comparisonPolicy: 'log-return', comparisonUnit: 'pct', decimals: 0,
+    note: '工业需求代理，只用于历史相关与共同驱动，不参与方向判定。',
+  },
+  {
+    id: 'sp500', name: '标普 500 指数', short: '标普', kind: 'index', unit: '点',
+    currency: 'USD', frequency: 'daily', calendarId: 'nyse', valueDomain: 'positive',
+    comparisonPolicy: 'log-return', comparisonUnit: 'pct', decimals: 2,
+  },
+  {
+    id: 'ndx100', name: '纳斯达克 100 指数', short: '纳指', kind: 'index', unit: '点',
+    currency: 'USD', frequency: 'daily', calendarId: 'nasdaq', valueDomain: 'positive',
+    comparisonPolicy: 'log-return', comparisonUnit: 'pct', decimals: 2,
+  },
+  {
+    id: 'btc', name: '比特币', short: 'BTC', kind: 'price', unit: '美元',
+    currency: 'USD', frequency: 'daily', calendarId: 'crypto-24x7', valueDomain: 'positive',
+    comparisonPolicy: 'log-return', comparisonUnit: 'pct', decimals: 2,
+    note: '24 小时连续交易，年化口径与交易日品种不同（√365 而非 √252）。',
+  },
+  {
+    id: 'sh000001', name: '上证指数', short: '上证', kind: 'index', unit: '点',
+    currency: 'CNY', frequency: 'daily', calendarId: 'sse', valueDomain: 'positive',
+    comparisonPolicy: 'log-return', comparisonUnit: 'pct', decimals: 2,
+  },
 ];
 
 const BY_ID = new Map(INSTRUMENT_DEFINITIONS.map((d) => [d.id, d]));
@@ -188,10 +222,24 @@ export const US10Y_DRIVERS = ['dfii10', 't10yie', 'oil'];
 /** 美元指数：利差 + 避险 + 历史相关 */
 export const DXY_DRIVERS = ['us10y', 'vix', 'gold-intl'];
 
+/* Phase 1 / P1-T4：六个新增锚点的驱动集合。
+   每条都只列「解释层能取到 instrument 定义」的序列，不编造未登记的指标。 */
+/** 标普 500：估值折现 + 风险偏好 + 能源成本 */
+export const SP500_DRIVERS = ['us10y', 'vix', 'oil', 'ndx100'];
+/** 纳指 100：利率敏感度更高 + 权重重叠 + 流动性/风险偏好 */
+export const NDX100_DRIVERS = ['us10y', 'sp500', 'btc', 'vix'];
+/** 比特币：流动性 + 科技风险偏好 + 美元 */
+export const BTC_DRIVERS = ['ndx100', 'dxy', 'vix', 'sp500'];
+/** 上证指数：中国需求 + 汇率 + 全球风险偏好 */
+export const SH000001_DRIVERS = ['copper', 'usdcny', 'sp500', 'vix'];
+/** 美元兑人民币：利差 + 美元指数 + 风险偏好 */
+export const USDCNY_DRIVERS = ['us10y', 'dxy', 'vix'];
+/** 国内金价：内外盘折算 + 汇率 + 实际收益率 */
+export const GOLD_CN_DRIVERS = ['gold-intl', 'usdcny', 'dfii10', 'dxy'];
+
 /**
- * 支持的资产与它需要的观测集合。
- * 首版只有黄金；原油 / 美元 / 美债属于阶段三，这里显式标 enabled=false，
- * 让接口可以返回「尚未开放」而不是假装算出一个解释。
+ * 支持的资产与它需要的观测集合（Phase 1 起 10 个核心跨资产锚点全部启用）。
+ * 每个资产都必须有对应的机制候选，见 mechanisms.js —— 否则接口会给出空壳解释。
  */
 export const EXPLAINABLE_ASSETS = [
   {
@@ -221,6 +269,30 @@ export const EXPLAINABLE_ASSETS = [
     enabled: true,
     instruments: ['us10y', ...US10Y_DRIVERS],
     relatedAssets: [],
+  },
+  {
+    id: 'sp500', name: '标普 500', enabled: true,
+    instruments: ['sp500', ...SP500_DRIVERS], relatedAssets: ['ndx100'],
+  },
+  {
+    id: 'ndx100', name: '纳斯达克 100', enabled: true,
+    instruments: ['ndx100', ...NDX100_DRIVERS], relatedAssets: ['sp500', 'btc'],
+  },
+  {
+    id: 'btc', name: '比特币', enabled: true,
+    instruments: ['btc', ...BTC_DRIVERS], relatedAssets: ['ndx100'],
+  },
+  {
+    id: 'sh000001', name: '上证指数', enabled: true,
+    instruments: ['sh000001', ...SH000001_DRIVERS], relatedAssets: ['copper'],
+  },
+  {
+    id: 'usdcny', name: '美元兑人民币', enabled: true,
+    instruments: ['usdcny', ...USDCNY_DRIVERS], relatedAssets: ['dxy'],
+  },
+  {
+    id: 'gold-cn', name: '国内金价', enabled: true,
+    instruments: ['gold-cn', ...GOLD_CN_DRIVERS], relatedAssets: ['gold-intl'],
   },
 ];
 

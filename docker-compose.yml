@@ -1,0 +1,42 @@
+# ================================================================== *
+# TickerWall 单机 / 私有云一键编排（Phase 1 / P1-T5）
+#
+#   docker compose up -d --build
+#   docker compose logs -f tickerwall
+#
+# 部署前：cp .env.example .env，按需填 FRED_API_KEY / BLS_API_KEY / LLM_*。
+# .env 别入库；这里只引用变量名，不放任何真实凭据。
+# 数据卷 ./data 是唯一持久状态（SQLite / 事件归档 / 旧缓存），容器重建不丢。
+# ================================================================== *
+
+services:
+  tickerwall:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: tickerwall:local
+    ports:
+      - "${PORT:-8787}:8787"
+    volumes:
+      - ./data:/app/data
+    environment:
+      # 服务（容器里监听所有网卡由 Dockerfile 的 HOST=0.0.0.0 决定）
+      PORT: 8787
+      KANBAN_DATA_DIR: /app/data
+      # 官方数据源 API Key：留空时自动回退到免鉴权端点
+      FRED_API_KEY: ${FRED_API_KEY:-}
+      BLS_API_KEY: ${BLS_API_KEY:-}
+      # LLM 快讯语义复核：三个都配上才启用，留空时优雅跳过
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_CONFIG_SOURCE: env
+      LLM_ALLOW_LOCAL_DEFAULT: 0
+    restart: unless-stopped
+    # 内置健康检查：与 Dockerfile 的 HEALTHCHECK 同一口径（看 readiness，不只看进程活着）
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+(process.env.PORT||8787)+'/api/health').then(r=>r.json()).then(d=>process.exit(d.readiness&&d.readiness.ready?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3

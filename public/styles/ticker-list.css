@@ -299,3 +299,87 @@
 .row.tick-down {
   animation: flash-down 0.7s ease-out;
 }
+
+/* ================================================================== *
+ * P2-T2：分组列表 / 高密度磁贴墙 / 经典平铺
+ *
+ * 三档密度只改容器 dataset，行本身的结构不变：updateRow 的 DOM 引用
+ * 始终有效，切换不会重建行、也不会打断涨跌闪烁动画。
+ * ================================================================== */
+
+.rows[data-density="grouped"] {
+  gap: 8px;
+}
+
+.row-group-head {
+  padding: 10px 4px 2px;
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  border-bottom: 1px solid var(--line);
+}
+
+.rows[data-density="flat"] {
+  gap: 8px;
+}
+
+.rows[data-density="flat"] .row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+/* 磁贴墙：23 个品种铺成响应式网格，涨跌幅强度映射到背景深浅 */
+.rows[data-density="wall"] {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 10px;
+}
+
+.rows[data-density="wall"] .row {
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "id delta"
+    "price price"
+    "spark spark"
+    "meta meta";
+  gap: 4px 10px;
+  padding: 12px 14px;
+  min-height: 128px;
+}
+
+.rows[data-density="wall"] .row .delta .pct {
+  font-size: 22px;
+  font-weight: 700;
+  font-family: var(--mono);
+}
+
+.rows[data-density="wall"] .row .price .value {
+  font-size: 20px;
+  font-family: var(--mono);
+}
+
+.rows[data-density="wall"] .row[data-dir="up"] {
+  background: var(--up-bg);
+  border-color: var(--up);
+}
+
+.rows[data-density="wall"] .row[data-dir="down"] {
+  background: var(--down-bg);
+  border-color: var(--down);
+}
+
+.rows[data-density="wall"] .row .meta {
+  font-size: 11px;
+}
+
+.anchor-note {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+@media (max-width: 880px) {
+  .rows[data-density="wall"] {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+}

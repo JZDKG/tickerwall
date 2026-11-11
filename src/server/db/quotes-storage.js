@@ -21,7 +21,11 @@ import fsp from 'node:fs/promises';
 import { createHistoryRing } from '../domain/history-ring.js';
 import { fetchRaw, toNum } from '../providers/index.js';
 import { INSTRUMENTS } from '../providers/instruments.js';
-import { getDb, readJson, writeHistoryFile, writeDailyCache, registerFlushHook } from './index.js';
+import { getDb, readJson, readHistoryFile, writeHistoryFile, writeDailyCache, registerFlushHook } from './index.js';
+import { saveLlmCache, loadLlmCache } from './llm-cache.js';
+
+// Phase 1：LLM 缓存的读写实现在 db/llm-cache.js，这里转发保住对外契约
+export { saveLlmCache, loadLlmCache };
 import { runLegacyImport } from './legacy-import.js';
 import { DATA_DIR } from '../paths.js';
 
@@ -175,6 +179,142 @@ export function dailyCacheFile(id) {
   return path.join(DAILY_CACHE_DIR, `${id}.json`);
 }
 
+/* ------------------------------------------------------------------ *
+ * Phase 1 / P1-T1：分时走势收敛到 SQLite
+ *
+ * 旧路径是每 2 秒把整个 ring 做一次 JSON.stringify + 原子覆盖写；品种多、
+ * 点数满 240 时，每次都要重写几百 KB，且 WAL  checkpoint 与备份都得等它。
+ * 现在按点 upsert，整批走一个 BEGIN IMMEDIATE ... COMMIT：要么全落，
+ * 要么全回滚，不会出现「一半新点一半旧点」的库。
+ *
+ * 兼容护栏：
+ *   · 启动时若 data/history.json 还在，自动导入一次（importLegacyHistoryFile）；
+ *   · SQLite 不可用时（内存库被关、维护窗口等）落盘路径仍回退到旧 JSON 文件，
+ *     与迁移前的行为一致 —— 拒绝写入不该让后台采集整个停摆。
+ * ------------------------------------------------------------------ */
+
+/** 把 { id: [{t,p}] } 规范成可写入的点；坏点（非有限数）直接判整批失败 */
+function normalizeRing(ringByInstrument) {
+  const out = [];
+  for (const [instrumentId, points] of Object.entries(ringByInstrument ?? {})) {
+    if (!Array.isArray(points)) continue;
+    for (const pt of points) {
+      const t = Number(pt?.t);
+      const price = Number(pt?.p);
+      if (!Number.isFinite(t) || !Number.isFinite(price)) {
+        throw new Error(`分时点非法：${instrumentId}@${String(pt?.t)}`);
+      }
+      out.push({ instrumentId, ts: Math.trunc(t), price });
+    }
+  }
+  return out;
+}
+
+/**
+ * 批量写入 intraday_ring。
+ * 单次事务 + 每品种只保留最近 HISTORY_LIMIT 个点（与内存 ring 的口径一致）。
+ */
+export function saveHistoryRing(ringByInstrument, { prune = true } = {}) {
+  const rows = normalizeRing(ringByInstrument);
+  const db = getDb();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const upsert = db.prepare(
+      `INSERT INTO intraday_ring (instrument_id, ts, price) VALUES (?, ?, ?)
+       ON CONFLICT(instrument_id, ts) DO UPDATE SET price = excluded.price`,
+    );
+    for (const r of rows) upsert.run(r.instrumentId, r.ts, r.price);
+    if (prune) {
+      const ids = [...new Set(rows.map((r) => r.instrumentId))];
+      const del = db.prepare(
+        `DELETE FROM intraday_ring WHERE instrument_id = ? AND ts NOT IN (
+           SELECT ts FROM intraday_ring WHERE instrument_id = ? ORDER BY ts DESC LIMIT ?
+         )`,
+      );
+      for (const id of ids) del.run(id, id, HISTORY_LIMIT);
+    }
+    db.exec('COMMIT');
+    return rows.length;
+  } catch (err) {
+    try {
+      db.exec('ROLLBACK');
+    } catch {
+      /* 已回滚 */
+    }
+    throw err;
+  }
+}
+
+/** 读回分时点：按时间升序、每品种最多 HISTORY_LIMIT 个 */
+export function loadHistoryRing() {
+  const rows = getDb()
+    .prepare(
+      `SELECT instrument_id AS id, ts AS t, price AS p FROM (
+         SELECT instrument_id, ts, price,
+                ROW_NUMBER() OVER (PARTITION BY instrument_id ORDER BY ts DESC) AS rn
+         FROM intraday_ring
+       ) WHERE rn <= ? ORDER BY instrument_id, ts ASC`,
+    )
+    .all(HISTORY_LIMIT);
+  const out = {};
+  for (const r of rows) {
+    if (!out[r.id]) out[r.id] = [];
+    out[r.id].push({ t: r.t, p: r.p });
+  }
+  return out;
+}
+
+/** 旧 history.json 一次性导入 SQLite（幂等：已导入过就不再读文件） */
+let legacyHistoryImported = false;
+export async function importLegacyHistoryFile({ file = HISTORY_FILE, force = false } = {}) {
+  if (legacyHistoryImported && !force) return 0;
+  const obj = await readHistoryFile(file);
+  const points = Object.entries(obj.history ?? {}).filter(([, arr]) => Array.isArray(arr) && arr.length);
+  if (!points.length) {
+    legacyHistoryImported = true;
+    return 0;
+  }
+  try {
+    const n = saveHistoryRing(Object.fromEntries(points));
+    legacyHistoryImported = true;
+    return n;
+  } catch (err) {
+    // 只读库 / 表不存在：保留旧文件作为兼容回退，不阻断启动
+    console.warn(`[storage] history.json 导入 SQLite 失败，保留文件回退：${err?.message ?? err}`);
+    return 0;
+  }
+}
+
+/** 当前 ring 快照（内存单例 → 可持久化的普通对象） */
+function ringSnapshot() {
+  return Object.fromEntries(ring.entries());
+}
+
+/**
+ * 落盘一次（flush 与 2 秒节流共用）：SQLite 事务为主，旧 JSON 文件为兼容回退。
+ *
+ * SQLite 成功时文件里只留注脚（history 置空）—— 高频全量 JSON 重写到此为止，
+ * 走势点以 intraday_ring 为准；SQLite 写失败（维护窗口 / 库被关 / 老库没升 v4）
+ * 时把完整走势写回文件，与迁移前行为一致，不让后台采集停摆。
+ */
+export async function persistHistoryRing() {
+  const snapshot = ringSnapshot();
+  const notes = Object.fromEntries([...seedNotes].map(([id, rec]) => [id, rec]));
+  let backend = 'sqlite';
+  let reason = null;
+  try {
+    saveHistoryRing(snapshot);
+  } catch (err) {
+    backend = 'file';
+    reason = String(err?.message ?? err);
+  }
+  await writeHistoryFile(HISTORY_FILE, {
+    notes,
+    history: backend === 'file' ? snapshot : {},
+  });
+  return { backend, reason };
+}
+
 export let saveTimer = null;
 
 /**
@@ -189,10 +329,7 @@ export async function flushHistoryNow() {
     clearTimeout(saveTimer);
     saveTimer = null;
   }
-  await writeHistoryFile(HISTORY_FILE, {
-    notes: Object.fromEntries([...seedNotes].map(([id, rec]) => [id, rec])),
-    history: Object.fromEntries(ring.entries()),
-  });
+  await persistHistoryRing();
 }
 
 registerFlushHook(flushHistoryNow);
@@ -202,11 +339,7 @@ export function scheduleHistorySave() {
   saveTimer = setTimeout(async () => {
     saveTimer = null;
     try {
-      // 注脚记录走势的真实来源（例如现货金用了期货形态），必须随历史一起持久化
-      await writeHistoryFile(HISTORY_FILE, {
-        notes: Object.fromEntries([...seedNotes].map(([id, rec]) => [id, rec])),
-        history: Object.fromEntries(ring.entries()),
-      });
+      await persistHistoryRing();
     } catch {
       /* 落盘失败不影响主流程 */
     }
@@ -235,16 +368,32 @@ export async function migrateLegacyStorage(opts = {}) {
   return { skipped: false, results, byStatus, pending };
 }
 
+/**
+ * 启动恢复：先把旧文件里的点一次性导进 SQLite，之后一律以 SQLite 为准。
+ * SQLite 读不到（老库 / 只读）时回退到旧的 readJson(HISTORY_FILE) 路径，
+ * 兼容旧格式（直接是 id → points 的扁平对象）与注脚。
+ */
 export async function loadPersistedHistory() {
+  try {
+    await importLegacyHistoryFile();
+  } catch (err) {
+    console.warn(`[storage] history.json 导入检查失败：${err?.message ?? err}`);
+  }
+  try {
+    const fromDb = loadHistoryRing();
+    if (Object.keys(fromDb).length) {
+      for (const [id, arr] of Object.entries(fromDb)) ring.set(id, arr);
+    }
+  } catch (err) {
+    console.warn(`[storage] SQLite 分时读取失败，回退 history.json：${err?.message ?? err}`);
+  }
   try {
     const obj = await readJson(HISTORY_FILE);
     if (!obj) return;
-    // 兼容旧格式（直接是 id -> points 的扁平对象）
+    // 兼容旧格式（直接是 id -> points 的扁平对象）；SQLite 已给过的品种不覆盖
     const points = obj.history && typeof obj.history === 'object' ? obj.history : obj;
     for (const [id, arr] of Object.entries(points)) {
-      if (Array.isArray(arr) && arr.length) {
-        ring.set(id, arr);
-      }
+      if (Array.isArray(arr) && arr.length && !ring.has(id)) ring.set(id, arr);
     }
     if (obj.notes && typeof obj.notes === 'object') {
       for (const [id, rec] of Object.entries(obj.notes)) {

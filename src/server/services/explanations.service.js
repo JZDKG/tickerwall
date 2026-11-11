@@ -21,7 +21,7 @@ import { createHash } from 'node:crypto';
 import { MACRO_UNIVERSE, fetchMacroSeries } from './macro.service.js';
 import { readArchiveRowsForSpan } from '../db/event-archive.js';
 import { writeEventRevision } from '../db/explanations.js';
-import { validateObservation } from '../contracts/index.js';
+import { validateObservation, validateDataQuality } from '../contracts/index.js';
 import { toEventEvidence } from '../domain/events/shock.js';
 import { readDailyCache, writeDailyCache } from '../db/index.js';
 import {
@@ -40,7 +40,6 @@ import {
   EXPLAINABLE_ASSETS,
   explainableAsset,
   instrumentDefinition,
-  GOLD_DRIVERS,
 } from '../domain/explanations/instruments.js';
 import { WINDOW_KEYS, WINDOW_SPECS, computeChange, windowSpec } from '../domain/explanations/alignment.js';
 import { assessExplanationFreshness } from '../domain/explanations/quality.js';
@@ -525,6 +524,21 @@ export async function loadEventEvidence(assetId, windowKey, { nowMs = Date.now()
   }
 }
 
+/**
+ * 运行时契约校验：把 assessObservationQuality 的真实输出逐个过一遍
+ * data-quality.schema.json，并把 {ok, errors} 挂在每项的 contract 上。
+ *
+ * 之前 validateDataQuality 编译好了却从没人调用，schema 少声明 unavailable /
+ * notRealtime 也一直没暴露。校验失败**不丢数据**：仍然保留在列表里，界面与
+ * 日志能看见「有 N 条观测质量没通过契约」。
+ *
+ * @param {object[]} details assessExplanationFreshness().details
+ * @returns {object[]} 带 contract 字段的副本
+ */
+export function validatedQualityDetails(details = []) {
+  return details.map((d) => ({ ...d, contract: validateDataQuality(d) }));
+}
+
 /** 读取元数据：freshness 与 contentStatus 是两件事，可以同时「证据不足且过期」 */
 function metaFor(explanation, observations) {
   const used = referencedInstrumentIds(explanation, { directionalOnly: true });
@@ -554,6 +568,8 @@ function metaFor(explanation, observations) {
     contentStatus: explanation?.contentStatus ?? null,
     // 背景指标过期（不影响结论可读性，但界面要照实说）
     backgroundStale,
+    // 契约校验闭环：真实质量输出逐个过 schema，漂移当场可见
+    qualityContracts: validatedQualityDetails(fresh.details),
     storage: explanationStorageStatus(),
   };
 }
@@ -876,6 +892,7 @@ export function getExplanationById(id) {
         freshnessReasons: fresh.freshnessReasons,
         refreshStatus: 'idle',
         historical: true,
+        qualityContracts: validatedQualityDetails(fresh.details),
       },
     },
   };
@@ -891,7 +908,9 @@ export function questionCandidates() {
   return EXPLAINABLE_ASSETS.filter((a) => a.enabled).map((a) => ({
     assetId: a.id,
     name: a.name,
-    drivers: GOLD_DRIVERS,
+    // 每个资产用自己的驱动集合：以前四个资产一律给 GOLD_DRIVERS，
+    // 原油页拿到的全是金价相关序列。去掉自身（它是被解释对象，不是驱动）。
+    drivers: a.instruments.filter((x) => x !== a.id),
     windows: WINDOW_KEYS,
   }));
 }

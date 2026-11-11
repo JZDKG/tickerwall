@@ -14,7 +14,8 @@
   <script type="importmap">
     {
       "imports": {
-        "geo-kit": "/vendor/geo-kit.js"
+        "geo-kit": "/vendor/geo-kit.js",
+        "ui-kit": "/vendor/ui-kit.js"
       }
     }
   </script>
@@ -25,6 +26,7 @@
   <!-- 样式按主题拆成 11 个文件，加载顺序 = 原 styles.css 的从上到下顺序（级联结果不变）。
        顺序有强约束：tokens 必须最先；responsive / wide-screen 必须在 ticker-list 之后（同优先级覆盖列表布局）。 -->
   <link rel="stylesheet" href="./styles/tokens.css" />
+  <link rel="stylesheet" href="./styles/workspace.css" />
   <link rel="stylesheet" href="./styles/base.css" />
   <link rel="stylesheet" href="./styles/ticker-list.css" />
   <link rel="stylesheet" href="./styles/responsive.css" />
@@ -60,7 +62,7 @@
       </div>
       <div class="task-group" data-task="watch">
         <span class="task-label">我的关注</span>
-        <a class="nav-link" data-nav-hash="#/events" href="#/events">今天重点</a>
+        <a class="nav-link" data-nav-hash="#/watch" href="#/watch">今天重点</a>
       </div>
       <button id="briefing-btn" type="button" class="nav-link btn-link" title="A股收盘后，隔夜各资产走了多少">隔夜复盘</button>
       <!-- 状态簇打包成一个 flex 项：窄屏换行时整组落到同一行，而不是拆散 -->
@@ -79,6 +81,12 @@
        **折叠态**（摘要一行约 40px）放在行情之前 —— 展开是补充阅读，
        收起时只占一行，行情仍在首屏 -->
   <section id="home-brief" class="home-brief" hidden></section>
+
+  <!-- P2-T2 工作台控制条：配色 / 主题 / 密度 / 涨跌基准 -->
+  <div id="ws-bar" class="ws-bar-host"></div>
+
+  <!-- P2-T3 四大宏观合成指标（/api/quotes.synthetics） -->
+  <div id="synthetics-strip" class="synthetics-strip" aria-live="polite"></div>
 
   <main id="rows" class="rows" aria-live="polite" aria-busy="true"></main>
 

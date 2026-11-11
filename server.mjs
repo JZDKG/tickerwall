@@ -17,6 +17,7 @@ import { getEvents, getEventHistory, loadLlmStore } from './src/server/services/
 import {
   CACHE_TTL_MS,
   HISTORY_LIMIT,
+  cache as quotesCache,
   getQuotes,
   migrateLegacyStorage,
   loadPersistedHistory,
@@ -32,11 +33,15 @@ import { getWatchBrief } from './src/server/services/watch-brief.service.js';
 import { getLifePath } from './src/server/services/life-path.service.js';
 import { getTodayFocus } from './src/server/services/today-focus.service.js';
 import { startCollector } from './src/server/jobs/collector.js';
+import { createSseHub } from './src/server/realtime/sse-hub.js';
 import { buildDefaultJobs, recoverPendingJobs } from './src/server/jobs/index.js';
 import { installShutdown } from './src/server/lifecycle.js';
 import { createLogger, withRequestLog } from './src/server/observability/log.js';
 
 const logger = createLogger();
+
+/** SSE 广播总线：建连/心跳在 app.js 的 /api/stream，采集完成后由 collector 推增量 */
+const sseHub = createSseHub({ getLatestQuotes: () => quotesCache.data ?? null });
 
 /* 不发 Access-Control-Allow-Origin：前端同源，不需要 CORS；一旦为 `*`，
    任何网页都能跨域读本机 API（HOST=0.0.0.0 时更糟）。跨域需求走反向代理。 */
@@ -60,6 +65,7 @@ const handle = createApp({
   getTodayFocus,
   ttlMs: CACHE_TTL_MS,
   jobs: () => collector?.status?.() ?? [],
+  sseHub,
 });
 
 /**
@@ -86,6 +92,7 @@ function startBackground() {
   const started = startCollector({
     jobs: buildDefaultJobs(),
     everyMs: 15_000,
+    sseHub,
     onError: (jobKey, err) => logger.warn('jobs.failed', { jobId: jobKey, error: String(err?.message ?? err) }),
   });
   collector = started.collector;

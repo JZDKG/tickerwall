@@ -15,6 +15,7 @@ import { createCoalescer } from '../jobs/coalesce.js';
 import { fetchFeedCatalog, DIRECT_FEEDS, GOOGLE_FEEDS } from '../providers/news-feeds.js';
 import { COMPILED_TOPICS, IMPACT_WORDS, anyWordHit, sanitizeText, sanitizeUrl, guessRegion, isOfficialRoutine, dedupeKey } from '../domain/news-lexicon.js';
 import { kvGetJson, kvSetJson } from '../db/index.js';
+import { loadLlmCache, saveLlmCache } from '../db/llm-cache.js';
 import {
   stripHtml,
   bjTimeString,
@@ -132,10 +133,19 @@ let llmStoreTimer = null;
 let llmStoreDirty = false;
 
 
-/** 启动时把 LLM 缓存读回内存（SQLite kv 表） */
+/** 启动时把 LLM 缓存读回内存（Phase 1：优先 llm_headline_cache 表，旧 kv 回退） */
 export async function loadLlmStore() {
   try {
-    const obj = kvGetJson('llm-cache');
+    let obj;
+    try {
+      obj = loadLlmCache();
+    } catch {
+      obj = null; // 老库没升到 v4：下面走原来那个「整份 kv 值」
+    }
+    if (!obj || typeof obj !== 'object' || !Object.keys(obj).length) {
+      // 表是空的也可能只是「还没写过来」，旧 kv 里也许还有迁移前的数据
+      obj = kvGetJson('llm-cache') ?? obj;
+    }
     if (!obj || typeof obj !== 'object') return;
     const now = Date.now();
     let n = 0;
@@ -162,9 +172,14 @@ function scheduleLlmStore() {
     try {
       const obj = {};
       for (const [id, v] of llmCache) obj[id] = v;
-      kvSetJson('llm-cache', obj);
+      // 逐条 upsert：只有内容变了的 hash 才写盘，不再整份 Map 重写一遍
+      saveLlmCache(obj, Date.now());
     } catch (err) {
-      console.error('LLM 缓存落盘失败:', err?.message ?? err);
+      // 老库 / 维护窗口：退化到旧的整份 kv 写，保证分类结果不丢
+      const obj = {};
+      for (const [id, v] of llmCache) obj[id] = v;
+      kvSetJson('llm-cache', obj);
+      console.warn('LLM 缓存逐条落盘失败，回退 kv：', err?.message ?? err);
     }
   }, 3000);
 }

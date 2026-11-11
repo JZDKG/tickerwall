@@ -37,12 +37,14 @@ export function setExplainEnabled(on) {
 }
 
 /**
- * 有解释能力的资产。
- *
- * C1 已完成黄金与原油；美元与美债的机制库还没写，所以这里不放开 ——
- * 界面上未开放的资产会显示「解释能力还没开放」，而不是给一个空壳。
+ * 有解释能力的资产（Phase 1 / P1-T4：与服务端 EXPLAINABLE_ASSETS 的 10 个
+ * 核心跨资产锚点保持一致）。单一来源在服务端；这里保留一份镜像，让视图
+ * 不必为了一个 id 集合去打 /api/explanations。
  */
-export const EXPLAINABLE = new Set(['gold-intl', 'oil', 'us10y', 'dxy']);
+export const EXPLAINABLE = new Set([
+  'gold-intl', 'oil', 'dxy', 'us10y',
+  'sp500', 'ndx100', 'btc', 'sh000001', 'usdcny', 'gold-cn',
+]);
 
 export function isExplainable(assetId) {
   return EXPLAINABLE.has(assetId);
@@ -322,8 +324,12 @@ export function bindExplainInteractions(root, getState, handlers = {}) {
       target.setAttribute('aria-expanded', 'true');
       slot.innerHTML = '<p class="explain-diff-loading">正在对比上一版…</p>';
       void fetchExplanationDiff(target.dataset.explainDiff, { fetchImpl: handlers.fetchImpl }).then(({ status, body }) => {
-        // 失败也给可读内容：diffPanelHTML 自己决定说「没有上一版」还是「取不到」
-        slot.innerHTML = diffPanelHTML({ status, body });
+        // fetchExplanationDiff 返回的是 { status, body }，而 diffPanelHTML 期望
+        // 直接收 body（读 body.status / body.diff / body.error）。以前整包传进去，
+        // payload.status 恒为 HTTP 码、payload.diff 恒为 undefined → 永远显示
+        // 「变化记录暂时不可用」。取不到 body 时给一句带状态码的可读说明。
+        const payload = body && typeof body === 'object' ? body : { error: `请求失败（HTTP ${status}）` };
+        slot.innerHTML = diffPanelHTML(payload);
       });
     }
   });

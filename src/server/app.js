@@ -64,6 +64,14 @@ export function createApp(deps) {
     }
 
     try {
+      /**
+       * Phase 1 / P1-T3：SSE 实时流。必须在任何 JSON 分发之前接管，
+       * 且响应保持打开（不 end），由 hub 负责心跳与断开清理。
+       */
+      if (url.pathname === '/api/stream') {
+        if (!deps.sseHub) return sendJson(res, 503, { ok: false, error: '实时流未启用' });
+        return deps.sseHub.handle(req, res);
+      }
       if (url.pathname === '/api/quotes') {
         return sendJson(res, 200, await deps.getQuotes({ force: takeForce(url) }));
       }
@@ -161,7 +169,7 @@ export function createApp(deps) {
       }
       // 健康状态与市场时段探针：实现在 routes/system.js
       if (
-        handleSystemRoutes(url, res, {
+        await handleSystemRoutes(url, res, {
           ttlMs: deps.ttlMs,
           jobs: () => deps.jobs?.() ?? [],
           method: req.method,

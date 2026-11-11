@@ -89,13 +89,15 @@ describe('sqlite：连接与建表', () => {
    * AUTOINCREMENT` 自动建的内部表 —— 它出现说明自增语义生效，不是脏表。
    */
   const MAINTENANCE_TABLES = ['collection_jobs', 'import_ledger', 'schema_migrations', 'sqlite_sequence'];
+  /** 迁移 v4（Phase 1 / P1-T1）：分时点与 LLM 分类缓存从 JSON 文件收进 SQLite */
+  const STORAGE_TABLES = ['intraday_ring', 'llm_headline_cache'];
 
-  it('老表仍在，解释相关的 7 张表与运维表都由版本化迁移建出', () => {
+  it('老表仍在，解释相关的 7 张表、运维表与 Phase 1 存储表都由版本化迁移建出', () => {
     const names = getDb()
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
       .all()
       .map((r) => r.name);
-    const expected = [...LEGACY_TABLES, ...EXPLANATION_TABLES, ...MAINTENANCE_TABLES];
+    const expected = [...LEGACY_TABLES, ...EXPLANATION_TABLES, ...MAINTENANCE_TABLES, ...STORAGE_TABLES];
     for (const t of expected) expect(names).toContain(t);
     expect(names).toEqual(expected.sort());
   });

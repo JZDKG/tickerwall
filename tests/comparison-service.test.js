@@ -14,6 +14,8 @@ import {
   getGoldComparison,
   sliceWindow,
 } from '../src/server/services/comparison.service.js';
+import { isDailyCacheFresh } from '../src/server/db/daily-cache.js';
+import { findInstrument } from '../src/server/providers/instruments.js';
 
 /** 造日线：dates 显式给，便于制造「不同市场休市日不同」 */
 const series = (pairs) => pairs.map(([date, close]) => ({ date, close }));
@@ -253,5 +255,91 @@ describe('缺一天时报出的溢价变化仍自洽', () => {
     expect(out.comparable).toBe(false);
     expect(out.decomposition).toBeNull();
     expect(out.reasonText.join(' ')).toContain('共同交易日');
+  });
+});
+
+/* ================================================================== *
+ * B2 回归：缓存新鲜度判定走真实 isDailyCacheFresh 的契约
+ *
+ * 故障形态：load() 调 `freshCheck(id)?.fresh`。真实 isDailyCacheFresh 的
+ * 第一个参数是 cached 对象（含 savedAt），且直接返回 boolean —— 于是
+ * 布尔值上取 .fresh 恒为 undefined，三条序列永远判「过期」。
+ * 这里用真实函数 + 带 savedAt 的缓存对象验「新鲜时不报过期」。
+ * ================================================================== */
+describe('B2：真实 isDailyCacheFresh 判定缓存新鲜度', () => {
+  const threeSeries = {
+    'gold-intl': series([['2026-10-20', 2000], ['2026-10-21', 2010]]),
+    'gold-cn': series([['2026-10-20', 450], ['2026-10-21', 452]]),
+    usdcny: series([['2026-10-20', 7.1], ['2026-10-21', 7.2]]),
+  };
+
+  it('直接用真实函数：{ savedAt: Date.now(), rows } 判新鲜（boolean，不是 {fresh}）', () => {
+    expect(isDailyCacheFresh({ savedAt: Date.now(), rows: threeSeries['gold-intl'] }, Date.now())).toBe(true);
+    expect(isDailyCacheFresh({ savedAt: Date.now() - 9 * 3600_000, rows: [] }, Date.now())).toBe(false);
+  });
+
+  it('走 buildComparison：注入真实 isDailyCacheFresh 时 fresh 缓存不报过期', async () => {
+    const now = Date.parse('2026-10-28T12:00:00Z');
+    const deps = {
+      readDailyCache: async (id) => ({ savedAt: now, rows: threeSeries[id] }),
+      isDailyCacheFresh,
+      now: () => now,
+    };
+    const out = await buildComparison({ windowKey: 'session', deps });
+    expect(out.status).toBe('ok');
+    expect(out.dataAgeWarning).toBeNull();
+  });
+
+  it('过期的 savedAt 仍报出「已过期」（真实函数没被绕过）', async () => {
+    const now = Date.parse('2026-10-28T12:00:00Z');
+    const deps = {
+      readDailyCache: async (id) => ({ savedAt: now - 9 * 3600_000, rows: threeSeries[id] }),
+      isDailyCacheFresh,
+      now: () => now,
+    };
+    const out = await buildComparison({ windowKey: 'session', deps });
+    expect(out.dataAgeWarning).toContain('已过期');
+  });
+
+  it('返回 boolean 的测试桩（true/false）也能正确判定，不再被当成对象取 .fresh', async () => {
+    const deps = {
+      readDailyCache: async (id) => ({ rows: threeSeries[id] }),
+      isDailyCacheFresh: () => true,
+      now: () => Date.parse('2026-10-28T12:00:00Z'),
+    };
+    const out = await buildComparison({ windowKey: 'session', deps });
+    expect(out.dataAgeWarning).toBeNull();
+  });
+
+  it('返回 { fresh } 对象的旧测试桩仍兼容', async () => {
+    const deps = {
+      readDailyCache: async (id) => ({ rows: threeSeries[id] }),
+      isDailyCacheFresh: () => ({ fresh: false }),
+      now: () => Date.parse('2026-10-28T12:00:00Z'),
+    };
+    const out = await buildComparison({ windowKey: 'session', deps });
+    expect(out.dataAgeWarning).toContain('已过期');
+  });
+});
+
+/* ================================================================== *
+ * B2：取标的统一复用 providers/instruments.js 的 findInstrument
+ *
+ * 私自定义的那份只查 INSTRUMENTS，漏掉 DETAIL_ONLY_INSTRUMENTS（brent / vxn）。
+ * 这里断言服务不再自带一份「缩水」的查找逻辑。
+ * ================================================================== */
+describe('B2：统一 findInstrument', () => {
+  it('共享 findInstrument 覆盖 DETAIL_ONLY 标的', () => {
+    expect(findInstrument('brent')?.id).toBe('brent');
+    expect(findInstrument('vxn')?.id).toBe('vxn');
+    expect(findInstrument('gold-intl')?.id).toBe('gold-intl');
+  });
+
+  it('comparison.service.js 不再私自定义 findInstrument', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('../src/server/services/comparison.service.js', import.meta.url), 'utf8');
+    expect(src).toContain("import { findInstrument } from '../providers/instruments.js'");
+    expect(src).not.toMatch(/(?:const|let|function)\s+findInstrument\s*[=(]/);
+    expect(src).not.toContain("import { INSTRUMENTS }");
   });
 });

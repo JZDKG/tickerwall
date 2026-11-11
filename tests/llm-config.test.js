@@ -31,7 +31,7 @@ function fakeDshHome() {
 
 beforeEach(() => {
   home = fakeDshHome();
-  for (const k of ['HOME', 'DSH_HOME', 'LLM_CONFIG_SOURCE', 'LLM_BASE_URL', 'LLM_API_KEY', 'LLM_MODEL', 'CLINE_API_KEY', 'EVIL_KEY']) {
+  for (const k of ['HOME', 'DSH_HOME', 'LLM_CONFIG_SOURCE', 'LLM_BASE_URL', 'LLM_API_KEY', 'LLM_MODEL', 'LLM_ALLOW_LOCAL_DEFAULT', 'CLINE_API_KEY', 'EVIL_KEY']) {
     saved[k] = process.env[k];
     delete process.env[k];
   }
@@ -70,12 +70,12 @@ describe('readDshLlmConfig：来源优先级', () => {
     expect(JSON.stringify(cfg)).not.toContain('sk-STOLEN');
   });
 
-  it('默认 auto：环境变量缺失时回落到内置 magpie 网关，不读任何文件', () => {
+  it('默认模式：环境变量缺失时不再回落内置 magpie（容器里没有这个端口）', () => {
     const cfg = readDshLlmConfig();
-    expect(cfg.source).toBe('builtin:magpie');
-    expect(cfg.baseURL).toBe('http://127.0.0.1:3425/v1');
-    expect(cfg.apiKey).toBe('magpie');
-    expect(cfg.model).toBe('qoder/qfmodel');
+    expect(cfg.source).toBe('env:missing');
+    expect(cfg.baseURL).toBeNull();
+    expect(cfg.apiKey).toBeNull();
+    expect(cfg.model).toBeNull();
     // 假 HOME 里的 dsh 配置在默认模式下绝不被读取
     expect(JSON.stringify(cfg)).not.toContain('sk-STOLEN');
     expect(JSON.stringify(cfg)).not.toContain('evil.example');
@@ -97,7 +97,8 @@ describe('readDshLlmConfig：来源优先级', () => {
     expect(cfg.source).not.toContain('builtin');
   });
 
-  it('默认模式下部分字段来自 env 时，source 仍标 builtin（其余字段确实落了内置值）', () => {
+  it('显式开启本地回退且部分字段来自 env 时，source 标 builtin', () => {
+    process.env.LLM_ALLOW_LOCAL_DEFAULT = '1';
     process.env.LLM_API_KEY = 'sk-mine';
     const cfg = readDshLlmConfig();
     // key 来自 env，但 baseURL/model 落到内置值 —— 标 builtin 是准确的
@@ -162,12 +163,21 @@ describe('环境变量与 dsh 配置逐字段合并', () => {
     expect(cfg.apiKey).toBe('sk-mine');
   });
 
-  it('默认模式只设 LLM_API_KEY 时，网关地址回落到内置 magpie（有 key 就必须有地址）', () => {
+  it('默认模式只设 LLM_API_KEY 时地址仍为 null（不再盲打不存在的本机端口）', () => {
     process.env.LLM_API_KEY = 'sk-mine';
     process.env.DSH_HOME = '/nonexistent-dsh-home-for-this-test';
     const cfg = readDshLlmConfig();
     expect(cfg.apiKey).toBe('sk-mine');
-    // 有密钥却没有 baseURL 会让请求直接失败，所以这里必须是内置网关而不是 null
+    // 没开本地回退就不补地址：服务层看到 !baseURL 会直接跳过 LLM 调用
+    expect(cfg.baseURL).toBeNull();
+    expect(cfg.model).toBeNull();
+  });
+
+  it('显式开启本地回退后，只设 LLM_API_KEY 也能补出内置网关', () => {
+    process.env.LLM_ALLOW_LOCAL_DEFAULT = '1';
+    process.env.LLM_API_KEY = 'sk-mine';
+    const cfg = readDshLlmConfig();
+    expect(cfg.apiKey).toBe('sk-mine');
     expect(cfg.baseURL).toBe('http://127.0.0.1:3425/v1');
     expect(cfg.model).toBe('qoder/qfmodel');
   });
@@ -180,5 +190,75 @@ describe('环境变量与 dsh 配置逐字段合并', () => {
     expect(cfg.apiKey).toBeNull(); // 明说了只用环境变量，就不给密钥
     expect(cfg.baseURL).toBeNull();
     expect(JSON.stringify(cfg)).not.toContain('sk-STOLEN');
+  });
+});
+
+/* ================================================================== *
+ * B6/安全回归：生产/Docker 默认不读 ~/.dsh、不盲打本机 127.0.0.1:3425
+ *
+ * 故障形态：默认 auto 会回落到内置本机 magpie 网关，容器里根本没有这个
+ * 端口，每次快讯分类都先超时一轮；dsh 的私有 YAML 读取逻辑也还挂在代码里。
+ * 新契约：默认只认 LLM_BASE_URL / LLM_API_KEY / LLM_MODEL；没配就优雅跳过
+ * （三个字段均为 null），只有显式 LLM_ALLOW_LOCAL_DEFAULT=1 或
+ * LLM_CONFIG_SOURCE=dsh 才允许别的来源。
+ * ================================================================== */
+describe('B6：Docker 环境变量模式（默认零宿主文件访问、零本地端口）', () => {
+  it('没有任何 LLM_* 环境变量时，baseURL / apiKey / model 全为 null', () => {
+    const cfg = readDshLlmConfig();
+    expect(cfg.baseURL).toBeNull();
+    expect(cfg.apiKey).toBeNull();
+    expect(cfg.model).toBeNull();
+    expect(cfg.source).toBe('env:missing');
+  });
+
+  it('默认模式即使假 HOME 里有 dsh 配置，也绝不读取（不出现 sk-STOLEN / evil.example）', () => {
+    const cfg = readDshLlmConfig();
+    expect(JSON.stringify(cfg)).not.toContain('sk-STOLEN');
+    expect(JSON.stringify(cfg)).not.toContain('evil.example');
+    expect(cfg.source).not.toContain('dsh');
+  });
+
+  it('默认模式不盲打 127.0.0.1:3425（内置网关只在显式 opt-in 时出现）', () => {
+    const cfg = readDshLlmConfig();
+    expect(JSON.stringify(cfg)).not.toContain('127.0.0.1:3425');
+    expect(cfg.source).not.toContain('magpie');
+  });
+
+  it('三个 LLM_* 环境变量齐全时直接采用（标准部署路径）', () => {
+    process.env.LLM_BASE_URL = 'https://llm.example/v1';
+    process.env.LLM_API_KEY = 'sk-prod';
+    process.env.LLM_MODEL = 'prod-model';
+    const cfg = readDshLlmConfig();
+    expect(cfg).toMatchObject({
+      baseURL: 'https://llm.example/v1',
+      apiKey: 'sk-prod',
+      model: 'prod-model',
+      source: 'env',
+    });
+  });
+
+  it('LLM_ALLOW_LOCAL_DEFAULT=1 才启用本机开发回退（显式 opt-in）', () => {
+    process.env.LLM_ALLOW_LOCAL_DEFAULT = '1';
+    const cfg = readDshLlmConfig();
+    expect(cfg.baseURL).toBe('http://127.0.0.1:3425/v1');
+    expect(cfg.apiKey).toBe('magpie');
+    expect(cfg.model).toBe('qoder/qfmodel');
+    expect(cfg.source).toContain('builtin:magpie');
+  });
+
+  it('显式 opt-in 本地回退时仍然不读 ~/.dsh 私有文件', () => {
+    process.env.LLM_ALLOW_LOCAL_DEFAULT = '1';
+    const cfg = readDshLlmConfig();
+    expect(JSON.stringify(cfg)).not.toContain('sk-STOLEN');
+    expect(JSON.stringify(cfg)).not.toContain('evil.example');
+  });
+
+  it('LLM_CONFIG_SOURCE=env 与默认等价（严格只用环境变量）', () => {
+    process.env.LLM_CONFIG_SOURCE = 'env';
+    process.env.LLM_API_KEY = 'sk-env-only';
+    const cfg = readDshLlmConfig();
+    expect(cfg.apiKey).toBe('sk-env-only');
+    expect(cfg.baseURL).toBeNull();
+    expect(cfg.model).toBeNull();
   });
 });

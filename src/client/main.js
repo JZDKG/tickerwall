@@ -10,14 +10,16 @@ import { api } from './shared/api.js';
 import { attachGlossary } from './shared/glossary.js';
 import { apply, renderSkeleton } from './views/list.js';
 import { questionsEl } from './shared/dom.js';
-import { loadQuestionCards, questionCardsHTML } from './views/explanations/questions.js';
-import { sigmaOfHistory } from './views/explanations/questions.js';
+import { loadQuestionCards, questionCardsHTML, selectQuestionAssets } from './views/explanations/questions.js';
 // Phase 2 拆分时漏了这一行：briefing.js 顶层挂了「隔夜复盘」按钮的点击监听，
 // 没人 import 它，那段代码在浏览器里从来没执行过 —— 按钮点了没反应。
 // 副作用式导入，不需要任何导出。
 import './views/briefing.js';
 import { refreshHomeBrief } from './views/home-brief-wiring.js';
 import { applyNavActive } from './nav.js';
+import { bus } from './shared/bus.js';
+import { createRealtime } from './shared/realtime.js';
+import { getWorkspaceStore } from './shared/workspace-store.js';
 
 /** 首页问题优先区（产品 2.3 + 2.4）：容器不存在时整段跳过 */
 const homeBriefEl = document.getElementById('home-brief');
@@ -48,9 +50,16 @@ export function scheduleHomeBrief(delay = 300_000) {
 
 export let timer = null;
 
+/**
+ * Phase 1 / P1-T3：SSE 优先。OPEN 时轮询降到 60s 兜底，断开自动回 15s。
+ * 声明在 scheduleNext 之前：那个函数每轮都要读当前节奏。
+ */
+export const realtime = createRealtime({ store, bus });
+
 export function scheduleNext(delay) {
   clearTimeout(timer);
-  const wait = delay ?? store.ttl + 1000;
+  // SSE 在线时低频兜底；显式 delay 仍优先（首屏强制刷新等场景）
+  const wait = delay ?? (realtime.isOpen() ? realtime.pollIntervalMs() : store.ttl + 1000);
   store.nextAt = Date.now() + wait;
   timer = setTimeout(() => loadQuotes(false), wait);
 }
@@ -78,15 +87,10 @@ export async function refreshQuestions({ force = false } = {}) {
   if (!force && Date.now() - questionsAt < QUESTIONS_TTL_MS) return;
   questionsAt = Date.now();
   try {
-    // 只取「有解释能力」的资产，行情列表里有 23 个，绝大多数还没有机制库
-    const explainable = new Set(['gold-intl', 'oil', 'us10y', 'dxy']);
-    const assets = (store.quotes ?? [])
-      .filter((q) => explainable.has(q.id))
-      .map((q) => ({ assetId: q.id, name: q.name, sigma: sigmaOfHistory(q.history) }));
-    const cards = await loadQuestionCards({
-      assets: assets.length ? assets : [{ assetId: 'gold-intl', name: '国际金价' }],
-      max: 3,
-    });
+    // Phase 1 / P1-T4：不再写死 4 个品种，按当日 σ 显著性动态挑异动最大的
+    // 4~6 个可解释品种，再交给问题卡生成「今日最值得搞清楚的 3 件事」。
+    const assets = selectQuestionAssets(store.quotes ?? [], { max: 5 });
+    const cards = await loadQuestionCards({ assets, max: 3 });
     if (!cards.length) {
       questionsEl.hidden = true;
       questionsEl.innerHTML = '';
@@ -152,6 +156,12 @@ document.addEventListener('visibilitychange', () => {
 
 setInterval(paintCountdown, 250);
 
+// SSE 连接：支持 EventSource 时接管实时推送，轮询自动降频为兜底
+realtime.connect();
+
+// P2-T1：先恢复工作台偏好（dataset 决定 CSS 变量），再画骨架 —— 否则首屏
+// 会闪一帧默认深色/红涨绿跌，浅色与 OLED 用户看到的是跳变。
+getWorkspaceStore();
 renderSkeleton();
 // 每次打开页面都强制向数据源拉一次最新值，而不是命中服务端缓存
 loadQuotes(true);

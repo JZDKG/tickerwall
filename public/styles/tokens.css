@@ -4,6 +4,9 @@
  * 来源：public/styles.css（3751 行单体）拆分，本文件内容对应原文件 L1-42。
  * 拆分方式：按原文连续区间整段搬移，不重排、不改写任何一条声明。
  * 加载顺序（见 public/index.html）就是原来的从上到下顺序，级联结果不变。
+ *
+ * P2-T2：配色（cn / intl / cb）与主题（dark / oled / light）改成 data-* 切换。
+ * 默认值仍是原来的深空黑 + 红涨绿跌，老页面行为不变。
  * ================================================================== */
 
 :root {
@@ -16,9 +19,54 @@
   --muted-2: #5a6474;
   --up: #f5455c;
   --down: #0ecb81;
+  --up-bg: rgba(245, 69, 92, 0.12);
+  --down-bg: rgba(14, 203, 129, 0.12);
   --flat: #8b97a8;
+  --bg-elev: #0d1219;
+  --border: rgba(255, 255, 255, 0.075);
   --radius: 16px;
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+
+/* 绿涨红跌（国际惯例） */
+:root[data-color-scheme="intl"] {
+  --up: #0ecb81;
+  --down: #f5455c;
+  --up-bg: rgba(14, 203, 129, 0.12);
+  --down-bg: rgba(245, 69, 92, 0.12);
+}
+
+/* 蓝涨橙跌（红绿色盲友好，亮度差也够） */
+:root[data-color-scheme="cb"] {
+  --up: #3b82f6;
+  --down: #f97316;
+  --up-bg: rgba(59, 130, 246, 0.14);
+  --down-bg: rgba(249, 115, 22, 0.14);
+  --flat: #94a3b8;
+}
+
+/* 纯黑防烧屏（OLED 屏：面板与边框压到最低对比） */
+:root[data-theme="oled"] {
+  --bg: #000000;
+  --bg-elev: #050505;
+  --border: #161616;
+  --panel: rgba(255, 255, 255, 0.02);
+  --panel-2: rgba(255, 255, 255, 0.045);
+  --line: rgba(255, 255, 255, 0.055);
+}
+
+/* 浅色研报模式（高对比纸张配色） */
+:root[data-theme="light"] {
+  --bg: #f5f7fa;
+  --bg-elev: #ffffff;
+  --border: #d8dee9;
+  --panel: rgba(16, 24, 40, 0.025);
+  --panel-2: rgba(16, 24, 40, 0.055);
+  --line: rgba(16, 24, 40, 0.1);
+  --text: #16202e;
+  --muted: #5a6678;
+  --muted-2: #7b8798;
+  --flat: #64748b;
 }
 
 * {

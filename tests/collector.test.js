@@ -13,6 +13,30 @@ import { createCollector, backoffFor, startCollector } from '../src/server/jobs/
 import { buildDefaultJobs } from '../src/server/jobs/index.js';
 import { useDatabase, closeDb, listCollectionStates } from '../src/server/db/index.js';
 
+/* ================================================================== *
+ * B1 回归：history-backfill 读的是 getDetail 的真实返回结构
+ *
+ * 故障形态：getDetail 返回 `{ ok, id, ..., history: { count, daily } }`，
+ * 处理器却去读 `res.body.history.rows.length` —— 永远 0 行，任务每次都
+ * 抛「没有取到任何历史行」进 dead。这里用真实结构（含 daily 数组）验契约，
+ * 并保留对旧 `body.history.rows` / `history.count` 形状的兼容。
+ * ================================================================== */
+vi.mock('../src/server/services/detail.service.js', () => ({
+  getDetail: vi.fn(async () => ({
+    ok: true,
+    id: 'gold-intl',
+    history: { count: 10, daily: new Array(10) },
+  })),
+}));
+
+describe('history-backfill 契约（B1）', () => {
+  it('真实 getDetail 返回结构下返回 { asset, rows: 10 }，不再误判 0 行', async () => {
+    const { QUEUE_HANDLERS } = await import('../src/server/jobs/index.js');
+    const out = await QUEUE_HANDLERS['history-backfill']({ payload: { asset: 'gold-intl' } });
+    expect(out).toEqual({ asset: 'gold-intl', rows: 10 });
+  });
+});
+
 /** 内存状态存储：单测不需要真库，语义与 SQLite 版一致 */
 function memoryStore() {
   const rows = new Map();
@@ -285,6 +309,75 @@ describe('与 SQLite collection_state 的对接', () => {
       await collector.runJob('db-job');
       const rows = listCollectionStates();
       expect(rows[0]).toMatchObject({ jobKey: 'db-job', fails: 1 });
+    } finally {
+      closeDb();
+    }
+  });
+});
+
+/* ================================================================== *
+ * B9 回归：采集成功后把「数据本身截止到哪一刻」写进水位线
+ *
+ * 故障形态：recordCollectionWatermark 有实现、库里有 data_cutoff_at 列，
+ * 但 collector 从不调用它 —— 页面上「数据截止」永远是空的。
+ * ================================================================== */
+describe('B9：采集水位线（dataCutoffAt）', () => {
+  it('成功任务的 out.updatedAt 被写成水位，且 status() 报出 dataCutoffAt', async () => {
+    const watermarks = [];
+    const store = {
+      ...memoryStore(),
+      watermark: (key, cutoffAt) => watermarks.push([key, cutoffAt]),
+      read: (key) => ({ dataCutoffAt: watermarks.find((w) => w[0] === key)?.[1] ?? null }),
+    };
+    const collector = createCollector({
+      store,
+      now: () => 1000,
+      jobs: [{ key: 'daily', intervalMs: 10, run: async () => ({ updatedAt: '2026-10-28T03:00:00.000Z' }) }],
+    });
+    await collector.runJob('daily');
+    expect(watermarks).toEqual([['daily', '2026-10-28T03:00:00.000Z']]);
+    expect(collector.status()[0].dataCutoffAt).toBe('2026-10-28T03:00:00.000Z');
+  });
+
+  it('没有 updatedAt 时依次回落 asOf / generatedAt / 当前时间', async () => {
+    const seen = [];
+    const mk = (out) => {
+      const store = { ...memoryStore(), watermark: (k, v) => seen.push(v), read: () => null };
+      return createCollector({ store, now: () => 1000, jobs: [{ key: 'j', intervalMs: 1, run: async () => out }] });
+    };
+    await mk({ asOf: '2026-10-27T00:00:00.000Z' }).runJob('j');
+    await mk({ generatedAt: '2026-10-26T00:00:00.000Z' }).runJob('j');
+    await mk({}).runJob('j');
+    expect(seen[0]).toBe('2026-10-27T00:00:00.000Z');
+    expect(seen[1]).toBe('2026-10-26T00:00:00.000Z');
+    expect(seen[2]).toBe(new Date(1000).toISOString());
+  });
+
+  it('失败任务不写水位', async () => {
+    const watermarks = [];
+    const store = { ...memoryStore(), watermark: (k, v) => watermarks.push([k, v]), read: () => null };
+    const collector = createCollector({
+      store,
+      jobs: [{ key: 'bad', intervalMs: 1, run: async () => { throw new Error('boom'); } }],
+    });
+    await collector.runJob('bad');
+    expect(watermarks).toEqual([]);
+  });
+
+  it('默认 SQLite store 暴露 watermark，且真的写进 collection_state.data_cutoff_at', async () => {
+    const { dbStateStore } = await import('../src/server/jobs/collector.js');
+    expect(typeof dbStateStore.watermark).toBe('function');
+    useDatabase(':memory:');
+    try {
+      const collector = createCollector({
+        store: dbStateStore,
+        now: () => 1000,
+        jobs: [{ key: 'db-wm', intervalMs: 1, run: async () => ({ updatedAt: '2026-10-28T03:00:00.000Z' }) }],
+      });
+      await collector.runJob('db-wm');
+      const row = listCollectionStates().find((r) => r.jobKey === 'db-wm');
+      expect(row.dataCutoffAt).toBe('2026-10-28T03:00:00.000Z');
+      expect(collector.status()[0].dataCutoffAt).toBe('2026-10-28T03:00:00.000Z');
     } finally {
       closeDb();
     }

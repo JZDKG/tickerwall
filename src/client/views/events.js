@@ -14,6 +14,7 @@ import { todayFocusHTML } from './today-focus.js';
 import { PLACEHOLDER, store } from '../shared/store.js';
 import { getJson } from '../shared/fetch-json.js';
 import { api } from '../shared/api.js';
+import { readPinnedAssets } from '../shared/watchlist.js';
 
 
 export let eventsTimer = null;
@@ -272,6 +273,7 @@ export function renderEvents(opts = {}) {
     eventsEl.innerHTML = html`<div class="d-loading">正在聚合全球实时快讯…</div>`.toString();
     return;
   }
+  if (opts.watchOnly != null) st.watchOnly = Boolean(opts.watchOnly);
   const data = st.data;
   const cal = st.calendar;
   const topics = data.topics ?? [];
@@ -285,6 +287,14 @@ export function renderEvents(opts = {}) {
   else if (st.origin === 'aggregate') items = items.filter((i) => i.origin === 'aggregate');
   else if (st.origin === 'domestic') items = items.filter((i) => !i.origin);
   else if (st.origin === 'foreign') items = items.filter((i) => i.lang && i.lang !== 'zh');
+
+  // P2-T3「只看自选相关」：与首屏星标读的是同一份本地数据（kanban.pinnedAssets.v1）
+  const pinned = st.watchOnly ? readPinnedAssets(typeof localStorage === 'undefined' ? null : localStorage) : [];
+  if (st.watchOnly) {
+    items = pinned.length
+      ? items.filter((i) => (i.symbols ?? []).some((s) => pinned.includes(s)))
+      : [];
+  }
 
   // 41 个源全部铺出来会把标题行撑爆，也没人读。按类别汇总，失败源单独点名
   // —— 静默降级最难查，必须让它自己跳出来。
@@ -340,6 +350,7 @@ export function renderEvents(opts = {}) {
         <button type="button" class="pick ${st.origin === 'aggregate' ? 'on' : ''}" data-o="aggregate" title="经 Google News 多语种索引转手，覆盖关停 RSS 的通讯社">全球索引</button>
         <button type="button" class="pick ${st.origin === 'domestic' ? 'on' : ''}" data-o="domestic">国内快讯</button>
         <button type="button" class="pick ${st.origin === 'foreign' ? 'on' : ''}" data-o="foreign">只看外媒</button>
+        <button type="button" class="pick ${st.watchOnly ? 'on' : ''}" data-watch-only aria-pressed="${st.watchOnly ? 'true' : 'false'}" title="只看与已星标标的相关的事件">只看自选相关</button>
       </div>
       <div class="pick-row" id="topic-filter">
         <button type="button" class="pick ${!st.topic ? 'on' : ''}" data-t="">全部主题</button>
@@ -349,7 +360,9 @@ export function renderEvents(opts = {}) {
         )}
       </div>
       <div class="event-list">
-        ${items.length ? groupEventsByCluster(items, data.clusters).map(eventRowHTML) : html`<div class="chart-empty">当前筛选下没有条目</div>`}
+        ${items.length ? groupEventsByCluster(items, data.clusters).map(eventRowHTML) : html`<div class="chart-empty">${
+          st.watchOnly && !pinned.length ? '还没有星标标的：去首屏点 ☆ 添加自选' : '当前筛选下没有条目'
+        }</div>`}
       </div>
     </section>
 
@@ -386,7 +399,11 @@ export function renderEvents(opts = {}) {
   });
   document.querySelectorAll('#origin-filter .pick').forEach((btn) => {
     btn.addEventListener('click', () => {
-      store.events.origin = btn.dataset.o;
+      if (btn.hasAttribute('data-watch-only')) {
+        store.events.watchOnly = !store.events.watchOnly;
+      } else {
+        store.events.origin = btn.dataset.o;
+      }
       renderEvents();
     });
   });

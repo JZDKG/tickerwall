@@ -14,7 +14,7 @@
  * ================================================================== */
 
 import { esc } from '../../shared/format.js';
-import { fetchExplanation, isExplainable, explainEnabled } from './state.js';
+import { fetchExplanation, isExplainable, explainEnabled, EXPLAINABLE } from './state.js';
 
 /** 问题模板：只用事实与状态，不写耸动标题 */
 export function questionTemplate({ assetName, windowLabel, direction, magnitude, status }) {
@@ -117,7 +117,11 @@ export function dataStatusOf(meta, explanation) {
 
 /** 历史序列的日波动（用于标准化变动，避免按百分比排序） */
 export function sigmaOfHistory(history) {
-  const vals = (Array.isArray(history) ? history : []).filter((v) => Number.isFinite(v) && v > 0);
+  // /api/quotes 的 q.history 是 Array<{ t, p }>：原来是裸数字才认，
+  // 对象点全被 Number.isFinite 过滤掉 → 永远 < 8 个 → 永远返回 null。
+  const vals = (Array.isArray(history) ? history : [])
+    .map((v) => (typeof v === 'object' && v !== null ? Number(v.p ?? v.close ?? v.value) : Number(v)))
+    .filter((v) => Number.isFinite(v) && v > 0);
   if (vals.length < 8) return null;
   const rets = [];
   for (let i = 1; i < vals.length; i += 1) rets.push(Math.log(vals[i] / vals[i - 1]));
@@ -125,6 +129,34 @@ export function sigmaOfHistory(history) {
   const m = rets.reduce((a, b) => a + b, 0) / rets.length;
   const sd = Math.sqrt(rets.reduce((a, b) => a + (b - m) ** 2, 0) / (rets.length - 1));
   return sd > 0 ? sd : null;
+}
+
+/**
+ * Phase 1 / P1-T4：按当日波动显著性（σ）从核心可解释池里挑异动最大的品种。
+ *
+ * 原来首页把 4 个资产写死，sp500 / btc / 上证等大级别波动完全看不见。
+ * 现在只认 EXPLAINABLE 池 + 真实历史序列，按 σ 降序取前 max 个（4~6）。
+ * 一条都没有时给一个可解释的兜底品种，不让问题区空手请求。
+ *
+ * @param {Array<{id:string,name?:string,history?:Array}>} quotes
+ * @param {{max?:number}} [opts]
+ * @returns {Array<{assetId:string,name:string,sigma:number}>}
+ */
+export function selectQuestionAssets(quotes, { max = 5 } = {}) {
+  const candidates = [];
+  for (const q of Array.isArray(quotes) ? quotes : []) {
+    if (!isExplainable(q?.id)) continue;
+    const sigma = sigmaOfHistory(q.history);
+    if (!Number.isFinite(sigma) || sigma <= 0) continue;
+    candidates.push({ assetId: q.id, name: q.name ?? q.id, sigma });
+  }
+  candidates.sort((a, b) => b.sigma - a.sigma || String(a.assetId).localeCompare(String(b.assetId)));
+  const picked = candidates.slice(0, Math.max(4, Math.min(6, Number(max) || 5)));
+  if (!picked.length) {
+    const fallback = [...EXPLAINABLE][0] ?? 'gold-intl';
+    return [{ assetId: fallback, name: fallback, sigma: null }];
+  }
+  return picked;
 }
 
 /**

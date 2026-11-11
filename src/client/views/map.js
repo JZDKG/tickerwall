@@ -177,6 +177,8 @@ export function focusRegion(region) {
 
 /* ---------- 事件 → 定价中心：同上，统一由 geo/cities.js 提供 ---------- */
 export const REGION_IMPACT = GEO.REGION_IMPACT;
+/** P2-T4：BTC 是 7×24 全球流动性资产，没有地理坐标，不伪造经纬度 */
+export const NON_GEOGRAPHIC_ASSETS = Object.freeze({ btc: true });
 export const SYMBOL_CITY = GEO.SYMBOL_CITY;
 export const targetCitiesFor = GEO.targetCitiesFor;
 export const arcApex = GEO.arcApex;
@@ -430,6 +432,23 @@ function renderImpact(ev) {
   });
 }
 
+/** 巡航导播（Auto-Pilot）显式开关：关掉后 6 秒步进不再打断用户锁定的视角 */
+let autopilot = true;
+
+export function isAutopilotEnabled() {
+  return autopilot;
+}
+
+export function setAutopilot(enabled) {
+  autopilot = Boolean(enabled);
+  if (autopilot) startBroadcast();
+  else {
+    stopBroadcast();
+    bcState = spotlightReducer(bcState, { type: 'setPlaying', playing: false });
+  }
+  renderBroadcast();
+}
+
 /** 暂停 / 继续。播报台自己 hover 时用，切事件时进度停在原处 */
 function setBroadcastPlaying(playing) {
   if (bcState.playing === Boolean(playing)) return;
@@ -439,6 +458,7 @@ function setBroadcastPlaying(playing) {
 
 function startBroadcast() {
   stopBroadcast();
+  if (!autopilot) return;
   bcStepTimer = setInterval(() => {
     bcState = spotlightReducer(bcState, { type: 'tick' });
     renderBroadcast();
@@ -920,18 +940,21 @@ export function renderMap() {
     </g>`;
   }
 
-  // ---- BTC 卫星位 ----
+  // ---- BTC 7×24 全球流动性卫星风向标（P2-T4）----
+  // 非地理资产不该被钉在大西洋中央：这里只在地图 HUD 里放一枚独立徽章，
+  // 不再伪造经纬度坐标。.map-btc-node 选择器保留，供既有样式与测试使用。
   const btc = quoteOf('btc');
-  let btcSvg = '';
+  let btcHud = '';
   if (btc?.ok) {
     const d = dirOf(btc.changePct);
-    const c = d === 'up' ? '#f5455c' : d === 'down' ? '#0ecb81' : '#7e8899';
-    btcSvg = `<g class="map-sat" transform="translate(196,296)" data-goto="btc">
-      <circle class="sat-ring scene-fixed" r="15" fill="none" stroke="${c}" stroke-width="0.9" opacity="0.5" />
-      <circle class="scene-fixed" r="5" fill="${c}" />
-      <g transform="translate(22,-2)"><g class="scene-fixed"><text x="0" y="0" class="tag-name">BTC</text></g></g>
-      <g transform="translate(22,9)"><g class="scene-fixed"><text x="0" y="0" class="tag-pct" fill="${c}">${fmtPrice(btc.price, 0)} ${btc.changePct >= 0 ? '+' : ''}${btc.changePct.toFixed(2)}%</text></g></g>
-    </g>`;
+    const c = d === 'up' ? 'var(--up)' : d === 'down' ? 'var(--down)' : 'var(--flat)';
+    const pct = Number.isFinite(btc.changePct) ? btc.changePct.toFixed(2) : '—';
+    btcHud = `<div class="map-btc-node" data-non-geographic="true" data-goto="btc" role="status" aria-label="比特币 7×24 全球流动性风向标">
+      <span class="btc-hud-title">7×24 全球流动性卫星风向标</span>
+      <span class="btc-hud-name">BTC</span>
+      <span class="btc-hud-price" style="color:${c}">${fmtPrice(btc.price, 0)}</span>
+      <span class="btc-hud-pct" style="color:${c}">${btc.changePct >= 0 ? '+' : ''}${pct}%</span>
+    </div>`;
   }
 
   // ---- 右侧事件流 ----
@@ -989,6 +1012,7 @@ export function renderMap() {
         <span class="map-zoom" id="zoom-label">1.0×</span>
         <button type="button" class="map-btn" id="map-zoom-in" title="放大">+</button>
         <button type="button" class="map-btn" id="map-reset" title="复位">复位</button>
+        <button type="button" class="map-btn" data-action="toggle-autopilot" aria-pressed="${autopilot ? 'true' : 'false'}" title="一键锁定当前视角，不被 6 秒巡航打断">巡航导播 ${autopilot ? '暂停' : '开启'}</button>
         <button type="button" class="map-btn" id="map-full" title="全屏">⛶ 全屏</button>
       </div>
     </div>
@@ -1035,10 +1059,10 @@ export function renderMap() {
             <g class="impact-layer"></g>
             <g class="map-regions">${raw(regionSvg)}</g>
             <g class="map-cities">${raw(citySvg)}</g>
-            ${raw(btcSvg)}
           </g>
         </svg>
         <div class="map-anchors lod-0" id="map-anchors" data-lod="lod-0">${raw(anchorsHtml)}${raw(beaconHtml)}</div>
+        ${raw(btcHud)}
         <div class="map-broadcast" id="map-broadcast"></div>
         <div class="map-bubbles" id="map-bubbles"></div>
       </div>
@@ -1357,8 +1381,8 @@ export function bindMapEvents() {
   // addEventListener 会把监听器叠起来（悬停一次触发 N 次）。
   const bc = document.getElementById('map-broadcast');
   if (bc) {
-    bc.onpointerenter = () => setBroadcastPlaying(false);
-    bc.onpointerleave = () => setBroadcastPlaying(true);
+    bc.onpointerenter = () => { if (autopilot) setBroadcastPlaying(false); };
+    bc.onpointerleave = () => { if (autopilot) setBroadcastPlaying(true); };
     bc.onclick = () => {
       const ev = spotlightEvent();
       if (!ev) return;
@@ -1416,6 +1440,15 @@ export function bindMapEvents() {
   // 工具按钮：以地图几何中心缩放。
   // 直接取 svg 的 rect 中心也行（xMidYMid 下两者重合），但那样就把
   // 「留白对称」当成了前提；走 CTM 投影 viewBox 中心，换成别的对齐方式也不会错位。
+  const autoBtn = mapEl.querySelector('[data-action="toggle-autopilot"]');
+  if (autoBtn) {
+    autoBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setAutopilot(!autopilot);
+      autoBtn.setAttribute('aria-pressed', autopilot ? 'true' : 'false');
+      autoBtn.textContent = `巡航导播 ${autopilot ? '暂停' : '开启'}`;
+    });
+  }
   const zoomAtCenter = (factor) => {
     const c = toClient(svg, LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2);
     if (c) zoomAt(c[0], c[1], factor);

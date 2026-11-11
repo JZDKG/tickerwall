@@ -35,9 +35,9 @@ function fakeRes() {
   };
 }
 
-const call = (pathname, search = '', deps = { ttlMs: 15_000, jobs: () => [{ key: 'quotes', ok: true }] }, method = 'GET') => {
+const call = async (pathname, search = '', deps = { ttlMs: 15_000, jobs: () => [{ key: 'quotes', ok: true }] }, method = 'GET') => {
   const res = fakeRes();
-  const handled = handleSystemRoutes(new URL(`http://127.0.0.1:8787${pathname}${search}`), res, { ...deps, method });
+  const handled = await handleSystemRoutes(new URL(`http://127.0.0.1:8787${pathname}${search}`), res, { ...deps, method });
   return { handled, res };
 };
 
@@ -95,30 +95,30 @@ describe('健康状态：三种状态分开', () => {
 });
 
 describe('系统路由', () => {
-  it('/api/health 返回 200 且带就绪与来源信息', () => {
-    const { handled, res } = call('/api/health');
+  it('/api/health 返回 200 且带就绪与来源信息', async () => {
+    const { handled, res } = await call('/api/health');
     expect(handled).toBe(true);
     expect(res.status).toBe(200);
     expect(res.body.readiness).toBeDefined();
     expect(res.body.jobs).toHaveLength(1);
   });
 
-  it('/api/_market 默认关闭（调试端点不该在生产暴露）', () => {
-    const { handled, res } = call('/api/_market');
+  it('/api/_market 默认关闭（调试端点不该在生产暴露）', async () => {
+    const { handled, res } = await call('/api/_market');
     expect(handled).toBe(true);
     expect(res.status).toBe(404);
   });
 
-  it('不是它负责的路径返回 false，交回入口继续走静态资源', () => {
-    expect(call('/api/quotes').handled).toBe(false);
-    expect(call('/vendor/geo-kit.js').handled).toBe(false);
+  it('不是它负责的路径返回 false，交回入口继续走静态资源', async () => {
+    expect((await call('/api/quotes')).handled).toBe(false);
+    expect((await call('/vendor/geo-kit.js')).handled).toBe(false);
   });
 });
 
 describe('调试端点开启时（debug=true）', () => {
-  it('给出该市场的时区、本地时间与开市状态', () => {
+  it('给出该市场的时区、本地时间与开市状态', async () => {
     const res = fakeRes();
-    const handled = handleSystemRoutes(
+    const handled = await handleSystemRoutes(
       new URL('http://x/api/_market?m=us-index&t=2026-10-28T14:30:00Z'),
       res,
       { ttlMs: 1, jobs: () => [], debug: true },
@@ -130,9 +130,9 @@ describe('调试端点开启时（debug=true）', () => {
     expect(typeof res.body.open).toBe('boolean');
   });
 
-  it('未知市场代号不编造：tz / local / open 一律 null（不是 false）', () => {
+  it('未知市场代号不编造：tz / local / open 一律 null（不是 false）', async () => {
     const res = fakeRes();
-    handleSystemRoutes(new URL('http://x/api/_market?m=nope'), res, { ttlMs: 1, jobs: () => [], debug: true });
+    await handleSystemRoutes(new URL('http://x/api/_market?m=nope'), res, { ttlMs: 1, jobs: () => [], debug: true });
     expect(res.body.tz).toBeNull();
     expect(res.body.local).toBeNull();
     // 「不知道开没开」和「确定没开」是两件事，未注册的市场只能是前者
@@ -179,14 +179,14 @@ describe('启动脚本：依赖安装必须先于 doctor', () => {
  * 这条路径也是唯一允许 POST 的 API（入口的 405 守卫对它开了口子）。
  * ================================================================== */
 describe('维护备份端点', () => {
-  it('默认关闭时返回 404（不是一个谁都能点的按钮）', () => {
-    const { handled, res } = call('/api/maintenance/backup', '', undefined, 'POST');
+  it('默认关闭时返回 404（不是一个谁都能点的按钮）', async () => {
+    const { handled, res } = await call('/api/maintenance/backup', '', undefined, 'POST');
     expect(handled).toBe(true);
     expect(res.status).toBe(404);
   });
 
-  it('开放后 GET 被拒：会写盘的操作用 POST', () => {
-    const { res } = call('/api/maintenance/backup', '', { ttlMs: 1, jobs: () => [], maintenance: true }, 'GET');
+  it('开放后 GET 被拒：会写盘的操作用 POST', async () => {
+    const { res } = await call('/api/maintenance/backup', '', { ttlMs: 1, jobs: () => [], maintenance: true }, 'GET');
     expect(res.status).toBe(405);
     expect(res.body.error).toContain('POST');
   });

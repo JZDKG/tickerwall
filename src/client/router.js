@@ -37,6 +37,35 @@ const listView = {
   },
 };
 
+/**
+ * 「我的关注」的深链接（#/watch）。
+ *
+ * 关注简报本来就在首页的 #home-brief 里（折叠态），所以复用列表视图，不新造
+ * 一个视图层。落地时把折叠展开并标出来：点「我的关注」应该直接看到关注内容，
+ * 而不是回到首页再自己找那一行摘要。
+ */
+function focusWatchBrief() {
+  const host = document.getElementById('home-brief');
+  if (!host) return;
+  host.classList.add('watch-focused');
+  const accordion = host.querySelector('details.home-brief-accordion');
+  if (accordion) accordion.open = true;
+  host.scrollIntoView?.({ block: 'start' });
+}
+
+const watchView = {
+  el: listEl,
+  mount() {
+    listView.mount();
+    focusWatchBrief();
+  },
+  unmount() {
+    const host = document.getElementById('home-brief');
+    host?.classList.remove('watch-focused');
+    listView.unmount();
+  },
+};
+
 const detailView = { el: detailEl, mount: mountDetail, unmount: unmountDetail };
 const mapView = { el: mapEl, mount: mountMap, unmount: unmountMap };
 const eventsView = { el: eventsEl, mount: mountEvents, unmount: unmountEvents };
@@ -59,13 +88,15 @@ let mounted = null;
 function resolve(hash) {
   if (hash.startsWith('#/map')) return { name: 'map', view: mapView };
   if (hash.startsWith('#/events')) return { name: 'events', view: eventsView };
+  // 「我的关注」是独立任务：参与幂等键（watch ≠ list），切回首页会重新挂载
+  if (hash.startsWith('#/watch')) return { name: 'watch', view: watchView };
   if (hash.startsWith('#/macro')) return { name: 'macro', view: macroView };
   const m = /^#\/d\/(.+)$/.exec(hash);
   if (m) return { name: 'detail', view: detailView, arg: decodeURIComponent(m[1]) };
   return { name: 'list', view: listView };
 }
 
-const ALL = { list: listView, detail: detailView, map: mapView, events: eventsView, macro: macroView };
+const ALL = { list: listView, watch: watchView, detail: detailView, map: mapView, events: eventsView, macro: macroView };
 
 export function route() {
   // 导航收敛（产品 §3.2）：当前任务由 hash 反推，不另存状态

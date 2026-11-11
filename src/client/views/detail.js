@@ -25,6 +25,8 @@ import { createQueryCache, describeRefresh } from '../shared/query-cache.js';
 import { comparisonCardHTML } from './comparison.js';
 import { attachGlossary, termHTML } from '../shared/glossary.js';
 import { followupsHTML, scopedFollowups } from '../shared/followups.js';
+import { OVERLAY_ASSETS, toBase100, alignOverlay, overlayPathHTML } from './detail-chart-tools.js';
+import { bindChartRangeRuler } from './detail-ruler.js';
 
 /**
  * 术语化的标签片段（产品 2.5）。
@@ -237,6 +239,7 @@ export function chartSVG(points, opts = {}) {
     overlays = [],
     events = [],
     monthMode = false,
+    overlayPath = '',
   } = opts;
   if (!points || points.length < 2) {
     return '<div class="chart-empty">没有足够的历史数据</div>';
@@ -330,6 +333,7 @@ export function chartSVG(points, opts = {}) {
     <path d="${area}" fill="url(#${gid})" stroke="none" />
     ${maLines}
     <path d="${line}" fill="none" stroke="${stroke}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" />
+    ${overlayPath}
     ${marks}
     ${xlabels}
     <g class="xhair" style="display:none">
@@ -345,7 +349,7 @@ export function chartSVG(points, opts = {}) {
  * 网格、刻度、事件线的画法和 chartSVG 保持一致（改一处记得同步另一处）。
  */
 export function candleSVG(series, opts = {}) {
-  const { decimals = 2, events = [], monthMode = false, overlays = [] } = opts;
+  const { decimals = 2, events = [], monthMode = false, overlays = [], overlayPath = '' } = opts;
   if (!series || series.length < 2) {
     return '<div class="chart-empty">没有足够的历史数据</div>';
   }
@@ -429,6 +433,7 @@ export function candleSVG(series, opts = {}) {
     ${eventLines}
     ${candles}
     ${maLines}
+    ${overlayPath}
     ${xlabels}
     <g class="xhair" style="display:none">
       <line class="xh-v" y1="${padT}" y2="${padT + innerH}" />
@@ -881,7 +886,40 @@ export function historyCacheNotice(history) {
   </div>`;
 }
 
+/** P2-T5：叠加对比用的另一条序列（定基 100），由 store.quotes 的同批次分时兜底 */
+export function currentDetailState() {
+  return detailState;
+}
+
+function overlaySeriesFor(id, baseDates) {
+  const q = (store.quotes ?? []).find((i) => i.id === id);
+  if (!q?.ok) return [];
+  const hist = Array.isArray(q.history) ? q.history : [];
+  // 分时点是 { t, p }；没有日线时按当前价格做一条水平参考线，不伪造历史
+  if (hist.length < 2) {
+    return baseDates.map((date) => [date, q.price - 1, q.price, q.price + 1, q.price - 1, 0, 0, null]);
+  }
+  const byDate = new Map();
+  for (const h of hist) {
+    if (!Number.isFinite(h.p)) continue;
+    const date = new Date(h.t).toISOString().slice(0, 10);
+    byDate.set(date, [date, h.p - 1, h.p, h.p + 1, h.p - 1, 0, 0, null]);
+  }
+  return baseDates.map((date) => byDate.get(date) ?? null).filter(Boolean);
+}
+
+function overlayPathFor(points, geom, overlayId) {
+  if (!overlayId || !points.length) return '';
+  const base = toBase100(points.map((p) => [p.label, p.v - 1, p.v, p.v + 1, p.v - 1, 0, 0, null]));
+  const other = toBase100(overlaySeriesFor(overlayId, base.map((b) => b.date)));
+  if (!other.length) return '';
+  return overlayPathHTML(alignOverlay(base, other), geom, { label: overlayId });
+}
+
 export function renderDetail(data) {
+  // 切换工具栏时 detailState.data 可能还没落地（mountDetail 直接调本函数）：
+  // 记住当前这份数据，后续重绘才有东西可用。
+  if (detailState) detailState.data = data;
   const d = data.decimals;
   const q = data.quote ?? {};
   const dir = dirOf(q.changePct);
@@ -893,6 +931,7 @@ export function renderDetail(data) {
   const showLog = detailState.scale === 'log';
   const showMA = detailState.ma !== false;
   const chartType = detailState.type ?? 'line';
+  const overlayId = detailState.overlay ?? null;
   const overlays = showMA
     ? [
         { name: 'MA20', color: '#5b9cf8', values: sma(series, 20) },
@@ -944,6 +983,12 @@ export function renderDetail(data) {
   const chartH = Math.round(Math.min(320, Math.max(180, chartW * 0.29)));
   const intraH = Math.round(Math.min(210, Math.max(132, chartW * 0.185)));
 
+  const lineGeom = chartAxisOf(points, { width: chartW, height: chartH, useLog: showLog });
+  const candleGeom = chartType === 'candle'
+    ? chartAxisOf(points, { width: chartW, height: chartH, useLog: showLog, hiLo: series.map((r) => [r[4], r[3]]) })
+    : lineGeom;
+  const overlayPath = overlayPathFor(points, candleGeom, overlayId);
+
   detailEl.innerHTML = html`
     <div class="d-top">
       <button type="button" class="back-btn" id="back">← 返回列表</button>
@@ -989,6 +1034,17 @@ export function renderDetail(data) {
       <div class="chart-head">
         <h3>历史走势 <span class="h3-note">${ranged[0]?.[0] ?? ''} ~ ${data.history.endDate ?? ''} · ${ranged.length} 条</span></h3>
         <div class="chart-controls">
+          <label class="overlay-pick">叠加对比
+            <select id="overlay-select" aria-label="叠加对比品种">
+              <option value="">关闭</option>
+              ${OVERLAY_ASSETS.map((id) => {
+                const flag = overlayId === id;
+                return flag
+                  ? html`<option value="${id}" selected>${id}</option>`
+                  : html`<option value="${id}">${id}</option>`;
+              })}
+            </select>
+          </label>
           <div class="seg" id="range-seg">
             ${[
               ['1y', '1年'],
@@ -1035,8 +1091,9 @@ export function renderDetail(data) {
             : ''
         }
         ${showLog ? '<span class="legend-note">对数坐标</span>' : ''}
-        <span class="legend-note">悬停看当根读数</span>
+        <span class="legend-note">悬停看当根读数 · 点击两点做区间测算</span>
       </div>
+      <div class="measure-info" id="measure-info" role="status" aria-live="polite"><span class="measure-hint">区间测算：点击图上两点锁定区间</span></div>
       <div class="chart-host" id="chart-host">${
         chartType === 'candle'
           ? raw(candleSVG(series, {
@@ -1047,6 +1104,7 @@ export function renderDetail(data) {
               overlays,
               events: drawnEvents,
               monthMode,
+              overlayPath,
             }))
           : raw(chartSVG(points, {
               width: chartW,
@@ -1057,6 +1115,7 @@ export function renderDetail(data) {
               overlays,
               events: drawnEvents,
               monthMode,
+              overlayPath,
             }))
       }</div>
       ${historyEmptyNotice(data.history)}
@@ -1168,6 +1227,12 @@ export function renderDetail(data) {
     });
   });
 
+  // P2-T5：叠加对比下拉。切换只改状态重绘，不重新取详情数据。
+  document.getElementById('overlay-select')?.addEventListener('change', (e) => {
+    detailState.overlay = e.target.value || null;
+    renderDetail(detailState.data);
+  });
+
   // 十字光标：几何要和图表用完全同一套，所以在这里重算一次（成本可以忽略）
   const chartHost = document.getElementById('chart-host');
   if (chartHost) {
@@ -1186,6 +1251,8 @@ export function renderDetail(data) {
       monthMode,
       eventLabel: (k) => EVENT_KIND_LABEL[k] ?? k,
     });
+    // P2-T5：点击两点锁定区间，实时显示天数 / 涨跌额 / 涨跌幅 / 年化波动率
+    bindChartRangeRuler(chartHost, { geom, series, decimals: d });
   }
 
   document.getElementById('more-rows')?.addEventListener('click', () => {

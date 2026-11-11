@@ -1777,3 +1777,47 @@
   padding-top: 2px;
   margin-top: 2px;
 }
+
+/* ================================================================== *
+ * P2-T4：BTC 7×24 全球流动性卫星风向标（去地理化 HUD）
+ *
+ * 不占用地图经纬度：它是浮在画布角落的独立徽章。旧版把它画在大西洋
+ * 中央（translate(196,296)），与「非地理资产不伪造坐标」的设计规范冲突。
+ * ================================================================== */
+.map-btc-node {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 12px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 12px;
+  z-index: 3;
+  pointer-events: auto;
+}
+
+.map-btc-node .btc-hud-title {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.map-btc-node .btc-hud-name {
+  color: var(--text);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.map-btc-node .btc-hud-price,
+.map-btc-node .btc-hud-pct {
+  font-family: var(--mono);
+  font-weight: 600;
+}
+
+.map-btn[data-action="toggle-autopilot"][aria-pressed="false"] {
+  color: var(--muted);
+  border-color: var(--border);
+}

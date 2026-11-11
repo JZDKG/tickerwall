@@ -2,7 +2,7 @@
 # 单容器镜像（方案 E08 / §5.3「常驻服务」）
 #
 # 取舍：
-#   · 只跑运行时（生产依赖为空 + 受管产物入库），所以镜像里不需要构建工具；
+#   · 只跑运行时（生产依赖 ajv / ajv-formats + 受管产物入库），镜像里不需要构建工具；
 #   · 数据卷是唯一持久状态：/app/data。容器重建不该丢 DB 与归档；
 #   · 非 root 用户运行；
 #   · 健康检查打 /api/health 并**看 readiness**，不是只看进程活着。
@@ -11,8 +11,8 @@ FROM node:24.21.0-alpine
 
 WORKDIR /app
 
-# 先装依赖（当前 dependencies 为空，这层主要是把契约固化下来：
-# 以后加了运行时依赖，镜像会自动带上，不需要改 Dockerfile）
+# 先装生产依赖（目前是 ajv / ajv-formats，服务端契约校验要 import；
+# 以后再加运行时依赖，这一层会自动带上，不需要改 Dockerfile）
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 

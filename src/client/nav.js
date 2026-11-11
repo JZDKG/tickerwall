@@ -40,7 +40,7 @@ export const TASKS = [
     label: '我的关注',
     hint: '只看你关心的问题',
     links: [
-      { hash: '#/events', label: '今天重点' },
+      { hash: '#/watch', label: '今天重点' },
     ],
   },
 ];
@@ -49,6 +49,9 @@ export const TASKS = [
 export function activeTaskOf(hash = '') {
   const h = String(hash ?? '');
   if (h.startsWith('#/map') || h.startsWith('#/macro')) return 'explore';
+  // 「我的关注」有自己的深链接：以前它指向 #/events，而 #/events 归 today，
+  // watch 分组永远不可能高亮。必须在 #/events 之前判，避免被前缀吃掉。
+  if (h.startsWith('#/watch')) return 'watch';
   if (h.startsWith('#/d/')) return 'today';
   if (h === '' || h === '#') return 'today';
   if (h.startsWith('#/events')) return 'today';

@@ -91,3 +91,15 @@ describe('内外盘对照的类名有样式', () => {
     });
   }
 });
+
+/* B6 回归：静态导航里「我的关注」必须指向独立的 #/watch 深链接 */
+describe('B6：导航里的 #/watch 深链接', () => {
+  it('watch 分组的链接 href 与 data-nav-hash 都是 #/watch', () => {
+    const { readFileSync } = require('node:fs');
+    const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+    const group = /<div class="task-group" data-task="watch">([\s\S]*?)<\/div>/.exec(html)?.[1] ?? '';
+    expect(group).toContain('href="#/watch"');
+    expect(group).toContain('data-nav-hash="#/watch"');
+    expect(group).not.toContain('href="#/events"');
+  });
+});

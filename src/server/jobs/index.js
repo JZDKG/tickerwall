@@ -154,7 +154,10 @@ export const QUEUE_HANDLERS = {
   'history-backfill': async (job) => {
     const id = job.payload?.asset ?? 'gold-intl';
     const res = await getDetail(id, { force: true });
-    const rows = res?.body?.history?.rows?.length ?? 0;
+    // getDetail 的真实返回是 { ok, id, ..., history: { count, daily } }。
+    // 以前读 res.body.history.rows.length（不存在），每次都判成 0 行进 dead。
+    const daily = res?.history?.daily ?? res?.body?.history?.daily ?? res?.body?.history?.rows ?? [];
+    const rows = Array.isArray(daily) ? daily.length : Number(res?.history?.count ?? 0);
     if (!rows) throw new Error(`历史回补失败：${id} 没有取到任何历史行`);
     return { asset: id, rows };
   },

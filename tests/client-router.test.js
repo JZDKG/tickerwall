@@ -219,3 +219,44 @@ describe('重复 route 不重挂', () => {
     expect(currentView()).toBe('events');
   });
 });
+
+/* ================================================================== *
+ * B6 回归：#/watch 是能真正落地的路由（不是只有高亮变了）
+ *
+ * 复用列表视图（关注简报就在 #home-brief 里），并自动展开折叠的关注简报，
+ * 让读者点「我的关注」后真的看到关注内容，而不是回到首页再自己找。
+ * ================================================================== */
+describe('B6：#/watch 路由落地', () => {
+  it('#/watch 挂到列表视图，并展开关注简报', () => {
+    const brief = document.createElement('section');
+    brief.id = 'home-brief';
+    brief.innerHTML = '<details class="home-brief-accordion"><summary>关注简报</summary></details>';
+    document.body.appendChild(brief);
+    try {
+      resetMountedForTests();
+      go('#/watch');
+      expect(els.list.hidden).toBe(false);
+      const details = brief.querySelector('details');
+      expect(details.open).toBe(true);
+      expect(brief.classList.contains('watch-focused')).toBe(true);
+    } finally {
+      brief.remove();
+    }
+  });
+
+  it('从 #/watch 切回首页时重新挂载（不是幂等早退）', () => {
+    const brief = document.createElement('section');
+    brief.id = 'home-brief';
+    brief.innerHTML = '<details class="home-brief-accordion"><summary>关注简报</summary></details>';
+    document.body.appendChild(brief);
+    try {
+      resetMountedForTests();
+      go('#/watch');
+      expect(currentView()).not.toBe('list');
+      go('');
+      expect(currentView()).toBe('list');
+    } finally {
+      brief.remove();
+    }
+  });
+});

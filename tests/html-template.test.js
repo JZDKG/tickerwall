@@ -475,7 +475,8 @@ describe('map.js 的 SVG 片段经过 raw() 放行', () => {
       'raw(sunMark)',
       'raw(regionSvg)',
       'raw(citySvg)',
-      'raw(btcSvg)',
+      // P2-T4：BTC 不再画在大西洋经纬度上，改成去地理化的 HUD 徽章片段
+      'raw(btcHud)',
       'raw(anchorsHtml)',
       'raw(beaconHtml)',
       'raw(feedRows)',

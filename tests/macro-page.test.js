@@ -485,7 +485,7 @@ describe('图谱聚焦资产', () => {
   });
 
   it('罗盘模式取选中对里可解释的那一端', () => {
-    // 可解释集合是 gold-intl / oil / us10y / dxy；vix 不可解释
+    // Phase 1 起是 10 个核心锚点；vix / copper 不在可解释集合里
     expect(set({ graphMode: 'compass', pair: ['vix', 'gold-intl'] })).toBe('gold-intl');
   });
 
@@ -494,7 +494,7 @@ describe('图谱聚焦资产', () => {
   });
 
   it('两端都不可解释时返回 null（不给一份讲不通的解释）', () => {
-    expect(set({ graphMode: 'compass', pair: ['vix', 'sp500'] })).toBeNull();
+    expect(set({ graphMode: 'compass', pair: ['vix', 'copper'] })).toBeNull();
   });
 
   it('没有选中对时返回 null', () => {

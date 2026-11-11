@@ -160,12 +160,12 @@ describe('getCalendar：ICS 失败 → 回退月度日程页', () => {
     expect(out.ok).toBe(true);
   });
 
-  it('所有源全挂：ok=false，但结构完整（前端显示降级）', async () => {
+  it('所有源全挂：启用确定性种子，日历不空白（Phase 1 / P1-T2）', async () => {
     fetchRaw.mockRejectedValue(new Error('offline'));
     const out = await getCalendar({ force: true });
-    expect(out.ok).toBe(false);
-    expect(out.events).toEqual([]);
-    expect(out.errors.length).toBeGreaterThanOrEqual(2);
+    expect(out.ok).toBe(true);
+    expect(out.events.length).toBeGreaterThan(0);
+    expect(out.errors.some((e) => e.includes('确定性日程种子'))).toBe(true);
     expect(out.coverage.monthsFetched).toHaveLength(5);
   });
 });

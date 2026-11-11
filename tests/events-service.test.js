@@ -20,6 +20,11 @@ vi.mock('../src/server/providers/news-feeds.js', async (importOriginal) => {
   return { ...actual, fetchFeedCatalog: vi.fn() };
 });
 
+vi.mock('../src/server/db/llm-cache.js', () => ({
+  loadLlmCache: vi.fn(),
+  saveLlmCache: vi.fn(),
+}));
+
 vi.mock('../src/server/db/index.js', () => ({
   kvGetJson: vi.fn(),
   kvSetJson: vi.fn(),
@@ -37,6 +42,7 @@ const { fetchFeedCatalog } = await import('../src/server/providers/news-feeds.js
 const { kvGetJson, kvSetJson, appendJsonl, readJsonl, readJsonlField } = await import(
   '../src/server/db/index.js'
 );
+const { loadLlmCache, saveLlmCache } = await import('../src/server/db/llm-cache.js');
 const events = await import('../src/server/services/events.service.js');
 
 const { loadLlmStore, archiveEvents, eventTimeMs, mergeHistoryRows, getEventHistory, getEvents } =
@@ -88,12 +94,16 @@ beforeEach(() => {
   fetchFeedCatalog.mockReset();
   kvGetJson.mockReset();
   kvSetJson.mockReset();
+  loadLlmCache.mockReset();
+  saveLlmCache.mockReset();
   appendJsonl.mockReset();
   readJsonl.mockReset();
   readJsonlField.mockReset();
 
   kvGetJson.mockReturnValue(null);
   kvSetJson.mockReturnValue();
+  loadLlmCache.mockReturnValue({});
+  saveLlmCache.mockReturnValue(0);
   appendJsonl.mockResolvedValue();
   readJsonl.mockResolvedValue([]);
   readJsonlField.mockResolvedValue(new Set());
@@ -532,9 +542,9 @@ describe('LLM 复核：别名归一、坏输出兜底与落盘', () => {
 
     const first = await getEvents({ force: true });
     expect(first.llm.enabled).toBe(true);
-    // 后台分类 + 3 秒 debounce 落盘
+    // 后台分类 + 3 秒 debounce 落盘：Phase 1 起走 llm_headline_cache 逐条 upsert
     await vi.advanceTimersByTimeAsync(4000);
-    expect(kvSetJson).toHaveBeenCalledWith('llm-cache', expect.any(Object));
+    expect(saveLlmCache).toHaveBeenCalledWith(expect.any(Object), expect.any(Number));
 
     const second = await getEvents();
     const it = second.items[0];
@@ -686,7 +696,7 @@ describe('archiveEvents：按天追加、同日去重、失败不影响主流程
 describe('loadLlmStore：重启后恢复 7 天内的分类缓存', () => {
   it('丢弃过期与非对象条目，并打日志', async () => {
     const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-26T00:00:00Z'));
-    kvGetJson.mockReturnValue({
+    loadLlmCache.mockReturnValue({
       fresh: { topics: [], level: 'high', at: Date.parse('2026-10-25T00:00:00Z') },
       stale: { topics: [], level: 'high', at: Date.parse('2026-10-01T00:00:00Z') },
       bad: 'nope',
@@ -700,7 +710,20 @@ describe('loadLlmStore：重启后恢复 7 天内的分类缓存', () => {
     expect(logs.join('\n')).toMatch(/恢复 1 条/);
   });
 
+  it('新表为空时回退读取旧 kv 缓存（迁移平滑期）', async () => {
+    loadLlmCache.mockReturnValue({});
+    kvGetJson.mockReturnValue({ legacy: { topics: [], level: 'mid', at: Date.now() } });
+    const logs = [];
+    const realLog = console.log;
+    console.log = (...a) => logs.push(a.join(' '));
+    await loadLlmStore();
+    console.log = realLog;
+    expect(kvGetJson).toHaveBeenCalledWith('llm-cache');
+    expect(logs.join('\n')).toMatch(/恢复 1 条/);
+  });
+
   it('没有缓存 / 读取异常都不抛', async () => {
+    loadLlmCache.mockReturnValue({});
     kvGetJson.mockReturnValue(null);
     await expect(loadLlmStore()).resolves.toBeUndefined();
     kvGetJson.mockImplementation(() => {
@@ -712,6 +735,13 @@ describe('loadLlmStore：重启后恢复 7 天内的分类缓存', () => {
     await expect(loadLlmStore()).resolves.toBeUndefined();
     console.warn = realWarn;
     expect(warns.join('\n')).toMatch(/LLM 缓存恢复失败.*db closed/);
+  });
+
+  it('SQLite 表读不了时仍能读出旧 kv 缓存，不抛', async () => {
+    loadLlmCache.mockImplementation(() => { throw new Error('no such table'); });
+    kvGetJson.mockReturnValue({ legacy: { topics: [], level: 'mid', at: Date.now() } });
+    await expect(loadLlmStore()).resolves.toBeUndefined();
+    expect(kvGetJson).toHaveBeenCalledWith('llm-cache');
   });
 });
 

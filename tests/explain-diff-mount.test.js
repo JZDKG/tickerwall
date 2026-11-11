@@ -112,3 +112,66 @@ describe('取数层', () => {
     expect(seen).toContain('with=exp_1');
   });
 });
+
+/* ================================================================== *
+ * B3 回归：点击「和上一版差在哪？」要渲染 body，不是包一层的 {status, body}
+ *
+ * 故障形态：fetchExplanationDiff 返回 { status, body }，点击处理器却把
+ * { status, body } 整个交给 diffPanelHTML —— 它期望的是 body 本身，于是
+ * payload.status 恒为 200、payload.diff 恒为 undefined，任何响应都渲染成
+ * 「变化记录暂时不可用」。这里从真实点击链路验两种响应。
+ * ================================================================== */
+describe('B3：点击后按 body 渲染（不再把 {status, body} 传给面板）', () => {
+  const withFetch = (body) => async () => ({ status: 200, json: async () => body });
+
+  it('status: no-previous 渲染「第一版」，不是「暂时不可用」', async () => {
+    const root = mount();
+    bindExplainInteractions(root, () => state, {
+      fetchImpl: withFetch({ ok: true, status: 'no-previous', diff: null }),
+      onChange: () => {},
+    });
+    root.querySelector('[data-explain-diff]').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 10));
+    const slot = root.querySelector('[data-explain-diff-slot]');
+    expect(slot.querySelector('.dfd-panel--first')).toBeTruthy();
+    expect(slot.textContent).toContain('第一版');
+    expect(slot.textContent).not.toContain('变化记录暂时不可用');
+  });
+
+  it('带 diff 的响应渲染变化内容，不是「暂时不可用」', async () => {
+    const root = mount();
+    const body = {
+      ok: true,
+      status: 'ok',
+      summary: '1 项数据事实变了',
+      diff: {
+        hasChanges: true,
+        rulesChangedFlag: false,
+        contentStatusChanged: null,
+        hypotheses: [],
+        facts: [{ kind: 'changed', key: 'TARGET_CHANGE', label: '本窗口变化', before: -0.13, after: -0.42 }],
+        counts: { hypothesesChanged: 0, factsChanged: 1 },
+      },
+    };
+    bindExplainInteractions(root, () => state, { fetchImpl: withFetch(body), onChange: () => {} });
+    root.querySelector('[data-explain-diff]').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 10));
+    const slot = root.querySelector('[data-explain-diff-slot]');
+    expect(slot.textContent).toContain('本窗口变化');
+    expect(slot.textContent).toContain('1 项数据事实变了');
+    expect(slot.textContent).not.toContain('变化记录暂时不可用');
+  });
+
+  it('接口失败时把 body 里的 error 显示出来（不再被 {status, body} 包住）', async () => {
+    const root = mount();
+    bindExplainInteractions(root, () => state, {
+      fetchImpl: async () => { throw new Error('接口 503'); },
+      onChange: () => {},
+    });
+    root.querySelector('[data-explain-diff]').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 10));
+    const slot = root.querySelector('[data-explain-diff-slot]');
+    expect(slot.textContent).toContain('接口 503');
+    expect(slot.textContent).not.toContain('变化记录暂时不可用');
+  });
+});

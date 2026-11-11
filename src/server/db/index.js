@@ -100,3 +100,5 @@ export {
   writeHistoryFile,
   readHistoryFile,
 } from './files.js';
+
+export { saveLlmCache, loadLlmCache } from './llm-cache.js';

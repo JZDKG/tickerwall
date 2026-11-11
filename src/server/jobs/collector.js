@@ -16,6 +16,7 @@
 import {
   recordCollectionSuccess,
   recordCollectionFailure,
+  recordCollectionWatermark,
   readCollectionState,
   listCollectionStates,
 } from '../db/index.js';
@@ -24,6 +25,7 @@ import {
 export const dbStateStore = {
   success: (key, at) => recordCollectionSuccess(key, at),
   failure: (key, error, opts) => recordCollectionFailure(key, error, opts),
+  watermark: (key, cutoffAt) => recordCollectionWatermark(key, cutoffAt),
   read: (key) => readCollectionState(key),
   list: () => listCollectionStates(),
 };
@@ -35,7 +37,7 @@ export function backoffFor(fails, { baseMs = 60_000, maxMs = 30 * 60_000 } = {})
 }
 
 /**
- * @param {{jobs:Array<object>, store?:object, now?:()=>number, onError?:Function, log?:Function}} opts
+ * @param {{jobs:Array<object>, store?:object, now?:()=>number, onError?:Function, log?:Function, sseHub?:object}} opts
  */
 export function createCollector(opts = {}) {
   const jobs = new Map((opts.jobs ?? []).map((j) => [j.key, j]));
@@ -43,6 +45,7 @@ export function createCollector(opts = {}) {
   const now = opts.now ?? (() => Date.now());
   const onError = opts.onError ?? (() => {});
   const log = opts.log ?? (() => {});
+  const sseHub = opts.sseHub ?? null;
 
   /** 进行中的任务：key → Promise。这是「同键合并」的实现位置 */
   const inflight = new Map();
@@ -83,13 +86,26 @@ export function createCollector(opts = {}) {
 
     const promise = (async () => {
       try {
-        await job.run({ now: now() });
+        const out = await job.run({ now: now() });
         store.success?.(key, now());
+        // 抓取成功不等于有新数据：把「这次数据本身截止到哪一刻」记下来，
+        // 页面上「数据截止」读的是它，而不是本次抓取的时间。
+        const cutoff = out?.updatedAt ?? out?.asOf ?? out?.generatedAt ?? new Date(now()).toISOString();
+        store.watermark?.(key, cutoff);
         const interval = Number(job.intervalMs ?? 60_000);
         setNextDue(key, now() + interval);
         const result = { key, status: 'ok', at: now() };
         lastResult.set(key, result);
         log(`[collector] ${key} 成功`);
+        // Phase 1 / P1-T3：采集完成后向所有在线 SSE 客户端推增量。
+        // 广播失败绝不能把一次成功的采集判成失败（在线客户端是加分项）。
+        if (sseHub?.publishJobResult) {
+          try {
+            sseHub.publishJobResult(key, out);
+          } catch (err) {
+            log(`[collector] ${key} SSE 广播失败：${err?.message ?? err}`);
+          }
+        }
         // 成功之后把依赖它的任务提前到「现在可跑」
         for (const dep of job.triggers ?? []) setNextDue(dep, 0);
         return result;
@@ -137,6 +153,7 @@ export function createCollector(opts = {}) {
         fails: persisted?.fails ?? 0,
         lastError: persisted?.lastError ?? null,
         backoffUntil: persisted?.backoffUntil ?? null,
+        dataCutoffAt: persisted?.dataCutoffAt ?? null,
         lastResult: lastResult.get(key) ?? null,
       });
     }
@@ -152,8 +169,8 @@ export function createCollector(opts = {}) {
  * 用单一 setInterval 逐任务判断是否到期，而不是每个任务各起一个定时器：
  * 后者在「任务变多 + 退避」时很难统一观察，也不方便在测试里推进。
  */
-export function startCollector({ jobs, store, now, onError, log, everyMs = 15_000 } = {}) {
-  const collector = createCollector({ jobs, store, now, onError, log });
+export function startCollector({ jobs, store, now, onError, log, sseHub, everyMs = 15_000 } = {}) {
+  const collector = createCollector({ jobs, store, now, onError, log, sseHub });
   // 启动即跑一轮：进程刚起来时不该等一个周期才有数据
   void collector.tick();
   const timer = setInterval(() => {

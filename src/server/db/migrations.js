@@ -196,6 +196,35 @@ export const MIGRATIONS = [
       }
     },
   },
+  {
+    version: 4,
+    name: 'sqlite-storage-convergence',
+    up(db) {
+      /**
+       * Phase 1 / P1-T1：把仍在全量 JSON 覆盖写的两份内存状态收进 SQLite。
+       *
+       * intraday_ring —— 分时走势点。原先 data/history.json 每 2 秒把整个
+       * ring 序列化一遍；现在按 (instrument_id, ts) 逐点 upsert，读回时
+       * 按时间升序、每品种取最近 HISTORY_LIMIT 个点。
+       *
+       * llm_headline_cache —— LLM 标题分类缓存。原先整个 Map 写成一个 kv
+       * 值（一条超长 JSON），每批分类都要重写全部条目；现在一个 hash 一行，
+       * 只有内容变了的条目才更新。
+       */
+      db.exec(`CREATE TABLE IF NOT EXISTS intraday_ring (
+        instrument_id TEXT NOT NULL,
+        ts INTEGER NOT NULL,
+        price REAL NOT NULL,
+        PRIMARY KEY (instrument_id, ts)
+      )`);
+      db.exec('CREATE INDEX IF NOT EXISTS idx_intraday_lookup ON intraday_ring(instrument_id, ts DESC)');
+      db.exec(`CREATE TABLE IF NOT EXISTS llm_headline_cache (
+        hash TEXT PRIMARY KEY,
+        payload_json TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      )`);
+    },
+  },
 ];
 
 /** 当前代码期望的 schema 版本 */

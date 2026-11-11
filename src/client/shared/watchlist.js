@@ -116,3 +116,56 @@ export function assetsOf(keys) {
   }
   return set;
 }
+
+/* ================================================================== *
+ * 标的星标自选（P2-T3）
+ *
+ * 与上面的「关注问题」是两件事：问题最多三个、绑定解释资产；标的自选没有
+ * 上限，钉的是一级标的 id，用于首屏置顶分组与事件流过滤。刻意不复用
+ * normalizeWatched —— 那边会截断到 3 个，正好是这里最不该发生的事。
+ * ================================================================== */
+
+export const PINNED_STORAGE_KEY = 'kanban.pinnedAssets.v1';
+
+/** 只留非空字符串、去重；坏 JSON / 非数组一律当没选 */
+export function normalizePinned(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const id of raw) {
+    if (typeof id !== 'string' || !id || out.includes(id)) continue;
+    out.push(id);
+  }
+  return out;
+}
+
+export function readPinnedAssets(storage) {
+  try {
+    const raw = storage?.getItem?.(PINNED_STORAGE_KEY);
+    if (!raw) return [];
+    return normalizePinned(JSON.parse(raw));
+  } catch {
+    return [];
+  }
+}
+
+function writePinnedAssets(storage, ids) {
+  const next = normalizePinned(ids);
+  try {
+    storage?.setItem?.(PINNED_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // 隐私模式下 localStorage 会抛：这次没记住，但界面状态照常更新
+  }
+  return next;
+}
+
+/** 切换星标，返回实际存下的 id 列表（顺序 = 点击顺序） */
+export function togglePinnedAsset(storage, id) {
+  if (typeof id !== 'string' || !id) return readPinnedAssets(storage);
+  const cur = readPinnedAssets(storage);
+  const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
+  return writePinnedAssets(storage, next);
+}
+
+export function isAssetPinned(storage, id) {
+  return readPinnedAssets(storage).includes(id);
+}

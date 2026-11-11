@@ -1,0 +1,117 @@
+/* ================================================================== *
+ * workspace.css —— 工作台控制条（P2-T2）
+ *
+ * 紧凑的一行工具条，放在行情列表上方。密度与主题的视觉差异主要落在
+ * ticker-list.css（磁贴墙 / 分组标题）与 tokens.css（CSS 变量）里。
+ * ================================================================== */
+
+#ws-bar.ws-bar,
+.ws-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.ws-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ws-label {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.ws-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+/* 控制条按钮（data-ws-* 由 workspace-bar.js 生成，配好按下态） */
+.ws-seg button[data-ws-density],
+.ws-seg button[data-ws-anchor],
+.ws-seg button[data-ws-scheme],
+.ws-seg button[data-ws-theme] {
+  padding: 4px 10px;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ws-seg button:hover {
+  color: var(--text);
+}
+
+.ws-seg button[aria-pressed="true"] {
+  color: var(--text);
+  background: var(--panel-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+/* 合成指标条（P2-T3） */
+.synthetics-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.synthetic-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.synthetic-chip.is-dead {
+  opacity: 0.55;
+}
+
+.synthetic-chip b {
+  font-family: var(--mono);
+  color: var(--text);
+}
+
+/* 星标自选（P2-T3） */
+.pin-btn {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  padding: 2px 6px;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.pin-btn[aria-pressed="true"] {
+  color: #e0a83c;
+}
+
+@media (max-width: 880px) {
+  .ws-bar { gap: 6px 10px; }
+  .ws-seg button { padding: 4px 7px; font-size: 11px; }
+}

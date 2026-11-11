@@ -15,8 +15,9 @@
 
 // gold-v1：只有黄金。gold-v2：加入原油（含事件型供给/需求机制）。
 // gold-v3：加入美债 10 年期与美元指数（收益率分解 + 利差/避险）。
+// cross-asset-v1：Phase 1 / P1-T4 补齐六个跨资产锚点（股/币/A股/汇率/沪金）。
 // 版本号进快照，历史解释不会被新规则重新解释。
-export const MECHANISM_LIBRARY_VERSION = 'gold-v3';
+export const MECHANISM_LIBRARY_VERSION = 'cross-asset-v1';
 
 /** 关系类型：决定图上怎么画、文案怎么说，绝不能混用 */
 export const RELATION_TYPES = {
@@ -501,6 +502,133 @@ export const MECHANISMS = [
     needsEventEvidence: false,
     horizon: 'unknown',
     sources: [CHICAGO_FED],
+  },
+
+  /* ---------------- Phase 1 / P1-T4：六个新增资产的候选机制 ----------------
+     这些是「一般机制」而非当日归因，与上面四条锚点同一套字段契约：
+     每条都要写清方向、必要条件、削弱情形与来源。 */
+  {
+    id: 'M-SP500-DISCOUNT', version: MECHANISM_LIBRARY_VERSION,
+    relationType: 'mechanism', from: 'us10y', to: 'sp500', sign: -1,
+    label: '估值折现', plain: '折现率：利率越高，未来盈利折算到今天的价值越低。',
+    mechanism: '无风险利率上行抬高股权折现率，在盈利预期不变时压制估值；但利率上行也可能来自增长预期改善，方向并不唯一。',
+    requires: [{ instrument: 'us10y', label: '10 年期名义收益率' }],
+    conditionCodes: ['SAME_WINDOW', 'SIGNED_SERIES'],
+    exclusions: ['利率上行由增长预期推动，盈利上修抵消了折现率上升', '流动性驱动的普涨行情盖过估值渠道'],
+    needsEventEvidence: false, horizon: 'days-to-weeks', sources: [FRED_DFII10],
+  },
+  {
+    id: 'M-SP500-RISK', version: MECHANISM_LIBRARY_VERSION,
+    relationType: 'mechanism', from: 'vix', to: 'sp500', sign: -1,
+    label: '风险偏好', plain: '风险偏好：波动率上升常伴随资金撤离权益资产。',
+    mechanism: '波动率上升通常对应风险偏好收缩与股指回落，这是同步信号；恐慌本身不解释为什么发生。',
+    requires: [{ instrument: 'vix', label: 'VIX 波动率指数' }],
+    conditionCodes: ['SAME_WINDOW'],
+    exclusions: ['政策或流动性利好推动股指与波动率同向上行', '只有波动率变化、没有任何资金流证据'],
+    needsEventEvidence: false, horizon: 'days', sources: [],
+  },
+  {
+    id: 'M-NDX100-RATE', version: MECHANISM_LIBRARY_VERSION,
+    relationType: 'mechanism', from: 'us10y', to: 'ndx100', sign: -1,
+    label: '久期敏感', plain: '久期：成长股的现金流更靠后，对折现率变化更敏感。',
+    mechanism: '纳斯达克成分以长久期成长股为主，利率上行对估值的压制通常强于宽基指数；但盈利超预期可以盖过这一渠道。',
+    requires: [{ instrument: 'us10y', label: '10 年期名义收益率' }],
+    conditionCodes: ['SAME_WINDOW', 'SIGNED_SERIES'],
+    exclusions: ['盈利或产业周期驱动的独立行情', '利率与股指被同一组流动性因素同时推动'],
+    needsEventEvidence: false, horizon: 'days-to-weeks', sources: [FRED_DFII10],
+  },
+  {
+    id: 'M-NDX100-SP500', version: MECHANISM_LIBRARY_VERSION,
+    relationType: 'valuation-conversion', from: 'sp500', to: 'ndx100', sign: 1,
+    label: '权重重叠', plain: '权重重叠：纳指成分大多也是标普成分，两者长期同向。',
+    mechanism: '两个指数共享大量权重股，因此大体同向；但行业权重差异会让相对强弱随风格轮动明显变化。',
+    requires: [{ instrument: 'sp500', label: '标普 500 指数' }],
+    conditionCodes: ['SAME_WINDOW'],
+    exclusions: ['风格剧烈切换（价值/成长）导致两者背离', '交易时段不重叠，当日变化不可比'],
+    needsEventEvidence: false, horizon: 'same-day', sources: [],
+  },
+  {
+    id: 'M-BTC-LIQUIDITY', version: MECHANISM_LIBRARY_VERSION,
+    relationType: 'mechanism', from: 'dxy', to: 'btc', sign: -1,
+    label: '流动性虹吸', plain: '流动性虹吸：美元走强常对应全球美元流动性收紧。',
+    mechanism: '美元与美元流动性收紧时，高波动资产常承压；但比特币同时被自身的采用周期与监管事件驱动，这条渠道不是唯一解释。',
+    requires: [{ instrument: 'dxy', label: '美元指数' }],
+    conditionCodes: ['SAME_WINDOW'],
+    exclusions: ['加密市场自身的独立事件（监管、减半、ETF 流量）主导', '美元与比特币被同一组避险情绪同时推动'],
+    needsEventEvidence: false, horizon: 'days-to-weeks', sources: [],
+  },
+  {
+    id: 'M-BTC-RISK-BETA', version: MECHANISM_LIBRARY_VERSION,
+    relationType: 'historical-correlation', from: 'ndx100', to: 'btc', sign: 0,
+    label: '高 Beta 相关', plain: '历史相关：比特币与科技股在风险偏好上行期多次同向。',
+    mechanism: '两者在流动性宽松、风险偏好上行时历史上多次同向，但这是统计相关，不指定方向也不给当期原因。',
+    requires: [{ instrument: 'ndx100', label: '纳斯达克 100 指数' }],
+    conditionCodes: ['SAME_WINDOW', 'STATISTICAL_ONLY'],
+    exclusions: ['加密市场出现独立冲击，相关性短期失效', '样本窗口内相关性不稳定'],
+    needsEventEvidence: false, horizon: 'unknown', sources: [],
+  },
+  {
+    id: 'M-SH-COPPER', version: MECHANISM_LIBRARY_VERSION,
+    relationType: 'historical-correlation', from: 'copper', to: 'sh000001', sign: 0,
+    label: '中国需求映射', plain: '历史相关：铜价常被当作中国工业需求的同步代理。',
+    mechanism: '铜价与 A 股周期板块历史上多次同向，反映的是共同的工业需求预期；统计相关不等于铜价推动了股指。',
+    requires: [{ instrument: 'copper', label: '铜价' }],
+    conditionCodes: ['SAME_WINDOW', 'STATISTICAL_ONLY'],
+    exclusions: ['政策或流动性主导的独立行情', '铜的供给端独立冲击'],
+    needsEventEvidence: false, horizon: 'unknown', sources: [],
+  },
+  {
+    id: 'M-SH-FX', version: MECHANISM_LIBRARY_VERSION,
+    relationType: 'mechanism', from: 'usdcny', to: 'sh000001', sign: -1,
+    label: '汇率与外资', plain: '汇率渠道：本币贬值可能影响外资持有人民币资产的意愿。',
+    mechanism: '人民币贬值会抬高外资的本币换算损失，可能压制外资流入；但国内政策与盈利预期往往盖过这条渠道。',
+    requires: [{ instrument: 'usdcny', label: '美元兑人民币汇率' }],
+    conditionCodes: ['SAME_WINDOW'],
+    exclusions: ['国内政策/盈利主导，汇率变化被忽略', '资本管制或离岸在岸价差主导'],
+    needsEventEvidence: false, horizon: 'days-to-weeks', sources: [],
+  },
+  {
+    id: 'M-USDCNY-RATE-DIFF', version: MECHANISM_LIBRARY_VERSION,
+    relationType: 'mechanism', from: 'us10y', to: 'usdcny', sign: 1,
+    label: '利差与汇率', plain: '利差：中美利率之差影响套息资金与汇率。',
+    mechanism: '美债收益率相对上行时，美元资产的利息回报变高，可能推动美元兑人民币上行；但央行中间价与资本流动管理会削弱这一渠道。',
+    requires: [{ instrument: 'us10y', label: '10 年期名义收益率' }],
+    conditionCodes: ['SAME_WINDOW', 'SIGNED_SERIES'],
+    exclusions: ['中间价逆周期调节或资本流动管理主导', '中国利率同幅上行，利差其实没变'],
+    needsEventEvidence: false, horizon: 'days-to-weeks', sources: [FRED_DFII10],
+  },
+  {
+    id: 'M-USDCNY-DXY', version: MECHANISM_LIBRARY_VERSION,
+    relationType: 'co-driver', from: 'dxy', to: 'usdcny', sign: 0,
+    label: '共同驱动', plain: '共同驱动：美元指数与人民币汇率被同一组美元强弱因素推动。',
+    mechanism: '两者都反映美元的广义强弱，但不构成单向因果；人民币还受国内政策与结售汇影响。',
+    requires: [{ instrument: 'dxy', label: '美元指数' }],
+    conditionCodes: ['SAME_WINDOW', 'NOT_CAUSAL'],
+    exclusions: ['人民币出现独立的政策或贸易冲击'],
+    needsEventEvidence: false, horizon: 'unknown', sources: [],
+  },
+  {
+    id: 'M-GOLDCN-CONVERSION', version: MECHANISM_LIBRARY_VERSION,
+    relationType: 'valuation-conversion', from: 'gold-intl', to: 'gold-cn', sign: 1,
+    label: '内外盘折算', plain: '计价换算：国际金按「÷31.1035 × 汇率」折算成人民币/克。',
+    mechanism: '国内金价由国际金价经汇率折算而来，叠加境内外溢价与交易时段差异；只看国际金方向不足以解释国内金。',
+    requires: [
+      { instrument: 'gold-intl', label: '国际金价' },
+      { instrument: 'usdcny', label: '美元兑人民币汇率', optional: true },
+    ],
+    conditionCodes: ['SAME_WINDOW', 'NEEDS_FX'],
+    exclusions: ['境内外溢价明显走阔', '两个市场交易时段不重叠', '汇率大幅波动抵消了国际金方向'],
+    needsEventEvidence: false, horizon: 'same-day', sources: [],
+  },
+  {
+    id: 'M-GOLDCN-REAL-YIELD', version: MECHANISM_LIBRARY_VERSION,
+    relationType: 'mechanism', from: 'dfii10', to: 'gold-cn', sign: -1,
+    label: '机会成本', plain: '机会成本：实际收益率是不付息资产的持有成本。',
+    mechanism: '实际收益率上升抬高持有黄金的机会成本，对国内金价同样构成压力；但人民币汇率与境内溢价会叠加另一层影响。',
+    requires: [{ instrument: 'dfii10', label: '10 年期实际收益率' }],
+    conditionCodes: ['SAME_WINDOW', 'SIGNED_SERIES'],
+    exclusions: ['人民币贬值抵消了国际金的下跌', '境内购金需求或溢价主导'],
+    needsEventEvidence: false, horizon: 'days-to-weeks', sources: [FRED_DFII10],
   },
 ];
 

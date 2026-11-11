@@ -47,6 +47,7 @@ export default defineConfig({
       entry: {
         'macro-flow': path.resolve(root, 'src/client/views/macro/index.js'),
         'geo-kit': path.resolve(root, 'src/client/vendor/geo-kit.js'),
+        'ui-kit': path.resolve(root, 'src/client/vendor/ui-kit.js'),
       },
       formats: ['es'],
       fileName: (_format, entryName) => `${entryName}.js`,

@@ -284,16 +284,15 @@ describe('请求序号：旧响应不能覆盖新选择', () => {
 
   it('未开放资产直接进 unsupported，不发请求', async () => {
     const fetchImpl = vi.fn();
-    const st = createExplainState('btc');
+    const st = createExplainState('vix');
     expect(st.phase).toBe('unsupported');
     const out = await refreshExplain(st, { fetchImpl });
     expect(out.phase).toBe('unsupported');
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(isExplainable('gold-intl')).toBe(true);
-    // C1 之后原油、美债 10 年期、美元指数都已开放；
-    // 未登记机制库的资产（比特币、标普）仍然不在集合里
-    for (const id of ['gold-intl', 'oil', 'us10y', 'dxy']) expect(isExplainable(id), id).toBe(true);
-    for (const id of ['btc', 'sp500', 'copper']) expect(isExplainable(id), id).toBe(false);
+    // Phase 1 / P1-T4：10 个核心锚点全部开放；未登记的 vix / brent / copper 仍不在集合里
+    for (const id of ['gold-intl', 'oil', 'us10y', 'dxy', 'btc', 'sp500']) expect(isExplainable(id), id).toBe(true);
+    for (const id of ['vix', 'brent', 'copper']) expect(isExplainable(id), id).toBe(false);
   });
 });
 

@@ -117,3 +117,36 @@ describe('写高亮', () => {
     expect(applyNavActive(null, '#/map')).toBeNull();
   });
 });
+
+/* ================================================================== *
+ * B6 回归：「我的关注」有自己的深链接 #/watch
+ *
+ * 故障形态：watch 分组的「今天重点」指向 #/events，而 activeTaskOf('#/events')
+ * 返回 today —— watch 分组永远不可能高亮，任务和路由错位。
+ * ================================================================== */
+describe('B6：#/watch 是「我的关注」的独立任务', () => {
+  it('activeTaskOf("#/watch") === "watch"', () => {
+    expect(activeTaskOf('#/watch')).toBe('watch');
+    expect(activeTaskOf('#/watch?focus=1')).toBe('watch');
+  });
+
+  it('TASKS 里 watch 的链接指向 #/watch（不再挤在 #/events 上）', () => {
+    const watch = TASKS.find((t) => t.id === 'watch');
+    expect(watch.links[0].hash).toBe('#/watch');
+  });
+
+  it('applyNavActive 高亮 [data-task="watch"] 并清掉其它任务', () => {
+    const el = document.createElement('nav');
+    el.innerHTML = `
+      <div data-task="today" data-nav-hash=""></div>
+      <div data-task="watch" data-nav-hash="#/watch"></div>`;
+    expect(applyNavActive(el, '#/watch')).toBe('watch');
+    expect(el.querySelector('[data-task="watch"]').classList.contains('is-active')).toBe(true);
+    expect(el.querySelector('[data-task="today"]').classList.contains('is-active')).toBe(false);
+    expect(el.querySelector('[data-nav-hash="#/watch"]').classList.contains('is-active')).toBe(true);
+  });
+
+  it('#/events 仍然归 today（没有把事件中心抢走）', () => {
+    expect(activeTaskOf('#/events')).toBe('today');
+  });
+});

@@ -65,10 +65,72 @@ export const SHOCK_CONDITION_SETS = {
       requires: ['DEMAND_EVIDENCE'],
     },
   },
+  /* Phase 1 / P1-T4：五个震源补齐条件集，沙盘不再是「只有 oil 配了规则」的半成品。
+     每个条件只筛「本次有资格参与的边」，并写明被抑制的边与理由。 */
   dxy: {
     unknown: { enabled: null, suppressed: {}, requires: [] },
-    supply: { enabled: null, suppressed: {}, requires: [] },
-    demand: { enabled: null, suppressed: {}, requires: [] },
+    supply: {
+      enabled: ['E01', 'E02', 'E03', 'E04', 'E07'],
+      suppressed: { E05: '美元走强由避险推动时，收益率常同时下行，机会成本渠道不自动成立' },
+      requires: ['SHOCK_TYPE_CLASSIFIED'],
+    },
+    demand: {
+      enabled: ['E07', 'E06', 'E17', 'E13'],
+      suppressed: { E01: '美国增长需求走强时黄金与美元可能同向，计价压制不自动成立' },
+      requires: ['DEMAND_EVIDENCE'],
+    },
+  },
+  us10y: {
+    unknown: { enabled: null, suppressed: {}, requires: [] },
+    supply: {
+      enabled: ['E05', 'E06', 'E07', 'E01'],
+      suppressed: { E08: '收益率上行由供给/通胀驱动时，油价未必同向，通胀驱动渠道需要单独证据' },
+      requires: ['SHOCK_TYPE_CLASSIFIED'],
+    },
+    demand: {
+      enabled: ['E06', 'E17', 'E11', 'E13'],
+      suppressed: { E09: '增长驱动的上行不等于通胀加息渠道，利率跟随涨价不是必然结果' },
+      requires: ['DEMAND_EVIDENCE'],
+    },
+  },
+  vix: {
+    unknown: { enabled: null, suppressed: {}, requires: [] },
+    supply: {
+      enabled: ['E15', 'E14', 'E05', 'E04'],
+      suppressed: { E13: '流动性紧张时科技股与比特币同跌，高 Beta 相关渠道不自动成立' },
+      requires: ['EVENT_EVIDENCE'],
+    },
+    demand: {
+      enabled: ['E14', 'E17', 'E13'],
+      suppressed: { E15: '风险偏好回升时避险买盘渠道被抑制，黄金不一定跟涨' },
+      requires: ['DEMAND_EVIDENCE'],
+    },
+  },
+  copper: {
+    unknown: { enabled: null, suppressed: {}, requires: [] },
+    supply: {
+      enabled: ['E11', 'E12', 'E03'],
+      suppressed: { E08: '铜的供给受阻不等于通胀驱动黄金，需要实际通胀证据' },
+      requires: ['SHOCK_TYPE_CLASSIFIED'],
+    },
+    demand: {
+      enabled: ['E11', 'E12', 'E02', 'E17'],
+      suppressed: { E15: '工业需求走强时避险渠道通常被抑制' },
+      requires: ['DEMAND_EVIDENCE'],
+    },
+  },
+  ndx100: {
+    unknown: { enabled: null, suppressed: {}, requires: [] },
+    supply: {
+      enabled: ['E13', 'E14', 'E17', 'E06'],
+      suppressed: { E11: '科技板块独立行情不等于全球工业需求改善，铜的映射渠道不自动成立' },
+      requires: ['SHOCK_TYPE_CLASSIFIED'],
+    },
+    demand: {
+      enabled: ['E13', 'E17', 'E06', 'E11'],
+      suppressed: { E15: '风险偏好上行时避险买盘渠道被抑制' },
+      requires: ['DEMAND_EVIDENCE'],
+    },
   },
 };
 
