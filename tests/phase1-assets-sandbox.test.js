@@ -136,3 +136,57 @@ describe('问题卡按 σ 显著性动态选品种', () => {
     expect(CORE_IDS).toContain(picked[0].assetId);
   });
 });
+
+describe('冷启动：intraday 历史点数不足时仍凑够候选（B4 回归）', () => {
+  // 真实 /api/quotes 的冷启动形态：history 只有 1~3 个盘中点，
+  // sigmaOfHistory 要求 >= 8 个点 → 绝大多数品种拿不到 σ。
+  const sparse = (id, changePct) => ({ id, name: id, changePct, history: [{ t: 1, p: 100 }, { t: 2, p: 100.5 }] });
+  const fullHistory = Array.from({ length: 12 }, (_, k) => ({ t: k, p: 100 + 3 * Math.sin(k) }));
+
+  it('σ 有效候选不足 target 时，用其它可解释品种按 |changePct| 补齐到 target', () => {
+    const quotes = [
+      { id: 'gold-intl', name: '国际金价', changePct: 0.11, history: fullHistory },
+      sparse('oil', 2.5), sparse('dxy', -1.8), sparse('btc', 1.2),
+      sparse('sp500', 0.4), sparse('us10y', -0.2), sparse('ndx100', 0.9),
+    ];
+    const picked = selectQuestionAssets(quotes, { max: 5 });
+    expect(picked.length).toBe(5);
+    // 1 个 valid-σ 在前，其余按 |changePct| 降序：oil > dxy > btc > ndx100
+    expect(picked.map((x) => x.assetId)).toEqual(['gold-intl', 'oil', 'dxy', 'btc', 'ndx100']);
+    expect(picked[0].sigma).toBeGreaterThan(0);
+    for (const p of picked.slice(1)) expect(p.sigma).toBeNull();
+    // 不重复
+    expect(new Set(picked.map((x) => x.assetId)).size).toBe(picked.length);
+  });
+
+  it('报价里可解释品种仍少于 4 个时，用默认核心清单补足到 4（且不去重、仍可解释）', () => {
+    const picked = selectQuestionAssets([sparse('btc', 5.1)], { max: 5 });
+    expect(picked).toHaveLength(4);
+    expect(picked[0].assetId).toBe('btc');
+    const ids = picked.map((x) => x.assetId);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const id of ids) expect(CORE_IDS).toContain(id);
+    // 只补到 4 个：默认清单按序取前 3 个即可，不越过 4 上限
+    expect(ids).toEqual(['btc', 'gold-intl', 'dxy', 'gold-cn']);
+    for (const p of picked) expect(p.sigma).toBeNull();
+  });
+
+  it('完全空报价也补齐到至少 4 个（问题区不会只剩 1 张卡）', () => {
+    const picked = selectQuestionAssets([], { max: 5 });
+    expect(picked.length).toBeGreaterThanOrEqual(4);
+    const ids = picked.map((x) => x.assetId);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const id of ids) expect(CORE_IDS).toContain(id);
+  });
+
+  it('valid-σ 候选已够 target 时不追加补齐项，也不改主排序', () => {
+    const quotes = CORE_IDS.map((id, i) => ({
+      id, name: id, changePct: 9.9,
+      history: Array.from({ length: 12 }, (_, k) => ({ t: k, p: 100 + (i + 1) * Math.sin(k) })),
+    }));
+    const picked = selectQuestionAssets(quotes, { max: 5 });
+    expect(picked).toHaveLength(5);
+    expect(picked.map((x) => x.assetId)).toEqual(['gold-cn', 'usdcny', 'sh000001', 'btc', 'ndx100']);
+    expect(picked.every((x) => x.sigma > 0)).toBe(true);
+  });
+});

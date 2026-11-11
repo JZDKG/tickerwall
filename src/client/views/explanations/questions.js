@@ -14,7 +14,7 @@
  * ================================================================== */
 
 import { esc } from '../../shared/format.js';
-import { fetchExplanation, isExplainable, explainEnabled, EXPLAINABLE } from './state.js';
+import { fetchExplanation, isExplainable, explainEnabled } from './state.js';
 
 /** 问题模板：只用事实与状态，不写耸动标题 */
 export function questionTemplate({ assetName, windowLabel, direction, magnitude, status }) {
@@ -132,29 +132,63 @@ export function sigmaOfHistory(history) {
 }
 
 /**
+ * 冷启动兜底（B4）：上游 intraday 历史序列还没攒够 8 个点时，
+ * 绝大多数品种算不出 σ。只返回那一个有效候选会让问题区只剩 1 张卡，
+ * 所以先用同批报价里的其它可解释品种按 |changePct| 补齐，
+ * 还不够 4 个再用默认核心清单补齐 —— 补齐项 sigma 为 null（诚实标注）。
+ */
+const CORE_QUESTION_FALLBACK = [
+  { assetId: 'gold-intl', name: '国际金价' },
+  { assetId: 'dxy', name: '美元指数' },
+  { assetId: 'gold-cn', name: '国内金价' },
+  { assetId: 'oil', name: 'WTI 原油' },
+];
+
+/**
  * Phase 1 / P1-T4：按当日波动显著性（σ）从核心可解释池里挑异动最大的品种。
  *
  * 原来首页把 4 个资产写死，sp500 / btc / 上证等大级别波动完全看不见。
- * 现在只认 EXPLAINABLE 池 + 真实历史序列，按 σ 降序取前 max 个（4~6）。
- * 一条都没有时给一个可解释的兜底品种，不让问题区空手请求。
+ * 现在只认 EXPLAINABLE 池 + 真实历史序列，按 σ 降序取前 max 个（4~6）；
+ * σ 有效的候选不足时按 |changePct| 与默认核心清单补齐，不让问题区空手。
  *
- * @param {Array<{id:string,name?:string,history?:Array}>} quotes
+ * @param {Array<{id:string,name?:string,history?:Array,changePct?:number}>} quotes
  * @param {{max?:number}} [opts]
- * @returns {Array<{assetId:string,name:string,sigma:number}>}
+ * @returns {Array<{assetId:string,name:string,sigma:number|null}>}
  */
 export function selectQuestionAssets(quotes, { max = 5 } = {}) {
+  const list = Array.isArray(quotes) ? quotes : [];
+  const target = Math.max(4, Math.min(6, Number(max) || 5));
+
   const candidates = [];
-  for (const q of Array.isArray(quotes) ? quotes : []) {
+  for (const q of list) {
     if (!isExplainable(q?.id)) continue;
     const sigma = sigmaOfHistory(q.history);
     if (!Number.isFinite(sigma) || sigma <= 0) continue;
     candidates.push({ assetId: q.id, name: q.name ?? q.id, sigma });
   }
   candidates.sort((a, b) => b.sigma - a.sigma || String(a.assetId).localeCompare(String(b.assetId)));
-  const picked = candidates.slice(0, Math.max(4, Math.min(6, Number(max) || 5)));
-  if (!picked.length) {
-    const fallback = [...EXPLAINABLE][0] ?? 'gold-intl';
-    return [{ assetId: fallback, name: fallback, sigma: null }];
+  const picked = candidates.slice(0, target);
+  const seen = new Set(picked.map((x) => x.assetId));
+
+  // a) 其它可解释品种按 |changePct| 降序补齐，避免冷启动时只剩 1 张卡
+  const fill = list
+    .filter((q) => isExplainable(q?.id) && !seen.has(q.id))
+    .sort((a, b) => Math.abs(Number(b.changePct) || 0) - Math.abs(Number(a.changePct) || 0));
+  for (const q of fill) {
+    if (picked.length >= target) break;
+    if (seen.has(q.id)) continue;
+    seen.add(q.id);
+    picked.push({ assetId: q.id, name: q.name ?? q.id, sigma: null });
+  }
+
+  // b) 报价里的可解释品种仍不足 4 个：用默认核心清单补足
+  if (picked.length < 4) {
+    for (const f of CORE_QUESTION_FALLBACK) {
+      if (picked.length >= 4) break;
+      if (!isExplainable(f.assetId) || seen.has(f.assetId)) continue;
+      seen.add(f.assetId);
+      picked.push({ assetId: f.assetId, name: f.name, sigma: null });
+    }
   }
   return picked;
 }
