@@ -45,12 +45,12 @@ export function briefRowHTML(item) {
  * @param {{ reason:string, items?:object[], sinceMs?:number|null, watchedKeys?:string[] }} brief
  */
 export function watchBriefHTML(brief) {
-  const head = `<h3>关注简报 <span class="h3-note">只看你关心的问题</span></h3>`;
+  const head = `<h3>关注简报</h3>`;
 
   if (!brief || brief.reason === 'NO_WATCH') {
     return `<section class="d-block wb-card" data-state="no-watch">
       ${head}
-      <p class="wb-hint">选最多三个你关心的问题，下次进来先看它们有没有新变化。</p>
+      <p class="wb-hint">选 1–3 个关心的问题，后续仅展示相关更新</p>
       <button type="button" class="wb-pick" id="wb-pick">选择关心的问题</button>
     </section>`;
   }

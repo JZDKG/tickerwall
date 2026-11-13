@@ -160,10 +160,12 @@ export function factorHTML(hypothesis, { open = false, index = 0 } = {}) {
               }。</p>`
             : ''
         }
+        <div class="table-wrap" tabindex="0" role="region" aria-label="渠道观测依据">
         <table class="explain-evidence">
-          <thead><tr><th>指标</th><th>本窗口变化</th><th>观测窗口</th><th>作用</th></tr></thead>
+          <thead><tr><th scope="col">指标</th><th scope="col">本窗口变化</th><th scope="col">观测窗口</th><th scope="col">作用</th></tr></thead>
           <tbody>${evidenceRows(hypothesis)}</tbody>
         </table>
+        </div>
         <p class="explain-src">来源：${sourceList(hypothesis)}</p>
         <p class="explain-dim">关系类型：${esc(RELATION_LABEL(hypothesis.relationType))}　时滞：${
           hypothesis.horizon && hypothesis.horizon !== 'unknown' ? esc(hypothesis.horizon) : '未给出依据，不推断'
@@ -293,9 +295,7 @@ export function explanationCardHTML(state = {}) {
   </div>`;
 
   const head = `<div class="explain-head">
-    <h3>${esc(assetName)}为什么这样走
-      <span class="h3-note">先读结论（约 20 秒），再点开单条渠道看依据</span>
-    </h3>
+    <h3>${esc(assetName)}为什么这样走</h3>
     ${tabs}
   </div>`;
 

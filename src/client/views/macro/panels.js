@@ -230,11 +230,11 @@ export function mindCardPanel(data, focusId, reality, explanation = null) {
   const up = MACRO_TRANSMISSION_EDGES.filter((e) => e.to === focusId);
   const down = MACRO_TRANSMISSION_EDGES.filter((e) => e.from === focusId);
   const f = data.universe.find((u) => u.id === focusId);
-  const line = (e, other, dir) => {
+  const line = (e, other) => {
     const r = reality.get(e.id);
     const tone = r?.status === 'diverged' ? 'div' : e.sign > 0 ? 'pos' : 'neg';
     return `<li class="mg-mini" data-edge="${esc(e.id)}">
-      <span class="mg-mini-dir ${tone}">${dir === 'up' ? `${signChar(e.sign)}▶` : `${signChar(e.sign)}▶`}</span>
+      <span class="mg-mini-dir ${tone}">${signChar(e.sign)}▶</span>
       <span class="mg-mini-name">${esc(other)}</span>
       <span class="mg-mini-tag">${esc(e.label)}</span>
       <span class="mg-mini-roll ${corrTone(r?.roll20)}">${r?.roll20 == null ? '—' : `${r.roll20 >= 0 ? '+' : ''}${r.roll20.toFixed(2)}`}</span>
@@ -473,9 +473,7 @@ export function legendHTML(mode) {
 export function headHTML(state) {
   const mode = state.graphMode ?? 'compass';
   return `<div class="mg-head">
-      <h3>金融传导图谱与宏观逻辑沙盘
-        <span class="h3-note">上半场定性：为什么动　·　下半场定量：动了多少</span>
-      </h3>
+      <h3>金融传导图谱与宏观逻辑沙盘</h3>
       <div class="seg mg-modes">${MODES.map(
         ([m, label]) => `<button type="button" class="mg-mode ${mode === m ? 'on' : ''}" data-mode="${esc(m)}">${label}</button>`,
       ).join('')}</div>

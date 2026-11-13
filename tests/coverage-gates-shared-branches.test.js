@@ -277,8 +277,11 @@ describe('share-card-ui：缺省与点击分支', () => {
     expect(document.getElementById(cardUi.SHARE_PREVIEW_ID)).toBe(null);
 
     document.querySelector('[data-action="share-card"]').click();
-    expect(document.getElementById(cardUi.SHARE_PREVIEW_ID)).toBeTruthy();
-    document.querySelector('.tw-share-backdrop').click();
+    const dlg = document.getElementById(cardUi.SHARE_PREVIEW_ID);
+    expect(dlg).toBeTruthy();
+    dlg.getBoundingClientRect = () => ({ left: 100, top: 100, right: 400, bottom: 400, width: 300, height: 300 });
+    dlg.dispatchEvent(new window.MouseEvent('pointerdown', { clientX: 10, clientY: 10 }));
+    dlg.dispatchEvent(new window.MouseEvent('pointerup', { clientX: 12, clientY: 12 }));
     expect(document.getElementById(cardUi.SHARE_PREVIEW_ID)).toBe(null);
     off();
   });

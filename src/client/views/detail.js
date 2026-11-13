@@ -23,11 +23,12 @@ import { store } from '../shared/store.js';
 import { api, createApi } from '../shared/api.js';
 import { createQueryCache, describeRefresh } from '../shared/query-cache.js';
 import { comparisonCardHTML } from './comparison.js';
-import { attachGlossary, termHTML } from '../shared/glossary.js';
+import { termHTML } from '../shared/glossary.js';
 import { followupsHTML, scopedFollowups } from '../shared/followups.js';
 import { OVERLAY_ASSETS, toBase100, alignOverlay, overlayPathHTML } from './detail-chart-tools.js';
 import { bindChartRangeRuler } from './detail-ruler.js';
 import { toLightweightSeriesData, mountLightweightChart } from './detail-lwchart.js';
+import { loadCalendarCached } from '../shared/calendar.js';
 
 /**
  * 术语化的标签片段（产品 2.5）。
@@ -39,7 +40,6 @@ import { toLightweightSeriesData, mountLightweightChart } from './detail-lwchart
 export function termText(name) {
   return termHTML(name);
 }
-import { loadCalendarCached } from '../shared/calendar.js';
 
 
 export let detailTimer = null;
@@ -620,7 +620,7 @@ export function bindChartCrosshair(host, payload) {
 
 /** 成交量副图：与主图共用 x 轴刻度，柱子按当日涨跌着色 */
 export function volumeSVG(bars, opts = {}) {
-  const { width = 920, height = 64, decimals = 2 } = opts;
+  const { width = 920, height = 64 } = opts;
   const valid = bars.filter((b) => b.v > 0);
   if (!valid.length) return '';
   const padL = 6;
@@ -830,8 +830,8 @@ export function crossCheckTable(list, decimals) {
       </tr>`;
   });
   return html`<section class="d-block">
-    <h3>多源对照 <span class="h3-note">同一标的不同数据源的取价一致性</span></h3>
-    <table class="d-table"><thead><tr><th>数据源</th><th class="num">取价</th><th class="num">与主源偏差</th><th>说明</th></tr></thead><tbody>${rows}</tbody></table>
+    <h3>多源对照</h3>
+    <div class="table-wrap" tabindex="0" role="region" aria-label="多源对照"><table class="d-table"><thead><tr><th scope="col">数据源</th><th scope="col" class="num">取价</th><th scope="col" class="num">与主源偏差</th><th scope="col">说明</th></tr></thead><tbody>${rows}</tbody></table></div>
   </section>`;
 }
 
@@ -852,10 +852,10 @@ export function historyTable(daily, decimals, tableRows) {
   });
   const more = tableRows < daily.length;
   return html`<section class="d-block">
-    <h3>历史日线 <span class="h3-note">共 ${daily.length} 个交易日，按时间倒序</span></h3>
-    <div class="table-wrap">
+    <h3>历史日线 <span class="h3-note">共 ${daily.length} 个交易日</span></h3>
+    <div class="table-wrap" tabindex="0" role="region" aria-label="历史日线">
       <table class="d-table hist-table">
-        <thead><tr><th>日期</th><th class="num">开盘</th><th class="num">最高</th><th class="num">最低</th><th class="num">收盘</th><th class="num">涨跌幅</th><th class="num">成交量</th></tr></thead>
+        <thead><tr><th scope="col">日期</th><th scope="col" class="num">开盘</th><th scope="col" class="num">最高</th><th scope="col" class="num">最低</th><th scope="col" class="num">收盘</th><th scope="col" class="num">涨跌幅</th><th scope="col" class="num">成交量</th></tr></thead>
         <tbody>${body}</tbody>
       </table>
     </div>
@@ -1026,7 +1026,7 @@ export function renderDetail(data) {
         }
         ${q.sessionTime ? html`<span>行情 ${q.sessionTime}</span><span class="sep">·</span>` : ''}
         <span>${prettySource(q.source)}</span>
-        ${q.stale ? '<span class="stale-tag">数据过期</span>' : ''}
+        ${q.stale ? html`<span class="stale-tag">数据过期</span>` : ''}
       </div>
     </div>
 
@@ -1068,28 +1068,33 @@ export function renderDetail(data) {
             ]
               .map(([k, label]) => html`<button type="button" data-r="${k}" class="${range === k ? 'on' : ''}">${label}</button>`)}
           </div>
-          <div class="seg" id="period-seg">
-            <button type="button" data-p="day" class="${period === 'day' ? 'on' : ''}">日K</button>
-            <button type="button" data-p="week" class="${period === 'week' ? 'on' : ''}">周K</button>
-            <button type="button" data-p="month" class="${period === 'month' ? 'on' : ''}">月K</button>
-          </div>
-          <div class="seg" id="scale-seg">
-            <button type="button" data-s="lin" class="${!showLog ? 'on' : ''}">线性</button>
-            <button type="button" data-s="log" class="${showLog ? 'on' : ''}">对数</button>
-          </div>
-          <div class="seg" id="ma-seg">
-            <button type="button" data-m="on" class="${showMA ? 'on' : ''}">均线</button>
-            <button type="button" data-m="off" class="${!showMA ? 'on' : ''}">关</button>
-          </div>
           <div class="seg" id="type-seg">
             <button type="button" data-t="candle" class="${chartType === 'candle' ? 'on' : ''}">蜡烛</button>
             <button type="button" data-t="line" class="${chartType === 'line' ? 'on' : ''}">折线</button>
           </div>
-          <!-- P4-T2：Canvas 双模。默认 SVG，开启后才按需加载 ui-kit 的 lightweight-charts -->
-          <div class="seg" id="chart-mode-seg">
-            <button type="button" data-cm="svg" class="${detailState?.chartMode === 'canvas' ? '' : 'on'}">SVG</button>
-            <button type="button" data-cm="canvas" class="${detailState?.chartMode === 'canvas' ? 'on' : ''}">Canvas</button>
-          </div>
+          <details class="chart-more" id="chart-more">
+            <summary class="chart-more-summary">参数 · ${period === 'week' ? '周K' : period === 'month' ? '月K' : '日K'} · ${showLog ? '对数' : '线性'}${showMA ? ' · 均线' : ''}</summary>
+            <div class="chart-more-body">
+              <div class="seg" id="period-seg">
+                <button type="button" data-p="day" class="${period === 'day' ? 'on' : ''}">日K</button>
+                <button type="button" data-p="week" class="${period === 'week' ? 'on' : ''}">周K</button>
+                <button type="button" data-p="month" class="${period === 'month' ? 'on' : ''}">月K</button>
+              </div>
+              <div class="seg" id="scale-seg">
+                <button type="button" data-s="lin" class="${!showLog ? 'on' : ''}">线性</button>
+                <button type="button" data-s="log" class="${showLog ? 'on' : ''}">对数</button>
+              </div>
+              <div class="seg" id="ma-seg">
+                <button type="button" data-m="on" class="${showMA ? 'on' : ''}">均线</button>
+                <button type="button" data-m="off" class="${!showMA ? 'on' : ''}">关</button>
+              </div>
+              <!-- P4-T2：Canvas 双模。默认 SVG，开启后才按需加载 ui-kit 的 lightweight-charts -->
+              <div class="seg" id="chart-mode-seg">
+                <button type="button" data-cm="svg" class="${detailState?.chartMode === 'canvas' ? '' : 'on'}">SVG</button>
+                <button type="button" data-cm="canvas" class="${detailState?.chartMode === 'canvas' ? 'on' : ''}">Canvas</button>
+              </div>
+            </div>
+          </details>
         </div>
       </div>
       <div class="chart-legend">
@@ -1109,8 +1114,8 @@ export function renderDetail(data) {
                 .map((k) => html`<i class="evt-swatch k-${k}"></i>${EVENT_KIND_LABEL[k] ?? k}`)}</span>`
             : ''
         }
-        ${showLog ? '<span class="legend-note">对数坐标</span>' : ''}
-        <span class="legend-note">悬停看当根读数 · 点击两点做区间测算</span>
+        ${showLog ? html`<span class="legend-note">对数坐标</span>` : ''}
+        <span class="legend-note">悬停看当根读数</span>
       </div>
       <div class="measure-info" id="measure-info" role="status" aria-live="polite"><span class="measure-hint">区间测算：点击图上两点锁定区间</span></div>
       <div class="chart-host" id="chart-host">${
@@ -1268,6 +1273,14 @@ export function renderDetail(data) {
       renderDetail(detailState.data);
     });
   });
+
+  const chartMoreEl = document.getElementById('chart-more');
+  if (chartMoreEl) {
+    if (detailState?.chartMoreOpen) chartMoreEl.open = true;
+    chartMoreEl.addEventListener('toggle', () => {
+      if (detailState) detailState.chartMoreOpen = chartMoreEl.open;
+    });
+  }
 
   // P2-T5：叠加对比下拉。切换只改状态重绘，不重新取详情数据。
   document.getElementById('overlay-select')?.addEventListener('change', (e) => {

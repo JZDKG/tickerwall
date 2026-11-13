@@ -10,19 +10,28 @@
  * ================================================================== */
 
 :root {
+  color-scheme: dark;
   --bg: #080b10;
   --panel: rgba(255, 255, 255, 0.028);
   --panel-2: rgba(255, 255, 255, 0.05);
   --line: rgba(255, 255, 255, 0.075);
+  --divider: rgba(255, 255, 255, 0.05);
   --text: #e8edf5;
-  --muted: #7c8899;
-  --muted-2: #5a6474;
+  --muted: #93a1b3;
+  --muted-2: #788597;
   --up: #f5455c;
   --down: #0ecb81;
   --up-bg: rgba(245, 69, 92, 0.12);
   --down-bg: rgba(14, 203, 129, 0.12);
+  --cold: #5b9cf8;
+  --cold-bg: rgba(91, 156, 248, 0.12);
+  --accent: #60a5fa;
   --flat: #8b97a8;
+  --warn: #d9a441;
+  --warn-bg: rgba(217, 164, 65, 0.12);
+  --focus-ring: #60a5fa;
   --bg-elev: #0d1219;
+  --surface-elev: rgba(14, 19, 27, 0.94);
   --border: rgba(255, 255, 255, 0.075);
   --radius: 16px;
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
@@ -47,6 +56,7 @@
 
 /* 纯黑防烧屏（OLED 屏：面板与边框压到最低对比） */
 :root[data-theme="oled"] {
+  color-scheme: dark;
   --bg: #000000;
   --bg-elev: #050505;
   --border: #161616;
@@ -57,16 +67,43 @@
 
 /* 浅色研报模式（高对比纸张配色） */
 :root[data-theme="light"] {
+  color-scheme: light;
   --bg: #f5f7fa;
   --bg-elev: #ffffff;
+  --surface-elev: rgba(255, 255, 255, 0.96);
   --border: #d8dee9;
-  --panel: rgba(16, 24, 40, 0.025);
-  --panel-2: rgba(16, 24, 40, 0.055);
-  --line: rgba(16, 24, 40, 0.1);
+  --panel: rgba(16, 24, 40, 0.03);
+  --panel-2: rgba(16, 24, 40, 0.06);
+  --line: rgba(16, 24, 40, 0.12);
+  --divider: rgba(16, 24, 40, 0.08);
   --text: #16202e;
-  --muted: #5a6678;
-  --muted-2: #7b8798;
-  --flat: #64748b;
+  --muted: #475569;
+  --muted-2: #526072;
+  --up: #991b1b;
+  --down: #065f46;
+  --up-bg: rgba(153, 27, 27, 0.10);
+  --down-bg: rgba(6, 95, 70, 0.10);
+  --cold: #1e40af;
+  --cold-bg: rgba(30, 64, 175, 0.10);
+  --accent: #1e40af;
+  --flat: #526072;
+  --warn: #78350f;
+  --warn-bg: rgba(120, 53, 15, 0.10);
+  --focus-ring: #1e40af;
+}
+
+:root[data-theme="light"][data-color-scheme="intl"] {
+  --up: #065f46;
+  --down: #991b1b;
+  --up-bg: rgba(6, 95, 70, 0.10);
+  --down-bg: rgba(153, 27, 27, 0.10);
+}
+
+:root[data-theme="light"][data-color-scheme="cb"] {
+  --up: #1e40af;
+  --down: #7c2d12;
+  --up-bg: rgba(30, 64, 175, 0.10);
+  --down-bg: rgba(124, 45, 18, 0.10);
 }
 
 * {
@@ -94,4 +131,43 @@ body {
   padding: 22px clamp(14px, 2.4vw, 52px) 28px;
   max-width: clamp(1180px, 94vw, 2200px);
   margin: 0 auto;
+}
+
+:root[data-theme="light"]:not([data-pip="1"]) body {
+  background:
+    radial-gradient(1100px 620px at 12% -12%, rgba(64, 110, 190, 0.06), transparent 62%),
+    radial-gradient(900px 520px at 92% 4%, rgba(190, 96, 64, 0.04), transparent 58%),
+    var(--bg);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring, #60a5fa);
+  outline-offset: 2px;
+}
+
+dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+@media (forced-colors: active) {
+  :focus-visible {
+    outline: 2px solid Highlight;
+  }
+  dialog:modal,
+  .tw-alert-banner,
+  .al-toast-inner {
+    border: 2px solid CanvasText;
+  }
+  [aria-current="page"],
+  .ws-seg button.on,
+  .nav-link.is-active,
+  .cp-item.is-active,
+  .pin-btn[aria-pressed="true"] {
+    outline: 1px solid Highlight;
+  }
 }

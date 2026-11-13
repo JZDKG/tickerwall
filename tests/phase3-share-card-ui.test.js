@@ -29,22 +29,25 @@ describe('modelFromClick', () => {
 });
 
 describe('previewHTML', () => {
-  it('含下载/关闭按钮，SVG 原样注入', () => {
+  it('含标题、下载/关闭按钮，SVG 原样注入', () => {
     const html = previewHTML('<svg viewBox="0 0 1 1"></svg>');
     expect(html).toContain('<svg viewBox="0 0 1 1"></svg>');
     expect(html).toContain('data-action="share-download"');
     expect(html).toContain('data-share-dismiss="1"');
-    expect(html).toContain('role="dialog"');
+    expect(html).toContain('id="tw-share-title"');
   });
 });
 
 describe('mountShareCard：委托监听', () => {
-  it('点 [data-action="share-card"] 弹出预览浮层，Esc / 点背景关闭', () => {
+  it('点 [data-action="share-card"] 弹出原生 <dialog> 预览浮层，Esc 关闭', () => {
     const unmount = mountShareCard();
     document.body.innerHTML = '<button data-action="share-card">生成分享卡</button>';
     document.querySelector('[data-action="share-card"]').click();
     const host = document.getElementById(SHARE_PREVIEW_ID);
     expect(host).toBeTruthy();
+    expect(host.tagName).toBe('DIALOG');
+    expect(host.getAttribute('closedby')).toBe('any');
+    expect(host.getAttribute('role')).toBeNull();
     expect(host.querySelector('svg')).toBeTruthy();
     document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(document.getElementById(SHARE_PREVIEW_ID)).toBe(null);

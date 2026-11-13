@@ -12,6 +12,7 @@ import {
   renderShareCardSVG,
   createDownloadShareCard,
 } from './share-card.js';
+import { openModalDialog } from './modal-dialog.js';
 
 export const SHARE_PREVIEW_ID = 'tw-share-preview';
 
@@ -29,20 +30,17 @@ export function modelFromClick(target, fallback = {}) {
   });
 }
 
-/** 预览浮层 HTML（SVG 是已转义的自包含字符串，用 raw 注入） */
+/** 预览浮层 HTML（SVG 是已转义的自包含字符串，嵌入原生 <dialog> 内层） */
 export function previewHTML(svg) {
-  return `<div class="tw-share-backdrop" data-share-dismiss="1"></div>
-    <div class="tw-share-dialog" role="dialog" aria-modal="true" aria-label="分享战报卡预览">
-      <div class="tw-share-head">
-        <strong>分享战报卡预览</strong>
+  return `<div class="tw-share-head">
+        <strong id="tw-share-title">分享战报卡预览</strong>
         <div class="tw-share-actions">
           <button type="button" data-action="share-download">下载 SVG</button>
           <button type="button" data-share-dismiss="1" aria-label="关闭">×</button>
         </div>
       </div>
       <div class="tw-share-body">${svg}</div>
-      <p class="tw-share-note">自包含 SVG · 可直接贴进 Notion / 博客，或使用 ?embed=1 挂件模式</p>
-    </div>`;
+      <p class="tw-share-note">自包含 SVG · 可直接贴进 Notion / 博客，或使用 ?embed=1 挂件模式</p>`;
 }
 
 /**
@@ -53,23 +51,44 @@ export function mountShareCard(opts = {}) {
   const doc = opts.document ?? (typeof document === 'undefined' ? null : document);
   if (!doc) return () => {};
   let currentModel = null;
+  let dialog = null;
+  let dismissDialog = null;
 
   const close = () => {
-    doc.getElementById(SHARE_PREVIEW_ID)?.remove();
+    const fn = dismissDialog;
+    dismissDialog = null;
+    dialog = null;
     currentModel = null;
+    fn?.();
+    doc.getElementById(SHARE_PREVIEW_ID)?.remove();
   };
 
-  const show = (model) => {
+  const show = (model, opener = null) => {
     currentModel = model;
     const svg = renderShareCardSVG(model, { aspect: '16:9' });
-    let host = doc.getElementById(SHARE_PREVIEW_ID);
-    if (!host) {
-      host = doc.createElement('div');
-      host.id = SHARE_PREVIEW_ID;
-      host.className = 'tw-share-host';
-      doc.body?.appendChild?.(host);
+    const existing = doc.getElementById(SHARE_PREVIEW_ID);
+    if (existing) {
+      dialog = existing;
+      dialog.innerHTML = previewHTML(svg);
+      return;
     }
-    host.innerHTML = previewHTML(svg);
+    dialog = doc.createElement('dialog');
+    dialog.id = SHARE_PREVIEW_ID;
+    dialog.className = 'tw-share-dialog';
+    dialog.setAttribute('closedby', 'any');
+    dialog.setAttribute('aria-labelledby', 'tw-share-title');
+    dialog.innerHTML = previewHTML(svg);
+    doc.body?.appendChild?.(dialog);
+    dismissDialog = openModalDialog(dialog, {
+      doc,
+      opener,
+      onClose: () => {
+        dialog = null;
+        dismissDialog = null;
+        currentModel = null;
+        doc.getElementById(SHARE_PREVIEW_ID)?.remove();
+      },
+    });
   };
 
   const onClick = (e) => {
@@ -79,19 +98,16 @@ export function mountShareCard(opts = {}) {
       if (currentModel) createDownloadShareCard(currentModel, { document: doc });
       return;
     }
-    if (t?.closest?.('[data-action="share-card"]')) {
-      const model = opts.getModel?.(t) ?? modelFromClick(t);
-      show(model);
+    const trigger = t?.closest?.('[data-action="share-card"]');
+    if (trigger) {
+      const model = opts.getModel?.(trigger) ?? modelFromClick(trigger);
+      show(model, trigger);
     }
   };
-  const onKey = (e) => {
-    if (e.key === 'Escape' && doc.getElementById(SHARE_PREVIEW_ID)) close();
-  };
+  // 原生 <dialog> 自带 Esc 关闭与焦点还回（非 showModal 降级由 openModalDialog 处理）
   doc.addEventListener('click', onClick);
-  doc.addEventListener('keydown', onKey);
   return () => {
     doc.removeEventListener('click', onClick);
-    doc.removeEventListener('keydown', onKey);
     close();
   };
 }

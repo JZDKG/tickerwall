@@ -94,3 +94,24 @@ describe('区间测算尺', () => {
     expect(detailEl.querySelector('.measure-shade')).toBeTruthy();
   });
 });
+
+describe('图表参数渐进披露', () => {
+  it('次级图表参数收纳在默认折叠的 #chart-more 中，且展开后切换仍保持展开', () => {
+    d.renderDetail(detailData());
+    const more = detailEl.querySelector('details#chart-more');
+    expect(more).toBeTruthy();
+    expect(more.open).toBe(false);
+    expect(more.querySelector('#period-seg')).toBeTruthy();
+    expect(more.querySelector('#scale-seg')).toBeTruthy();
+    expect(more.querySelector('#ma-seg')).toBeTruthy();
+    expect(more.querySelector('#chart-mode-seg')).toBeTruthy();
+
+    more.open = true;
+    more.dispatchEvent(new window.Event('toggle'));
+    more.querySelector('#scale-seg [data-s="log"]').click();
+
+    const refreshed = detailEl.querySelector('details#chart-more');
+    expect(refreshed.open).toBe(true);
+    expect(refreshed.querySelector('.chart-more-summary')?.textContent).toContain('对数');
+  });
+});

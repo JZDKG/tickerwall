@@ -21,6 +21,12 @@
   --mg-div: #f59e0b;
 }
 
+:root[data-theme="light"] .macro-graph-section {
+  --mg-pos: #991b1b;
+  --mg-neg: #1e40af;
+  --mg-div: #78350f;
+}
+
 .macro-graph-section .up {
   color: var(--up);
 }
@@ -98,7 +104,7 @@
   font-size: 11.5px;
   line-height: 1.3;
   color: var(--muted);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 4px 11px;
@@ -110,12 +116,12 @@
 .mg-spick:hover,
 .mg-sgo:hover {
   color: var(--text);
-  border-color: rgba(255, 255, 255, 0.2);
+  border-color: var(--muted-2);
 }
 .mg-pb.on {
-  color: #0b0e14;
-  background: #e8edf5;
-  border-color: #e8edf5;
+  color: var(--bg);
+  background: var(--text);
+  border-color: var(--text);
   font-weight: 600;
 }
 .mg-tools-hint {
@@ -148,8 +154,8 @@
   cursor: pointer;
   font: inherit;
   font-size: 12px;
-  color: #f2d3a1;
-  background: linear-gradient(90deg, rgba(245, 158, 11, 0.15), rgba(245, 158, 11, 0.02));
+  color: var(--text);
+  background: var(--warn-bg, rgba(245, 158, 11, 0.12));
   border: 1px solid rgba(245, 158, 11, 0.34);
   border-radius: 9px;
   padding: 8px 12px;
@@ -167,7 +173,7 @@
   min-width: 0;
 }
 .mg-alert-text b {
-  color: #fde8c0;
+  color: var(--mg-div);
 }
 .mg-alert-go {
   margin-left: auto;
@@ -186,14 +192,14 @@
   margin-bottom: 10px;
   padding: 7px 9px;
   border-radius: 9px;
-  background: rgba(255, 255, 255, 0.022);
+  background: var(--panel);
   border: 1px solid var(--line);
 }
 .mg-fpill.on,
 .mg-spick.on {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.26);
+  background: var(--panel-2);
+  border-color: var(--accent, var(--muted-2));
   font-weight: 600;
 }
 .mg-shock-label {
@@ -208,14 +214,14 @@
   margin: 0 3px;
 }
 .mg-sgo.up.on {
-  color: #fff;
-  background: rgba(245, 69, 92, 0.24);
-  border-color: rgba(245, 69, 92, 0.6);
+  color: var(--up);
+  background: var(--up-bg);
+  border-color: var(--up);
 }
 .mg-sgo.down.on {
-  color: #fff;
-  background: rgba(91, 156, 248, 0.24);
-  border-color: rgba(91, 156, 248, 0.6);
+  color: var(--cold, #5b9cf8);
+  background: var(--cold-bg, rgba(91, 156, 248, 0.2));
+  border-color: var(--cold, #5b9cf8);
 }
 .mg-sclear {
   color: var(--muted-2);
@@ -671,6 +677,21 @@
   border-color: rgba(245, 158, 11, 0.48);
   background: rgba(245, 158, 11, 0.12);
 }
+:root[data-theme="light"] .mg-badge.pos {
+  color: var(--up);
+  border-color: rgba(153, 27, 27, 0.35);
+  background: var(--up-bg);
+}
+:root[data-theme="light"] .mg-badge.neg {
+  color: var(--cold);
+  border-color: rgba(30, 64, 175, 0.35);
+  background: var(--cold-bg);
+}
+:root[data-theme="light"] .mg-badge.div {
+  color: var(--warn);
+  border-color: rgba(120, 53, 15, 0.42);
+  background: var(--warn-bg);
+}
 .mg-lead {
   margin: 0 0 11px;
   color: var(--muted);
@@ -990,7 +1011,7 @@
 }
 
 .mg-ex-status.warn {
-  color: #e0a83c;
+  color: var(--warn, #e0a83c);
   border-color: rgba(224, 168, 60, 0.4);
 }
 
@@ -1008,3 +1029,81 @@
   border: 1px solid var(--line, #26364c); border-radius: 999px;
 }
 .mg-explain-link:hover { border-color: var(--accent, #6ea8fe); }
+
+:root[data-theme="light"] .mg-node-box {
+  fill: var(--bg-elev, #ffffff);
+  stroke: var(--border, #d8dee9);
+}
+:root[data-theme="light"] .mg-node.zone-anchor .mg-node-box {
+  fill: #f6f3ff;
+  stroke: rgba(124, 58, 237, 0.35);
+}
+:root[data-theme="light"] .mg-node.zone-commodity .mg-node-box {
+  fill: #fffbeb;
+  stroke: rgba(180, 83, 9, 0.35);
+}
+:root[data-theme="light"] .mg-node.zone-hedge .mg-node-box {
+  fill: #f0f9ff;
+  stroke: rgba(2, 132, 199, 0.35);
+}
+:root[data-theme="light"] .mg-node.zone-risk .mg-node-box {
+  fill: #f8fafc;
+  stroke: rgba(29, 78, 216, 0.3);
+}
+:root[data-theme="light"] .mg-node-name,
+:root[data-theme="light"] .mg-mcard-name {
+  fill: var(--text, #16202e);
+}
+:root[data-theme="light"] .mg-mcard rect {
+  fill: var(--bg-elev, #ffffff);
+  stroke: var(--border, #d8dee9);
+}
+:root[data-theme="light"] .mg-focus rect {
+  fill: var(--bg-elev, #ffffff);
+  stroke: var(--accent, #1d4ed8);
+}
+:root[data-theme="light"] .mg-focus-val {
+  fill: var(--text, #16202e);
+}
+:root[data-theme="light"] .mg-pill.pos rect {
+  fill: #fee2e2;
+  stroke: rgba(153, 27, 27, 0.45);
+}
+:root[data-theme="light"] .mg-pill.pos text {
+  fill: #991b1b;
+}
+:root[data-theme="light"] .mg-pill.neg rect {
+  fill: #dbeafe;
+  stroke: rgba(30, 64, 175, 0.45);
+}
+:root[data-theme="light"] .mg-pill.neg text {
+  fill: #1e40af;
+}
+:root[data-theme="light"] .mg-pill.div rect {
+  fill: #fef3c7;
+  stroke: rgba(120, 53, 15, 0.55);
+}
+:root[data-theme="light"] .mg-pill.div text {
+  fill: #78350f;
+}
+:root[data-theme="light"] .mg-tag rect {
+  fill: #fef3c7;
+  stroke: rgba(120, 53, 15, 0.55);
+}
+:root[data-theme="light"] .mg-tag text {
+  fill: #78350f;
+}
+:root[data-theme="light"] .mg-tag.cold rect {
+  fill: #dbeafe;
+  stroke: rgba(30, 64, 175, 0.45);
+}
+:root[data-theme="light"] .mg-tag.cold text {
+  fill: #1e40af;
+}
+:root[data-theme="light"] .mg-tag.pos rect {
+  fill: #fee2e2;
+  stroke: rgba(153, 27, 27, 0.5);
+}
+:root[data-theme="light"] .mg-tag.pos text {
+  fill: #991b1b;
+}

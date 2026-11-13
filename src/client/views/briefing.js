@@ -3,7 +3,7 @@
  *
  * 来源：public/app.js（原 3655 行单体）L3568-3655，整段搬运，逻辑未改写。
  * ================================================================== */
-import { esc, fmtPrice, html } from '../shared/format.js';
+import { fmtPrice, html } from '../shared/format.js';
 import { createApi } from '../shared/api.js';
 import { createQueryCache, describeRefresh } from '../shared/query-cache.js';
 
@@ -16,12 +16,17 @@ import { createQueryCache, describeRefresh } from '../shared/query-cache.js';
  * 不依赖外部源，所以不会因为限流而失效；样本不足时如实说「还在积累」。
  * ------------------------------------------------------------------ */
 export const briefingBtn = document.getElementById('briefing-btn');
+const getBtn = () => (briefingBtn?.isConnected ? briefingBtn : document.getElementById('briefing-btn'));
 export let briefingOpen = false;
 
 export function closeBriefing() {
+  const btn = getBtn();
+  const hadFocus = document.getElementById('briefing-panel')?.contains(document.activeElement);
   briefingOpen = false;
   document.getElementById('briefing-panel')?.remove();
-  briefingBtn?.classList.remove('on');
+  btn?.classList.remove('on');
+  btn?.setAttribute?.('aria-expanded', 'false');
+  if (hadFocus) btn?.focus?.();
 }
 
 export function briefingRows(items) {
@@ -55,13 +60,22 @@ export function __resetBriefingCache() {
 
 export async function openBriefing({ force = false } = {}) {
   if (briefingOpen) return closeBriefing();
+  const btn = getBtn();
   briefingOpen = true;
-  briefingBtn?.classList.add('on');
+  btn?.classList.add('on');
+  btn?.setAttribute?.('aria-expanded', 'true');
   const panel = document.createElement('div');
   panel.id = 'briefing-panel';
   panel.className = 'briefing-panel';
-  panel.innerHTML = html`<div class="briefing-head"><h3>隔夜复盘</h3><p class="briefing-sub">载入中…</p></div>`.toString();
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-label', '隔夜复盘');
+  panel.tabIndex = -1;
+  panel.addEventListener('click', (e) => {
+    if (e.target?.closest?.('.briefing-close')) closeBriefing();
+  });
+  panel.innerHTML = html`<div class="briefing-head"><div><h3>隔夜复盘</h3><p class="briefing-sub">载入中…</p></div><button type="button" class="briefing-close" aria-label="关闭">×</button></div>`.toString();
   document.body.appendChild(panel);
+  panel.focus?.({ preventScroll: true });
 
   try {
     /**
@@ -75,7 +89,7 @@ export async function openBriefing({ force = false } = {}) {
     if (!briefingOpen) return;
     if (!snapshot.data) {
       const reason = describeRefresh(snapshot);
-      panel.innerHTML = html`<div class="briefing-head"><h3>隔夜复盘</h3></div>
+      panel.innerHTML = html`<div class="briefing-head"><h3>隔夜复盘</h3><button type="button" class="briefing-close" aria-label="关闭">×</button></div>
         <p class="briefing-empty">读取失败：${reason.text}</p>`.toString();
       return;
     }
@@ -108,10 +122,9 @@ export async function openBriefing({ force = false } = {}) {
       ${briefingRows(data.items ?? [])}
       <p class="briefing-foot">按变动幅度排序 · 数据来自本机快照</p>
       <button type="button" class="briefing-share" data-action="share-card">生成分享卡</button>`.toString();
-    panel.querySelector('.briefing-close')?.addEventListener('click', closeBriefing);
   } catch (err) {
     if (briefingOpen) {
-      panel.innerHTML = html`<div class="briefing-head"><h3>隔夜复盘</h3></div>
+      panel.innerHTML = html`<div class="briefing-head"><h3>隔夜复盘</h3><button type="button" class="briefing-close" aria-label="关闭">×</button></div>
         <p class="briefing-empty">读取失败：${err?.message ?? String(err)}</p>`.toString();
     }
   }
@@ -120,6 +133,13 @@ export async function openBriefing({ force = false } = {}) {
 briefingBtn?.addEventListener('click', (e) => {
   e.preventDefault();
   openBriefing();
+});
+
+document.addEventListener('click', (e) => {
+  if (!briefingOpen) return;
+  const panel = document.getElementById('briefing-panel');
+  if (panel?.contains(e.target) || briefingBtn?.contains(e.target) || e.target?.closest?.('#briefing-btn')) return;
+  closeBriefing();
 });
 
 document.addEventListener('keydown', (e) => {

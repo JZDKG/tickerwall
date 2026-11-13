@@ -76,7 +76,8 @@
      背后的虚线糊成一片「卡片自带虚线框」的错觉。 */
   /* 不透明底：卡片会盖在分组带虚线框上，一旦半透明 + backdrop-filter，
      背后的虚线会被糊进卡面，看起来像卡片自带一圈虚线，很难看。 */
-  background: linear-gradient(180deg, #111823 0%, #0b1119 100%);
+  background-color: #0e141d;
+  background-image: linear-gradient(180deg, #111823 0%, #0b1119 100%);
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.05) inset,
     0 10px 24px -14px rgba(0, 0, 0, 0.9);
@@ -242,8 +243,8 @@
   font-style: normal;
   font-variant-numeric: tabular-nums;
 }
-.mgx-sub i.up { color: rgba(245, 69, 92, 0.85); }
-.mgx-sub i.down { color: rgba(14, 203, 129, 0.85); }
+.mgx-sub i.up { color: var(--up, rgba(245, 69, 92, 0.92)); }
+.mgx-sub i.down { color: var(--down, rgba(14, 203, 129, 0.92)); }
 
 /* 导图中心卡放大一档 */
 .mgx-card--lg {
@@ -280,10 +281,10 @@
   padding: 10px 13px;
   border-radius: 12px;
   border: 1px dashed rgba(245, 158, 11, 0.5);
-  background: rgba(36, 26, 6, 0.62);
+  background: var(--warn-bg, rgba(36, 26, 6, 0.62));
   font-size: 10px;
   line-height: 1.5;
-  color: #f8c063;
+  color: var(--warn, #f8c063);
 }
 .mgx-orphan b {
   font-size: 11px;
@@ -330,17 +331,17 @@
   gap: 5px;
   padding: 5px;
   border-radius: 11px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(9, 13, 19, 0.88);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  background: var(--surface-elev, rgba(9, 13, 19, 0.88));
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  box-shadow: 0 10px 26px -16px rgba(0, 0, 0, 0.95);
+  box-shadow: 0 10px 26px -16px rgba(0, 0, 0, 0.45);
 }
 
 .mgx-tbtn {
   appearance: none;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.07));
+  background: var(--panel, rgba(255, 255, 255, 0.03));
   color: var(--muted);
   border-radius: 8px;
   height: 24px;
@@ -358,8 +359,8 @@
 }
 .mgx-tbtn:hover {
   color: var(--text);
-  border-color: rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.07);
+  border-color: var(--muted-2, rgba(255, 255, 255, 0.2));
+  background: var(--panel-2, rgba(255, 255, 255, 0.07));
 }
 .mgx-tbtn:active {
   transform: translateY(0.5px);
@@ -422,7 +423,7 @@
   line-height: 1;
   letter-spacing: 0.1px;
   white-space: nowrap;
-  background: #0b1017;
+  background: var(--bg-elev, #0b1017);
   border: 1px solid;
   pointer-events: auto;
   cursor: pointer;
@@ -440,12 +441,49 @@
   border-style: dashed;
 }
 .mgx-pill.is-hot {
-  background: #121a24;
+  background: var(--panel-2, #121a24);
   border-width: 1.4px;
 }
 .mgx-pill.pos.is-hot { border-color: rgba(245, 69, 92, 0.95); }
 .mgx-pill.neg.is-hot { border-color: rgba(91, 156, 248, 0.95); }
 .mgx-pill.div.is-hot { border-color: rgba(245, 158, 11, 1); }
 .mgx-pill:hover {
-  background: #16202c;
+  background: var(--panel-2, #16202c);
 }
+
+:root[data-theme="light"] .mg-x6 {
+  background:
+    radial-gradient(760px 420px at 22% -6%, rgba(29, 78, 216, 0.05), transparent 62%),
+    radial-gradient(680px 380px at 88% 108%, rgba(180, 83, 9, 0.045), transparent 60%),
+    #ffffff;
+  border-color: var(--border, #d8dee9);
+}
+:root[data-theme="light"] .mgx-card {
+  border-color: var(--border, #d8dee9);
+  background-color: #ffffff;
+  background-image: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  box-shadow: 0 4px 14px -8px rgba(16, 24, 40, 0.22);
+}
+:root[data-theme="light"] .mgx-card.is-focus,
+:root[data-theme="light"] .mgx-card.is-pair {
+  border-color: var(--accent, #1d4ed8);
+  box-shadow: 0 0 0 1px rgba(29, 78, 216, 0.25), 0 10px 24px -12px rgba(16, 24, 40, 0.25);
+}
+:root[data-theme="light"] .mgx-sub {
+  border-top-color: var(--divider, rgba(16, 24, 40, 0.1));
+}
+:root[data-theme="light"] .mgx-bandlabel {
+  background: var(--bg-elev, #ffffff);
+  border-color: var(--border, #d8dee9);
+}
+:root[data-theme="light"] .mgx-bandlabel.anchor { color: #6d28d9; border-color: rgba(109, 40, 217, 0.35); }
+:root[data-theme="light"] .mgx-bandlabel.commodity { color: #9a3412; border-color: rgba(154, 52, 18, 0.35); }
+:root[data-theme="light"] .mgx-bandlabel.hedge { color: #0369a1; border-color: rgba(3, 105, 161, 0.35); }
+:root[data-theme="light"] .mgx-chip.pos { color: #b91c1c; background: #fee2e2; border-color: rgba(214, 31, 60, 0.45); }
+:root[data-theme="light"] .mgx-chip.src { color: #991b1b; background: #fecaca; border-color: rgba(214, 31, 60, 0.65); }
+:root[data-theme="light"] .mgx-chip.cold { color: #1d4ed8; background: #dbeafe; border-color: rgba(29, 78, 216, 0.45); }
+:root[data-theme="light"] .mgx-chip.mix { color: #92400e; background: #fef3c7; border-color: rgba(180, 83, 9, 0.55); }
+:root[data-theme="light"] .mg-x6 .mgx-pill.pos { color: #b91c1c; border-color: rgba(214, 31, 60, 0.45); }
+:root[data-theme="light"] .mg-x6 .mgx-pill.neg { color: #1d4ed8; border-color: rgba(29, 78, 216, 0.45); }
+:root[data-theme="light"] .mg-x6 .mgx-pill.div { color: #92400e; border-color: rgba(180, 83, 9, 0.6); }
+:root[data-theme="light"] .mgx-pill.is-hot { background: #f1f5f9; }

@@ -127,11 +127,11 @@ describe('样式分片：层叠前提', () => {
     // 第 22 条（2026-11-11 / P2-T2）：ticker-list.css 的磁贴墙窄屏列宽
     // 第 23 条（2026-11-11 / P2-T2）：workspace.css 的窄屏控制条排版
     // 第 24 条（2026-11-11 / P4-T1）：workspace.css 的命令面板 / 预警中心窄屏排版
-    expect((all.match(/@media/g) ?? []).length).toBe(24);
-    // @keyframes：拆分时 16 个。地图 v2 加了 sunPulse（太阳直射点呼吸）、
-    // maBreath（城市锚点开市呼吸）、bcPulse/bcProgress（播报台呼吸灯与 6s
-    // 进度条），所以是 20。改这个数字时请确认是「新增动画」而不是
-    // 「拆分时丢了又补回来」—— 下面那条唯一性断言会拦住重名。
-    expect((all.match(/@keyframes/g) ?? []).length).toBe(20);
+    // 第 25 条（2026-11-13 / a11y）：tokens.css 的 @media (forced-colors: active) 键盘焦点高对比
+    // 第 26 条（2026-11-13 / a11y）：workspace.css 的 @media (pointer: coarse) 触控目标尺寸兜底
+    expect((all.match(/@media/g) ?? []).length).toBe(26);
+    // @keyframes：拆分时 16 个，地图 v2 加到 20 个；移除定时循环红绿闪烁圆环
+    // （maBreath / cityHalo / rgPulse）后为 17 个。改这个数字时请确认是刻意增删动画。
+    expect((all.match(/@keyframes/g) ?? []).length).toBe(17);
   });
 });

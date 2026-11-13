@@ -93,7 +93,11 @@ export function syncChrome(section, data, state, reality) {
     const tmp = document.createElement('div');
     tmp.innerHTML = banner.trim();
     const fresh = tmp.firstElementChild;
-    if (fresh) section.querySelector('.graph-stage').before(fresh);
+    if (fresh) {
+      const stage = section.querySelector('.graph-stage');
+      if (stage) stage.before(fresh);
+      else section.appendChild(fresh);
+    }
   }
 
   swap(section, '.mg-focusbar', state.graphMode === 'mindmap' ? barsHTML(data, state) : '');

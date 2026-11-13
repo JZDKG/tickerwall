@@ -9,6 +9,8 @@
  * 全部 DOM 依赖可注入，单测用假 document 就能跑。
  * ================================================================== */
 
+import { MODAL_CLOSE_EVENT } from './modal-dialog.js';
+
 export const ALERT_BANNER_ID = 'tw-alert-banner';
 export const ALERT_BANNER_MS = 8000;
 
@@ -37,6 +39,7 @@ export function mountAlertBanner(opts = {}) {
   const doc = opts.document ?? (typeof document === 'undefined' ? null : document);
   const NotificationImpl = opts.NotificationImpl ?? (typeof Notification === 'undefined' ? null : Notification);
   const schedule = opts.setTimeout ?? ((fn, ms) => setTimeout(fn, ms));
+  const cancel = opts.clearTimeout ?? ((id) => clearTimeout(id));
   if (!bus?.on || !doc) return () => {};
 
   let host = doc.getElementById(ALERT_BANNER_ID);
@@ -48,21 +51,63 @@ export function mountAlertBanner(opts = {}) {
     doc.body?.appendChild?.(host);
   }
 
+  let timerId = null;
+  const clearTimer = () => {
+    if (timerId != null) {
+      cancel(timerId);
+      timerId = null;
+    }
+  };
+
   const dismiss = () => {
+    clearTimer();
     host.hidden = true;
     host.innerHTML = '';
+  };
+
+  const tryDismiss = () => {
+    timerId = null;
+    if (doc.activeElement && host.contains?.(doc.activeElement)) return;
+    dismiss();
   };
 
   const onClick = (e) => {
     if (e.target?.closest?.('[data-action="dismiss-alert"]')) dismiss();
   };
+  const onFocusOut = (e) => {
+    if (host.hidden || timerId != null) return;
+    if (e?.relatedTarget && host.contains?.(e.relatedTarget)) return;
+    if (doc.activeElement && host.contains?.(doc.activeElement)) return;
+    timerId = schedule(tryDismiss, ALERT_BANNER_MS);
+  };
+  let pendingHit = null;
+  const hasOpenModal = () => Boolean(doc.querySelector?.('dialog:modal, dialog[open]'));
+  const showHit = (hit) => {
+    clearTimer();
+    host.innerHTML = bannerHTML(hit);
+    host.hidden = false;
+    timerId = schedule(tryDismiss, ALERT_BANNER_MS);
+  };
+  const onDialogClose = () => {
+    if (!pendingHit || hasOpenModal()) return;
+    const next = pendingHit;
+    pendingHit = null;
+    showHit(next);
+  };
+
   host.addEventListener?.('click', onClick);
+  host.addEventListener?.('focusout', onFocusOut);
+  doc.addEventListener?.('close', onDialogClose, true);
+  doc.addEventListener?.(MODAL_CLOSE_EVENT, onDialogClose);
 
   const onAlert = (hit) => {
     if (!hit || typeof hit !== 'object') return;
-    host.innerHTML = bannerHTML(hit);
-    host.hidden = false;
-    schedule(dismiss, ALERT_BANNER_MS);
+    if (hasOpenModal()) {
+      pendingHit = hit;
+    } else {
+      pendingHit = null;
+      showHit(hit);
+    }
     try {
       if (NotificationImpl?.permission === 'granted') {
         new NotificationImpl(hit.title ?? '宏观预警', { body: hit.message ?? '', tag: hit.ruleId });
@@ -74,8 +119,13 @@ export function mountAlertBanner(opts = {}) {
 
   const unsubscribe = bus.on('alert', onAlert);
   return () => {
+    clearTimer();
+    pendingHit = null;
     if (typeof unsubscribe === 'function') unsubscribe();
     else bus.off?.('alert', onAlert);
     host.removeEventListener?.('click', onClick);
+    host.removeEventListener?.('focusout', onFocusOut);
+    doc.removeEventListener?.('close', onDialogClose, true);
+    doc.removeEventListener?.(MODAL_CLOSE_EVENT, onDialogClose);
   };
 }

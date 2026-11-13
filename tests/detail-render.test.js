@@ -77,6 +77,20 @@ describe('整屏分区', () => {
     d.renderDetail(detailData({ quote: {} }));
     expect(detailEl.textContent).not.toContain('undefined');
   });
+
+  it('过期标签与对数坐标图例输出真实标签而非转义文本', () => {
+    d.detailState.scale = 'log';
+    try {
+      d.renderDetail(detailData({
+        quote: { price: 140, prevClose: 139, open: 138, high: 141, low: 137, changePct: 0.72, stale: true },
+      }));
+      expect(detailEl.querySelector('.stale-tag')?.textContent).toBe('数据过期');
+      expect(detailEl.innerHTML).toContain('<span class="legend-note">对数坐标</span>');
+      expect(detailEl.innerHTML).not.toContain('&lt;span');
+    } finally {
+      d.detailState.scale = 'lin';
+    }
+  });
 });
 
 describe('历史数据空态', () => {

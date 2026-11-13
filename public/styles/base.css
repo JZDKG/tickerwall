@@ -96,9 +96,9 @@
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
 }
 
-#refresh:hover {
-  background: rgba(255, 255, 255, 0.09);
-  border-color: rgba(255, 255, 255, 0.18);
+#refresh:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--panel-2) 90%, var(--text) 10%);
+  border-color: var(--line-strong, var(--muted-2));
 }
 
 #refresh:active {
@@ -116,7 +116,12 @@
 .skeleton .pct,
 .skeleton .abs {
   color: transparent;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.05));
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--text) 6%, transparent),
+    color-mix(in srgb, var(--text) 13%, transparent),
+    color-mix(in srgb, var(--text) 6%, transparent)
+  );
   background-size: 220% 100%;
   animation: shimmer 1.3s linear infinite;
   border-radius: 6px;

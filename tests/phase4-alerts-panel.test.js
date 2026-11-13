@@ -106,13 +106,15 @@ describe('渲染：转义与结构', () => {
     expect(out).toContain('<time>');
   });
 
-  it('面板含四种类型、四种操作符、表单与两块列表', () => {
+  it('面板含四种类型、涨跌口径、四种操作符、表单与两块列表', () => {
     const out = alertsPanelHTML({ rules: RULES, recentEvents: EVENTS });
     for (const k of ['price', 'change_pct', 'spread', 'divergence']) expect(out).toContain(`value="${k}"`);
+    expect(out).toContain('name="mode"');
+    expect(out).toContain('value="abs_pct"');
     expect(out).toContain('data-alert-form');
     expect(out).toContain('当前规则（1）');
     expect(out).toContain('最近触发');
-    expect(out).toContain('role="dialog"');
+    expect(out).toContain('id="alerts-panel-title"');
   });
 
   it('空列表与错误态给可读文案', () => {

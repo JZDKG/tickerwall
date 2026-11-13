@@ -177,14 +177,34 @@ function escText(value) {
  * @returns {() => void} 解绑
  */
 export function attachGlossary(root = document) {
+  let uid = 0;
+  const resolveTip = (btn) => {
+    const next = btn?.nextElementSibling;
+    if (next?.classList?.contains('gl-tip')) return next;
+    const id = btn?.getAttribute?.('aria-describedby');
+    return id ? btn?.parentElement?.querySelector?.(`[id="${id}"]`) ?? null : null;
+  };
+  const dedupeTip = (btn) => {
+    const tip = resolveTip(btn);
+    if (tip?.id && (root.querySelectorAll?.(`[id="${tip.id}"]`)?.length ?? 0) > 1) {
+      const nextId = `gl-tip-${btn.dataset.glTerm ?? 'term'}-${++uid}`;
+      tip.id = nextId;
+      btn.setAttribute('aria-describedby', nextId);
+    }
+    return tip;
+  };
+  const dedupeAll = () => {
+    root.querySelectorAll?.('.gl-term').forEach(dedupeTip);
+  };
   const show = (btn) => {
-    const tip = btn.parentElement?.querySelector(`#${btn.getAttribute('aria-describedby')}`);
+    const tip = dedupeTip(btn);
     if (tip) tip.hidden = false;
     btn.setAttribute('aria-expanded', 'true');
   };
   const hide = (btn) => {
-    const tip = btn.parentElement?.querySelector(`#${btn.getAttribute('aria-describedby')}`);
+    const tip = resolveTip(btn);
     if (tip) tip.hidden = true;
+    delete btn.dataset.glClickOpen;
     btn.removeAttribute('aria-expanded');
   };
   const hideAll = () => {
@@ -197,7 +217,7 @@ export function attachGlossary(root = document) {
   };
   const onOut = (e) => {
     const btn = e.target?.closest?.('.gl-term');
-    if (btn) hide(btn);
+    if (btn && btn.dataset.glClickOpen !== '1') hide(btn);
   };
   const onFocusIn = (e) => {
     const btn = e.target?.closest?.('.gl-term');
@@ -207,14 +227,29 @@ export function attachGlossary(root = document) {
     const btn = e.target?.closest?.('.gl-term');
     if (btn) hide(btn);
   };
+  const onClick = (e) => {
+    const btn = e.target?.closest?.('.gl-term');
+    if (!btn) {
+      hideAll();
+      return;
+    }
+    if (btn.dataset.glClickOpen === '1') {
+      hide(btn);
+    } else {
+      btn.dataset.glClickOpen = '1';
+      show(btn);
+    }
+  };
   const onKey = (e) => {
     if (e.key === 'Escape') hideAll();
   };
 
+  dedupeAll();
   root.addEventListener('mouseover', onOver);
   root.addEventListener('mouseout', onOut);
   root.addEventListener('focusin', onFocusIn);
   root.addEventListener('focusout', onFocusOut);
+  root.addEventListener('click', onClick);
   root.addEventListener('keydown', onKey);
 
   return () => {
@@ -222,6 +257,7 @@ export function attachGlossary(root = document) {
     root.removeEventListener('mouseout', onOut);
     root.removeEventListener('focusin', onFocusIn);
     root.removeEventListener('focusout', onFocusOut);
+    root.removeEventListener('click', onClick);
     root.removeEventListener('keydown', onKey);
   };
 }

@@ -311,7 +311,6 @@ export function questionCardsHTML(cards) {
   if (!cards?.length) return '';
   return `<div class="q-head">
       <h2>先看这几个问题</h2>
-      <span class="q-note">每张卡都标了数据状态与依据入口；这里的问题由模板生成，不是模型编的标题。</span>
     </div>
     <ul class="q-list">
       ${cards

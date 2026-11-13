@@ -97,10 +97,16 @@
   position: absolute;
   top: 6px;
   right: 8px;
+  min-width: 24px;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 2px 6px;
   color: var(--muted);
   background: transparent;
   border: 0;
+  border-radius: 6px;
   font-size: 16px;
   line-height: 1;
   cursor: pointer;
@@ -108,7 +114,7 @@
 }
 
 .pin-btn[aria-pressed="true"] {
-  color: #e0a83c;
+  color: var(--warn, #e0a83c);
 }
 
 @media (max-width: 880px) {
@@ -168,7 +174,7 @@ html[data-pip="1"] .detail-footnote {
   max-width: min(720px, calc(100vw - 32px));
   padding: 10px 14px;
   color: var(--text, #e6edf3);
-  background: var(--panel-2, #172130);
+  background: var(--bg-elev, #0d1219);
   border: 1px solid var(--up, #f5455c);
   border-radius: 10px;
   box-shadow: 0 10px 30px rgb(0 0 0 / 45%);
@@ -202,10 +208,16 @@ html[data-pip="1"] .detail-footnote {
 
 .tw-alert-inner button {
   margin-left: auto;
+  min-width: 24px;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 0 6px;
   color: var(--muted, #9aa7b5);
   background: transparent;
   border: 0;
+  border-radius: 6px;
   font-size: 18px;
   line-height: 1;
   cursor: pointer;
@@ -254,20 +266,28 @@ html[data-embed="1"] body::after {
 }
 
 /* ------------------------------------------------------------------ *
- * 分享卡预览浮层（P3-T3）
+ * 分享卡预览浮层（P3-T3：原生 <dialog> top-layer）
  * ------------------------------------------------------------------ */
-.tw-share-host {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  display: grid;
-  place-items: center;
+.tw-share-host:empty,
+.cp-host:empty,
+.al-host:empty {
+  display: none;
 }
 
-.tw-share-backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgb(4 8 14 / 78%);
+dialog.tw-share-dialog,
+dialog.cp-dialog,
+dialog.al-dialog {
+  margin: auto;
+  color: var(--text, #e6edf3);
+  background: var(--bg-elev, #0d1219);
+  border: 1px solid var(--line, #26364c);
+}
+
+dialog.tw-share-dialog::backdrop,
+dialog.cp-dialog::backdrop,
+dialog.al-dialog::backdrop {
+  background: rgba(3, 7, 14, 0.68);
+  backdrop-filter: blur(2px);
 }
 
 .tw-share-dialog {
@@ -276,7 +296,7 @@ html[data-embed="1"] body::after {
   max-height: 92vh;
   overflow: auto;
   padding: 14px;
-  background: var(--panel, #131d2b);
+  background: var(--bg-elev, #0d1219);
   border: 1px solid var(--line, #26364c);
   border-radius: 14px;
   box-shadow: 0 24px 70px rgb(0 0 0 / 60%);
@@ -294,12 +314,21 @@ html[data-embed="1"] body::after {
 .tw-share-actions { display: inline-flex; gap: 8px; }
 
 .tw-share-actions button {
+  min-height: 28px;
   padding: 5px 12px;
   color: var(--text, #e6edf3);
   background: var(--panel-2, #172130);
   border: 1px solid var(--line, #26364c);
   border-radius: 8px;
   cursor: pointer;
+}
+
+.tw-share-actions button[data-share-dismiss] {
+  min-width: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 8px;
 }
 
 .tw-share-body svg {
@@ -334,32 +363,47 @@ html[data-embed="1"] body::after {
 .al-unread[hidden] { display: none; }
 
 /* 命令面板 ---------------------------------------------------------- */
-.cp-host, .al-host, .al-toast {
+.al-toast {
   position: fixed;
   z-index: 90;
   font-family: inherit;
 }
-.cp-host { inset: 0; display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh; }
-.cp-backdrop, .al-backdrop { position: absolute; inset: 0; background: rgba(3, 7, 14, .66); }
 .cp-dialog {
   position: relative;
   width: min(640px, calc(100vw - 32px));
   max-height: 68vh;
-  display: flex;
-  flex-direction: column;
+  padding: 0;
   color: var(--text, #e6edf3);
-  background: var(--panel, #101826);
+  background: var(--bg-elev, #0d1219);
   border: 1px solid var(--line, #26364c);
   border-radius: 12px;
   box-shadow: 0 24px 64px rgba(0, 0, 0, .5);
 }
+.cp-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
 .cp-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line, #26364c); }
+.cp-close {
+  flex: none;
+  min-width: 28px;
+  min-height: 28px;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--muted, #9aa7b5);
+  background: var(--panel-2, #172130);
+  border: 1px solid var(--line, #26364c);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.cp-close:hover { color: var(--text, #e6edf3); }
 .cp-kbd { flex: none; font-size: 11px; color: var(--muted, #9aa7b5); border: 1px solid var(--line, #26364c); border-radius: 6px; padding: 2px 6px; }
 .cp-input {
   flex: 1; min-width: 0; padding: 8px 10px; font: inherit; font-size: 14px;
-  color: inherit; background: var(--bg-elev, #172130); border: 1px solid var(--line, #26364c); border-radius: 8px;
+  color: inherit; background: var(--panel, #172130); border: 1px solid var(--line, #26364c); border-radius: 8px;
 }
-.cp-input:focus { outline: 2px solid var(--accent, #5b9cf8); outline-offset: 1px; }
+.cp-input:focus { outline: 2px solid var(--focus-ring, #5b9cf8); outline-offset: 1px; }
 .cp-results { overflow: auto; padding: 6px; }
 .cp-list { display: flex; flex-direction: column; gap: 2px; }
 .cp-item {
@@ -368,43 +412,48 @@ html[data-embed="1"] body::after {
   color: inherit; text-align: left; text-decoration: none; font: inherit; font-size: 13px;
   background: transparent; border: 1px solid transparent; border-radius: 8px; cursor: pointer;
 }
-.cp-item:hover, .cp-item.is-active { background: var(--bg-elev, #172130); border-color: var(--line, #26364c); }
+.cp-item:hover, .cp-item.is-active { background: var(--panel-2, #172130); border-color: var(--line, #26364c); }
 .cp-cat { font-size: 11px; color: var(--muted, #9aa7b5); }
 .cp-label { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cp-hint { color: var(--muted, #9aa7b5); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cp-empty { padding: 24px; text-align: center; color: var(--muted, #9aa7b5); }
 
 /* 预警中心 ---------------------------------------------------------- */
-.al-host { inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px; }
 .al-dialog {
   position: relative;
-  width: min(880px, 100%); max-height: 86vh; overflow: auto;
+  width: min(880px, calc(100vw - 32px)); max-height: 86vh; overflow: auto;
   padding: 18px 20px 22px; color: var(--text, #e6edf3);
-  background: var(--panel, #101826); border: 1px solid var(--line, #26364c);
+  background: var(--bg-elev, #0d1219); border: 1px solid var(--line, #26364c);
   border-radius: 12px; box-shadow: 0 24px 64px rgba(0, 0, 0, .5);
 }
-.al-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-.al-head h3 { margin: 0 0 4px; font-size: 17px; }
-.al-sub { margin: 0; color: var(--muted, #9aa7b5); font-size: 12px; }
+.al-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.al-head h2 { margin: 0; font-size: 17px; }
 .al-head button, .al-form button, .al-rule button, .al-toast-inner button {
   font: inherit; cursor: pointer; color: inherit;
   background: var(--panel-2, #172130); border: 1px solid var(--line, #26364c); border-radius: 8px; padding: 5px 12px;
 }
+.al-head button, .al-toast-inner button {
+  min-width: 28px; min-height: 28px; display: inline-flex; align-items: center; justify-content: center; padding: 4px 8px;
+}
 .al-error { margin: 12px 0 0; padding: 8px 10px; color: var(--up, #f5455c); background: rgba(245, 69, 92, .1); border-radius: 8px; font-size: 13px; }
-.al-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin: 16px 0; padding: 12px; background: var(--bg-elev, #172130); border-radius: 10px; }
-.al-form label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted, #9aa7b5); }
+.al-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin: 16px 0; padding: 12px; background: var(--panel, #172130); border: 1px solid var(--line, #26364c); border-radius: 10px; }
+.al-form .al-field { display: flex; flex-direction: column; gap: 4px; }
+.al-form .al-field[hidden] { display: none; }
+.al-form label { font-size: 11px; color: var(--muted, #9aa7b5); }
 .al-form input, .al-form select {
-  font: inherit; font-size: 13px; padding: 6px 8px; min-width: 120px;
-  color: inherit; background: var(--panel, #101826); border: 1px solid var(--line, #26364c); border-radius: 6px;
+  font: inherit; font-size: 13px; padding: 6px 8px; min-width: 110px;
+  color: inherit; background: var(--bg-elev, #0d1219); border: 1px solid var(--line, #26364c); border-radius: 6px;
 }
 .al-form button { margin-left: auto; }
 .al-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.al-col h4 { margin: 0 0 8px; font-size: 13px; }
+.al-col h3 { margin: 0 0 8px; font-size: 13px; }
 .al-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .al-rule, .al-event {
   display: flex; align-items: center; gap: 8px; padding: 8px 10px;
-  background: var(--bg-elev, #172130); border: 1px solid var(--line, #26364c); border-radius: 8px; font-size: 12px;
+  background: var(--panel, #172130); border: 1px solid var(--line, #26364c); border-radius: 8px; font-size: 12px;
 }
+.al-rule-actions { display: inline-flex; gap: 6px; flex: none; }
+.al-rule.is-paused { opacity: .68; }
 .al-rule-main { flex: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
 .al-tag { font-size: 11px; padding: 1px 6px; border: 1px solid var(--line, #26364c); border-radius: 999px; }
 .al-dim, .al-rule-meta, .al-event time { color: var(--muted, #9aa7b5); }
@@ -417,7 +466,7 @@ html[data-embed="1"] body::after {
 .al-toast[hidden] { display: none; }
 .al-toast-inner {
   display: flex; align-items: center; gap: 10px; padding: 10px 14px;
-  color: var(--text, #e6edf3); background: var(--panel, #101826);
+  color: var(--text, #e6edf3); background: var(--bg-elev, #0d1219);
   border: 1px solid var(--up, #f5455c); border-radius: 10px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, .45); font-size: 13px;
 }
@@ -429,4 +478,16 @@ html[data-embed="1"] body::after {
   .cp-hint { display: none; }
   .al-cols { grid-template-columns: 1fr; }
   #cmd-palette-btn, #alerts-btn { padding: 4px 6px; }
+}
+
+@media (pointer: coarse) {
+  .pin-btn,
+  .cp-close,
+  .al-head button,
+  .al-toast-inner button,
+  .tw-alert-inner button,
+  .tw-share-actions button[data-share-dismiss] {
+    min-width: 36px;
+    min-height: 36px;
+  }
 }

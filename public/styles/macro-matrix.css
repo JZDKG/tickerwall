@@ -27,7 +27,7 @@
 
 .nav-link:hover {
   color: var(--text);
-  border-color: rgba(255, 255, 255, 0.18);
+  border-color: var(--muted-2);
 }
 
 .macro-status {
@@ -48,19 +48,21 @@
 
 .risk-badge.on {
   color: var(--up);
-  background: rgba(245, 69, 92, 0.12);
-  border-color: rgba(245, 69, 92, 0.35);
+  background: var(--up-bg);
+  border-color: var(--line);
+  border-color: color-mix(in srgb, var(--up) 35%, transparent);
 }
 
 .risk-badge.off {
   color: var(--down);
-  background: rgba(14, 203, 129, 0.1);
-  border-color: rgba(14, 203, 129, 0.32);
+  background: var(--down-bg);
+  border-color: var(--line);
+  border-color: color-mix(in srgb, var(--down) 32%, transparent);
 }
 
 .risk-badge.neutral {
   color: var(--muted);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--panel-2);
 }
 
 .risk-note {
@@ -73,6 +75,12 @@
 .matrix-wrap {
   overflow-x: auto;
   padding-bottom: 4px;
+}
+
+.matrix-wrap:focus-visible {
+  outline: 2px solid var(--focus-ring, #60a5fa);
+  outline-offset: 2px;
+  border-radius: 6px;
 }
 
 .corr-matrix {
@@ -129,7 +137,7 @@
 }
 
 .corr-matrix td.corr.active {
-  outline: 2px solid rgba(255, 255, 255, 0.55);
+  outline: 2px solid var(--text);
   outline-offset: -1px;
 }
 
@@ -137,6 +145,27 @@
   margin: 10px 0 0;
   font-size: 11.5px;
   color: var(--muted-2);
+}
+
+.study-method {
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.study-method summary {
+  display: inline-block;
+  cursor: pointer;
+  color: var(--muted);
+  user-select: none;
+}
+
+.study-method summary:hover {
+  color: var(--text);
+}
+
+.study-method[open] .macro-hint {
+  margin-top: 6px;
 }
 
 /* 归一化对比选择 */
@@ -155,20 +184,20 @@
   padding: 5px 11px;
   border-radius: 8px;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--panel);
   color: var(--muted);
-  transition: all 0.14s ease;
+  transition: color 0.14s ease, border-color 0.14s ease, background-color 0.14s ease;
 }
 
 .pick:hover {
   color: var(--text);
-  border-color: rgba(255, 255, 255, 0.16);
+  border-color: var(--muted-2);
 }
 
 .pick.on {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.24);
+  background: var(--panel-2);
+  border-color: var(--accent, var(--muted-2));
 }
 
 .pair-head {
@@ -195,7 +224,7 @@
   color: var(--up);
 }
 .pair-now.down {
-  color: #5b9cf8;
+  color: var(--cold, #5b9cf8);
 }
 
 @media (max-width: 880px) {
@@ -225,5 +254,5 @@
 }
 
 .d-table td.corr-neg {
-  color: #5b9cf8;
+  color: var(--cold, #5b9cf8);
 }

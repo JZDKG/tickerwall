@@ -63,7 +63,7 @@ export function portAttrs() {
       magnet: true,
       stroke: 'rgba(122,140,168,.55)',
       strokeWidth: 1.2,
-      fill: '#0b1017',
+      fill: 'var(--bg-elev, #0b1017)',
     },
   };
 }

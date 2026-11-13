@@ -29,7 +29,7 @@
   padding: 9px 10px;
   border-radius: 8px;
   border: 1px solid transparent;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.035);
+  border-bottom: 1px solid var(--divider, rgba(255, 255, 255, 0.035));
   font-size: 13px;
 }
 
@@ -38,8 +38,8 @@
 }
 
 .cal-item.today {
-  background: rgba(224, 168, 60, 0.07);
-  border-color: rgba(224, 168, 60, 0.25);
+  background: var(--warn-bg, rgba(224, 168, 60, 0.07));
+  border-color: rgba(224, 168, 60, 0.35);
   border-radius: 8px;
 }
 
@@ -73,21 +73,21 @@
 }
 
 .cal-kind.k-fomc {
-  color: #f5455c;
+  color: var(--up);
   border-color: rgba(245, 69, 92, 0.35);
-  background: rgba(245, 69, 92, 0.08);
+  background: var(--up-bg);
 }
 
 .cal-kind.k-cpi {
-  color: #e0a83c;
+  color: var(--warn);
   border-color: rgba(224, 168, 60, 0.35);
-  background: rgba(224, 168, 60, 0.08);
+  background: var(--warn-bg);
 }
 
 .cal-kind.k-nfp {
-  color: #5b9cf8;
+  color: var(--cold);
   border-color: rgba(91, 156, 248, 0.35);
-  background: rgba(91, 156, 248, 0.08);
+  background: var(--cold-bg);
 }
 
 .cal-title {
@@ -171,14 +171,14 @@
 }
 
 .ev-badge.high {
-  color: #ff8f9c;
-  background: rgba(245, 69, 92, 0.14);
-  border: 1px solid rgba(245, 69, 92, 0.3);
+  color: var(--up);
+  background: var(--up-bg);
+  border: 1px solid rgba(245, 69, 92, 0.35);
 }
 
 .ev-badge.mid {
   color: var(--muted);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--panel-2);
   border: 1px solid var(--line);
 }
 
@@ -187,13 +187,13 @@
   padding: 1px 7px;
   border-radius: 5px;
   color: var(--muted-2);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line);
 }
 
 .ev-topic.strong {
-  color: #9ec2ff;
-  border-color: rgba(91, 156, 248, 0.28);
-  background: rgba(91, 156, 248, 0.07);
+  color: var(--cold);
+  border-color: rgba(91, 156, 248, 0.35);
+  background: var(--cold-bg);
 }
 
 .ev-title {
@@ -205,7 +205,7 @@
 }
 
 .event.lv-high .ev-title {
-  color: #ffd9de;
+  color: var(--up);
 }
 
 /* LLM 摘要为主行时，原标题降为可读性辅助的小字副行 */
@@ -251,16 +251,16 @@
 
 /* 一手：媒体/机构自己的 feed，链接直达原文 */
 .ev-origin.direct {
-  color: #7fd6a2;
-  background: rgba(63, 185, 120, 0.12);
-  border: 1px solid rgba(63, 185, 120, 0.28);
+  color: var(--down);
+  background: var(--down-bg);
+  border: 1px solid rgba(63, 185, 120, 0.32);
 }
 
 /* 索引：经 Google News 转手，出处由聚合方提供 */
 .ev-origin.agg {
   color: var(--muted-2);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: var(--panel);
+  border: 1px solid var(--line);
 }
 
 .ev-lang {
@@ -269,7 +269,7 @@
   font-size: 10px;
   text-transform: uppercase;
   color: var(--muted-2);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--panel);
 }
 
 .ev-pub {
@@ -286,7 +286,7 @@
 .ev-sym {
   padding: 0 5px;
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--panel-2);
   color: var(--muted);
 }
 
@@ -295,7 +295,7 @@
 }
 
 .ev-link {
-  color: #6f9de8;
+  color: var(--cold);
   text-decoration: none;
   margin-left: 2px;
 }
@@ -551,6 +551,57 @@
   border-color: rgba(255, 204, 102, 0.42);
 }
 
+:root[data-theme="light"] .llm-pill,
+:root[data-theme="light"] .ev-ai {
+  color: var(--cold);
+  background: var(--cold-bg);
+  border-color: rgba(30, 64, 175, 0.28);
+}
+
+:root[data-theme="light"] .ev-new {
+  color: var(--warn);
+  background: var(--warn-bg);
+  border-color: rgba(120, 53, 15, 0.32);
+}
+
+:root[data-theme="light"] .study-chip {
+  background: var(--up-bg);
+  border-color: rgba(153, 27, 27, 0.24);
+}
+
+:root[data-theme="light"] .study-chip b {
+  color: var(--up);
+}
+
+:root[data-theme="light"] .fresh.lv-fresh {
+  color: #065f46;
+  background: rgba(6, 95, 70, 0.10);
+  border-color: rgba(6, 95, 70, 0.25);
+}
+
+:root[data-theme="light"] .fresh.lv-normal {
+  background: var(--panel-2);
+  border-color: var(--line);
+}
+
+:root[data-theme="light"] .fresh.lv-delayed {
+  color: var(--warn);
+  background: var(--warn-bg);
+  border-color: rgba(120, 53, 15, 0.28);
+}
+
+:root[data-theme="light"] .fresh.lv-stale {
+  color: #991b1b;
+  background: rgba(153, 27, 27, 0.10);
+  border-color: rgba(153, 27, 27, 0.30);
+}
+
+:root[data-theme="light"] .fresh.suspect {
+  color: var(--warn);
+  background: var(--warn-bg);
+  border-color: rgba(120, 53, 15, 0.35);
+}
+
 /* 异常值：整行提示 */
 .row.suspect {
   box-shadow: inset 3px 0 0 rgba(255, 204, 102, 0.65);
@@ -663,11 +714,15 @@
   padding: 8px 10px;
   border-radius: 8px;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--panel);
   font-size: 11px;
 }
 
 .ev-rev-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   color: var(--muted);
   margin-bottom: 6px;
 }
@@ -675,6 +730,25 @@
 .ev-rev-note {
   color: var(--muted-2);
   margin-left: 6px;
+}
+
+.ev-rev-close {
+  flex: none;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0 6px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--muted);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ev-rev-close:hover {
+  color: var(--text);
+  border-color: var(--muted-2);
 }
 
 .ev-rev-list {
@@ -703,7 +777,7 @@
 }
 
 .ev-rev-level {
-  color: #e0a83c;
+  color: var(--warn, #e0a83c);
 }
 
 .ev-rev-empty {
@@ -713,7 +787,7 @@
 .ev-rev-flag {
   padding: 0 5px;
   border-radius: 3px;
-  border: 1px solid rgba(224, 168, 60, 0.45);
-  color: #e0a83c;
+  border: 1px solid var(--warn, #e0a83c);
+  color: var(--warn, #e0a83c);
   font-size: 10px;
 }
