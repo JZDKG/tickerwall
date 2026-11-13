@@ -50,12 +50,13 @@ describe('mountWorkspaceBar：点击写回偏好并触发 onChange', () => {
     mountWorkspaceBar(host, { workspace: ws, onChange: (s) => changes.push(s) });
   });
 
-  it('切到磁贴墙 → store / dataset / onChange 三处同步', () => {
-    host.querySelector('[data-ws-density="wall"]').click();
+  it('默认磁贴墙，切到分组列表 → store / dataset / onChange 三处同步', () => {
     expect(ws.getState().density).toBe('wall');
-    expect(document.documentElement.dataset.density).toBe('wall');
+    host.querySelector('[data-ws-density="grouped"]').click();
+    expect(ws.getState().density).toBe('grouped');
+    expect(document.documentElement.dataset.density).toBe('grouped');
     expect(changes).toHaveLength(1);
-    expect(host.querySelector('[data-ws-density="wall"]').getAttribute('aria-pressed')).toBe('true');
+    expect(host.querySelector('[data-ws-density="grouped"]').getAttribute('aria-pressed')).toBe('true');
   });
 
   it('切换配色与主题', () => {
@@ -74,14 +75,42 @@ describe('mountWorkspaceBar：点击写回偏好并触发 onChange', () => {
   });
 
   it('点无效值不触发变更；返回的函数可解绑', () => {
-    const btn = host.querySelector('[data-ws-density="wall"]');
+    const btn = host.querySelector('[data-ws-density="grouped"]');
     btn.dataset.wsDensity = 'bogus';
     btn.click();
-    expect(ws.getState().density).toBe('grouped');
+    expect(ws.getState().density).toBe('wall');
     expect(changes).toHaveLength(0);
+  });
+
+  it('点市场时段筛选按钮调用 onSessionFilter 并同步 aria-pressed', () => {
+    const picked = [];
+    mountWorkspaceBar(host, {
+      workspace: ws,
+      getSessionState: () => ({ sessionFilter: 'all', counts: { all: 23, open: 10, closed: 13 } }),
+      onSessionFilter: (mode) => picked.push(mode),
+    });
+    const openBtn = host.querySelector('[data-ws-session="open"]');
+    expect(openBtn.textContent).toContain('交易中');
+    expect(openBtn.textContent).toContain('10');
+    openBtn.click();
+    expect(picked).toEqual(['open']);
+    expect(openBtn.getAttribute('aria-pressed')).toBe('true');
   });
 
   it('没有 host 时不抛（容器被别的视图删掉了）', () => {
     expect(() => mountWorkspaceBar(null, { workspace: ws })).not.toThrow();
+  });
+
+  it('次级设置收敛在默认折叠的 disclosure 中，且展开后切换偏好仍保持展开', () => {
+    const details = host.querySelector('details.ws-prefs-disclosure');
+    expect(details).toBeTruthy();
+    expect(details.open).toBe(false);
+    expect(details.querySelector('.ws-prefs-trigger')?.textContent).toContain('显示设置');
+
+    details.open = true;
+    host.querySelector('[data-ws-theme="oled"]').click();
+    const afterDetails = host.querySelector('details.ws-prefs-disclosure');
+    expect(afterDetails.open).toBe(true);
+    expect(afterDetails.querySelector('.ws-prefs-summary')?.textContent).toContain('OLED');
   });
 });

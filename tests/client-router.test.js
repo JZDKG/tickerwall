@@ -22,9 +22,10 @@ document.body.innerHTML = `
   <section id="map"></section>
   <section id="events"></section>
   <section id="macro"></section>
+  <section id="watch"></section>
 `;
 
-// 五个视图的生命周期都换成可观测的假实现：router 只该负责「谁上谁下」
+// 视图生命周期都换成可观测的假实现：router 只该负责「谁上谁下」
 const calls = [];
 vi.mock('../src/client/views/detail.js', () => ({
   mountDetail: (id) => calls.push(['mount', 'detail', id]),
@@ -42,6 +43,10 @@ vi.mock('../src/client/views/macro.js', () => ({
   mountMacro: () => calls.push(['mount', 'macro']),
   unmountMacro: () => calls.push(['unmount', 'macro']),
 }));
+vi.mock('../src/client/views/watch.js', () => ({
+  mountWatch: () => calls.push(['mount', 'watch']),
+  unmountWatch: () => calls.push(['unmount', 'watch']),
+}));
 
 const { route, currentView, resetMountedForTests } = await import('../src/client/router.js');
 const els = {
@@ -50,6 +55,7 @@ const els = {
   map: document.getElementById('map'),
   events: document.getElementById('events'),
   macro: document.getElementById('macro'),
+  watch: document.getElementById('watch'),
 };
 
 const go = (hash) => {
@@ -116,7 +122,7 @@ describe('生命周期契约', () => {
     calls.length = 0;
     go('#/events');
     const unmounted = calls.filter((c) => c[0] === 'unmount').map((c) => c[1]).sort();
-    expect(unmounted).toEqual(['detail', 'macro', 'map']);
+    expect(unmounted).toEqual(['detail', 'macro', 'map', 'watch']);
     expect(calls).toContainEqual(['mount', 'events']);
   });
 
@@ -221,42 +227,81 @@ describe('重复 route 不重挂', () => {
 });
 
 /* ================================================================== *
- * B6 回归：#/watch 是能真正落地的路由（不是只有高亮变了）
- *
- * 复用列表视图（关注简报就在 #home-brief 里），并自动展开折叠的关注简报，
- * 让读者点「我的关注」后真的看到关注内容，而不是回到首页再自己找。
+ * B6 回归：#/watch 是独立路由（<section id="watch">）
  * ================================================================== */
 describe('B6：#/watch 路由落地', () => {
-  it('#/watch 挂到列表视图，并展开关注简报', () => {
-    const brief = document.createElement('section');
-    brief.id = 'home-brief';
-    brief.innerHTML = '<details class="home-brief-accordion"><summary>关注简报</summary></details>';
-    document.body.appendChild(brief);
-    try {
-      resetMountedForTests();
-      go('#/watch');
-      expect(els.list.hidden).toBe(false);
-      const details = brief.querySelector('details');
-      expect(details.open).toBe(true);
-      expect(brief.classList.contains('watch-focused')).toBe(true);
-    } finally {
-      brief.remove();
-    }
+  it('#/watch 挂载独立 watch 视图并隐藏首页列表', () => {
+    resetMountedForTests();
+    go('#/watch');
+    expect(currentView()).toBe('watch');
+    expect(els.watch.hidden).toBe(false);
+    expect(els.list.hidden).toBe(true);
+    expect(calls).toContainEqual(['mount', 'watch']);
   });
 
-  it('从 #/watch 切回首页时重新挂载（不是幂等早退）', () => {
-    const brief = document.createElement('section');
-    brief.id = 'home-brief';
-    brief.innerHTML = '<details class="home-brief-accordion"><summary>关注简报</summary></details>';
-    document.body.appendChild(brief);
+  it('从 #/watch 切回首页时挂载列表并卸载 watch', () => {
+    resetMountedForTests();
+    go('#/watch');
+    expect(currentView()).toBe('watch');
+    calls.length = 0;
+    go('');
+    expect(currentView()).toBe('list');
+    expect(els.list.hidden).toBe(false);
+    expect(els.watch.hidden).toBe(true);
+    expect(calls).toContainEqual(['unmount', 'watch']);
+  });
+});
+
+describe('路由作用域：切到子视图时隐藏首页信息流与工具条', () => {
+  it('离开 list 时设置 data-view 并隐藏 questions / ws-bar / synthetics-strip；切回后按内容恢复', () => {
+    const q = document.createElement('section');
+    q.id = 'questions';
+    q.innerHTML = '<div class="q-card">卡</div>';
+    const ws = document.createElement('div');
+    ws.id = 'ws-bar';
+    const syn = document.createElement('div');
+    syn.id = 'synthetics-strip';
+    document.body.append(q, ws, syn);
     try {
       resetMountedForTests();
-      go('#/watch');
-      expect(currentView()).not.toBe('list');
       go('');
-      expect(currentView()).toBe('list');
+      expect(document.documentElement.dataset.view).toBe('list');
+      expect(q.hidden).toBe(false);
+      expect(ws.hidden).toBe(false);
+      expect(syn.hidden).toBe(false);
+
+      go('#/d/gold-intl');
+      expect(document.documentElement.dataset.view).toBe('detail');
+      expect(q.hidden).toBe(true);
+      expect(ws.hidden).toBe(true);
+      expect(syn.hidden).toBe(true);
+
+      go('#/watch');
+      expect(document.documentElement.dataset.view).toBe('watch');
+      expect(q.hidden).toBe(true);
+      expect(ws.hidden).toBe(true);
+      expect(syn.hidden).toBe(true);
+
+      go('#/events');
+      expect(document.documentElement.dataset.view).toBe('events');
+      expect(ws.hidden).toBe(true);
+
+      go('');
+      expect(document.documentElement.dataset.view).toBe('list');
+      expect(q.hidden).toBe(false);
+      expect(ws.hidden).toBe(false);
+      expect(syn.hidden).toBe(false);
+
+      // 无内容的问题区在回到首页时保持 hidden
+      q.innerHTML = '';
+      go('#/macro');
+      go('');
+      expect(q.hidden).toBe(true);
     } finally {
-      brief.remove();
+      q.remove();
+      ws.remove();
+      syn.remove();
+      delete document.documentElement.dataset.view;
     }
   });
 });

@@ -575,3 +575,39 @@ describe('宏观诊断计数', () => {
     expect(s === undefined || typeof s === 'object').toBe(true);
   });
 });
+
+describe('通俗今日联动全景与渐进披露', () => {
+  it('renderMacro 首屏渲染通俗版今日资产联动全景，专业四表默认折叠在 details 里', async () => {
+    vi.stubGlobal('fetch', okFetch(macroData()));
+    await m.loadMacro(250);
+    m.renderMacro();
+    const el = document.getElementById('macro');
+    expect(el.querySelector('.macro-today-section')).toBeTruthy();
+    expect(el.querySelectorAll('.macro-pulse-group').length).toBeGreaterThan(0);
+    expect(el.querySelectorAll('.macro-impact-card').length).toBeGreaterThan(0);
+    const statsDisclosure = el.querySelector('details.macro-stats-disclosure');
+    expect(statsDisclosure).toBeTruthy();
+    expect(statsDisclosure.open).toBe(false);
+
+    // 点联动卡应联动切换选中的分析资产对并高亮该对
+    const card = el.querySelector('.macro-impact-card[data-impact-pair]');
+    const [a, b] = card.dataset.impactPair.split('|');
+    card.click();
+    expect(m.macroState.pair).toEqual([a, b]);
+  });
+
+  it('macroTodayImpactHTML 实时识别利率 bp 与同向/背离文案', async () => {
+    vi.stubGlobal('fetch', okFetch(macroData()));
+    await m.loadMacro(250);
+    const liveQuotes = [
+      { id: 'us10y', name: '美债10Y', kind: 'rate', change: 0.05, changePct: 1.2 },
+      { id: 'dxy', name: '美元指数', changePct: 0.65 },
+      { id: 'gold-intl', name: '国际金价', changePct: 1.45 },
+      { id: 'oil', name: '国际原油', changePct: -0.9 },
+    ];
+    const htmlStr = String(m.macroTodayImpactHTML(m.macroState.data, liveQuotes));
+    expect(htmlStr).toContain('+5.0bp');
+    expect(htmlStr).toContain('+0.65%');
+    expect(htmlStr).toContain('偏离常态');
+  });
+});

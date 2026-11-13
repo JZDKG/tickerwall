@@ -12,7 +12,14 @@ import { macroEl } from '../shared/dom.js';
 import { store } from '../shared/store.js';
 import { api } from '../shared/api.js';
 import { clockText, dirOf, esc, html, raw } from '../shared/format.js';
-import { macroGraphSectionHTML, findEdge, EDGE_BY_ID } from '/macro-graph.js';
+import {
+  macroGraphSectionHTML,
+  findEdge,
+  EDGE_BY_ID,
+  MACRO_TRANSMISSION_EDGES,
+  evaluateAll,
+  findLastValid,
+} from '/macro-graph.js';
 // 图谱消费「同一份解释」：取数与状态判断在 explanations/graph.js（纯函数 + 60s 缓存）。
 // 注意不能放回 views/macro/：那是构建期子树，主入口不许直接加载它。
 import { loadGraphExplanation } from './explanations/graph.js';
@@ -231,9 +238,9 @@ export function macroMatrixHTML(data) {
   // 单行写：与迁移前逐字节一致，避免无谓的空白差异
   const headCells = ids.map((id) => {
     const m = meta.get(id);
-    return html`<th title="${m?.name ?? id}"><span>${m?.short ?? id}</span></th>`;
+    return html`<th scope="col" title="${m?.name ?? id}"><span>${m?.short ?? id}</span></th>`;
   });
-  const head = html`<tr><th class="corner">标的</th>${headCells}</tr>`;
+  const head = html`<tr><th scope="col" class="corner">标的</th>${headCells}</tr>`;
 
   const bodyRows = ids.map((rid, i) => {
     const rm = meta.get(rid);
@@ -270,7 +277,7 @@ export function macroMatrixHTML(data) {
         data-a="${rid}" data-b="${cid}"
         title="${tip}">${text}${star}</td>`;
     });
-    return html`<tr><th class="row-head" title="${rm?.name ?? rid}">${rm?.short ?? rid}</th>${cells}</tr>`;
+    return html`<tr><th scope="row" class="row-head" title="${rm?.name ?? rid}">${rm?.short ?? rid}</th>${cells}</tr>`;
   });
 
   const sig = (stats ?? []).filter((r) => r.significantBH).length;
@@ -278,7 +285,7 @@ export function macroMatrixHTML(data) {
   const total = (stats ?? []).length;
 
   // q&lt;0.05 改回字面 q<0.05：模板会转义一次，写实体就成了双转义
-  return html`<div class="matrix-wrap">
+  return html`<div class="matrix-wrap" tabindex="0" role="region" aria-label="资产相关性矩阵">
     <table class="corr-matrix"><thead>${head}</thead><tbody>${bodyRows}</tbody></table>
   </div>
   <div class="stat-bar">
@@ -309,10 +316,10 @@ export function macroLeadLagHTML(data) {
       <td class="mono num dim">${r.n}</td>
     </tr>`,
   );
-  return html`<table class="d-table">
-    <thead><tr><th>领先方</th><th>跟随方</th><th class="num">滞后</th><th class="num">滞后相关</th><th class="num">同期相关</th><th class="num" title="Benjamini-Hochberg 校正后的 q 值">BH q</th><th class="num">样本</th></tr></thead>
+  return html`<div class="table-wrap" tabindex="0" role="region" aria-label="领先滞后关系表"><table class="d-table">
+    <thead><tr><th scope="col">领先方</th><th scope="col">跟随方</th><th scope="col" class="num">滞后</th><th scope="col" class="num">滞后相关</th><th scope="col" class="num">同期相关</th><th scope="col" class="num" title="Benjamini-Hochberg 校正后的 q 值">BH q</th><th scope="col" class="num">样本</th></tr></thead>
     <tbody>${body}</tbody>
-  </table>`;
+  </table></div>`;
 }
 
 export function macroPairSection(data) {
@@ -424,7 +431,184 @@ export function macroCompareHTML(data) {
  * innerHTML 不换元素本身，addEventListener 会重复叠加。
  * ------------------------------------------------------------------ */
 
-/** 只刷新「选中对」相关的几处 UI，不重建整页 */
+const REGIME_PLAIN = {
+  'Risk-On': '偏进攻 · 资金更愿追逐股市与高弹性资产，避险资产偏弱',
+  'Risk-Off': '偏避险 · 股市承压，资金更倾向黄金与波动率对冲',
+};
+
+const PULSE_GROUPS = [
+  { label: '利率与美元', ids: ['dxy', 'us10y'] },
+  { label: '黄金与原油', ids: ['gold-intl', 'oil'] },
+  { label: '全球主要股市', ids: ['sp500', 'ndx100'] },
+  { label: '中国市场与高波动', ids: ['sh000001', 'btc'] },
+];
+
+const KEY_IMPACT_EDGE_IDS = ['E01', 'E05', 'E06', 'E02', 'E13', 'E16'];
+
+function liveAssetSnapshot(id, data, quoteMap, meta) {
+  const q = quoteMap.get(id);
+  const u = meta.get(id);
+  const name = u?.short ?? u?.name ?? q?.name ?? id;
+  const kind = u?.kind ?? (id === 'us10y' ? 'rate' : 'price');
+  let val = null;
+  let pctText = '—';
+  let sourceType = 'none';
+
+  if (q && q.ok !== false && Number.isFinite(q.changePct)) {
+    // 对债券收益率优先用点数/基点直观理解；其它品种用实时涨跌幅百分比
+    if (kind === 'rate' && Number.isFinite(q.change)) {
+      val = q.change;
+      const bp = q.change * 100;
+      pctText = `${bp >= 0 ? '+' : ''}${bp.toFixed(1)}bp`;
+    } else {
+      val = q.changePct;
+      pctText = `${q.changePct >= 0 ? '+' : ''}${q.changePct.toFixed(2)}%`;
+    }
+    sourceType = 'live';
+  } else {
+    const arr = data?.recent?.changes?.[id];
+    const last = Array.isArray(arr) ? findLastValid(arr) : null;
+    if (last != null) {
+      val = last * 100;
+      pctText = kind === 'rate'
+        ? `${val >= 0 ? '+' : ''}${val.toFixed(1)}bp`
+        : `${val >= 0 ? '+' : ''}${val.toFixed(2)}%`;
+      sourceType = 'recent';
+    }
+  }
+  return {
+    id,
+    name,
+    kind,
+    val,
+    dir: val == null || Math.abs(val) < 1e-6 ? 'flat' : val > 0 ? 'up' : 'down',
+    pctText,
+    sourceType,
+  };
+}
+
+function firstSentence(text) {
+  const rawText = String(text ?? '').trim();
+  if (!rawText) return '';
+  const idx = rawText.indexOf('。');
+  return idx > 0 ? rawText.slice(0, idx + 1) : rawText;
+}
+
+function plainMoveVerb(dir, kind) {
+  if (dir === 'flat') return '基本走平';
+  if (kind === 'rate') return dir === 'up' ? '上行' : '回落';
+  return dir === 'up' ? '上涨' : '下跌';
+}
+
+function impactCardSummary(edge, aSnap, bSnap, reality) {
+  const sameSign = aSnap.val != null && bSnap.val != null && Math.sign(aSnap.val * bSnap.val) === edge.sign;
+  const movedEnough = aSnap.val != null && bSnap.val != null && Math.abs(aSnap.val) > 0.02 && Math.abs(bSnap.val) > 0.02;
+  const divergedToday = movedEnough && !sameSign;
+
+  if (divergedToday || reality?.status === 'diverged') {
+    const badge = edge.sign < 0
+      ? (aSnap.val > 0 && bSnap.val > 0 ? '罕见同涨 · 偏离常态' : '同跌背离 · 偏离常态')
+      : '一涨一跌 · 走势分化';
+    return {
+      tone: 'diverged',
+      badge,
+      explain: `平时规律：${aSnap.name}与${bSnap.name}通常${edge.sign > 0 ? '同涨同跌' : '一涨一跌'}。今日出现背离：${firstSentence(edge.divergence) || '受各自独立因素主导。'}`,
+    };
+  }
+  if (movedEnough && sameSign) {
+    return {
+      tone: 'aligned',
+      badge: '按规律联动',
+      explain: `${aSnap.name}${plainMoveVerb(aSnap.dir, aSnap.kind)}，按「${edge.label}」链条传导，${bSnap.name}同步${plainMoveVerb(bSnap.dir, bSnap.kind)}。${firstSentence(edge.mechanism)}`,
+    };
+  }
+  return {
+    tone: 'neutral',
+    badge: edge.sign > 0 ? '通常同向' : '通常反向',
+    explain: firstSentence(edge.mechanism),
+  };
+}
+
+/**
+ * 面向普通用户的 L1「今日资产联动全景」：
+ * 第一眼先回答「今天四大类资产各怎么走」「今天谁在影响谁、是大白话什么原因」。
+ */
+export function macroTodayImpactHTML(data, quotes = store.quotes ?? []) {
+  const universe = data?.universe ?? [];
+  const meta = new Map(universe.map((u) => [u.id, u]));
+  const quoteMap = new Map((quotes ?? []).map((q) => [q.id, q]));
+  const realityMap = evaluateAll(data);
+  const raLabel = data?.riskAppetite?.label ?? '';
+  const regimeSummary = REGIME_PLAIN[raLabel] ?? '温和震荡 · 各类资产尚未走出单一方向';
+
+  // 先选用户最关心的核心因果边；若当天有明显背离边，也优先提上前排
+  const prioritySet = new Set(KEY_IMPACT_EDGE_IDS);
+  const divergedExtras = MACRO_TRANSMISSION_EDGES
+    .filter((e) => !prioritySet.has(e.id) && realityMap.get(e.id)?.status === 'diverged')
+    .slice(0, 2);
+  const chosenEdges = [
+    ...KEY_IMPACT_EDGE_IDS.map((id) => EDGE_BY_ID.get(id)).filter(Boolean),
+    ...divergedExtras,
+  ].slice(0, 6);
+
+  const pulseGroups = PULSE_GROUPS.map((grp) => {
+    const items = grp.ids
+      .map((id) => liveAssetSnapshot(id, data, quoteMap, meta))
+      .filter((s) => s.name);
+    return html`<div class="macro-pulse-group">
+      <div class="macro-pulse-label">${grp.label}</div>
+      <div class="macro-pulse-items">
+        ${items.map((s) => html`<span class="macro-pulse-chip">
+          <span class="mp-name">${s.name}</span>
+          <b class="mp-val ${s.dir}">${s.pctText}</b>
+        </span>`)}
+      </div>
+    </div>`;
+  });
+
+  const activePair = macroState?.pair;
+  const impactCards = chosenEdges.map((edge) => {
+    const aSnap = liveAssetSnapshot(edge.from, data, quoteMap, meta);
+    const bSnap = liveAssetSnapshot(edge.to, data, quoteMap, meta);
+    const reality = realityMap.get(edge.id);
+    const info = impactCardSummary(edge, aSnap, bSnap, reality);
+    const selected = activePair && (
+      (activePair[0] === edge.from && activePair[1] === edge.to)
+      || (activePair[0] === edge.to && activePair[1] === edge.from)
+    );
+    return html`<button type="button" class="macro-impact-card tone-${info.tone}${selected ? ' is-selected' : ''}"
+      data-impact-pair="${edge.from}|${edge.to}" title="点击在下方的图谱和对比图中查看「${aSnap.name} ↔ ${bSnap.name}」">
+      <div class="mic-top">
+        <span class="mic-chain">${edge.label}</span>
+        <span class="mic-badge ${info.tone}">${info.badge}</span>
+      </div>
+      <div class="mic-pair">
+        <span class="mic-leg">
+          <em>${aSnap.name}</em>
+          <b class="${aSnap.dir}">${aSnap.pctText}</b>
+        </span>
+        <span class="mic-arrow" aria-hidden="true">${edge.sign > 0 ? '⇄ 同向' : '⇅ 反向'}</span>
+        <span class="mic-leg">
+          <em>${bSnap.name}</em>
+          <b class="${bSnap.dir}">${bSnap.pctText}</b>
+        </span>
+      </div>
+      <p class="mic-explain">${info.explain}</p>
+    </button>`;
+  });
+
+  return html`<section class="d-block macro-today-section">
+    <div class="chart-head macro-today-head">
+      <div>
+        <h3>今日资产联动全景 <span class="h3-note">${regimeSummary}</span></h3>
+      </div>
+    </div>
+    <div class="macro-pulse-strip">${pulseGroups}</div>
+    <div class="macro-impact-grid">${impactCards}</div>
+  </section>`;
+}
+
+/** 仅刷新「选中对」相关的几处 UI，不重建整页 */
 export function syncPairUI() {
   const data = macroState?.data;
   if (!data) return;
@@ -445,6 +629,12 @@ export function syncPairUI() {
   if (pairHost) pairHost.innerHTML = macroPairSection(data);
   const cmpHost = document.getElementById('macro-compare-host');
   if (cmpHost) cmpHost.innerHTML = macroCompareHTML(data);
+
+  document.querySelectorAll('.macro-impact-card[data-impact-pair]').forEach((card) => {
+    const [ca, cb] = String(card.dataset.impactPair ?? '').split('|');
+    const match = Boolean(a && b) && ((ca === a && cb === b) || (ca === b && cb === a));
+    card.classList.toggle('is-selected', match);
+  });
 
   refreshGraph();
 }
@@ -522,6 +712,13 @@ export function refreshGraph() {
   }
 
   host.innerHTML = macroGraphSectionHTML(macroState.data, macroState);
+  document.querySelectorAll('.macro-impact-card[data-impact-pair]').forEach((card) => {
+    card.addEventListener('click', () => {
+      const [a, b] = String(card.dataset.impactPair ?? '').split('|');
+      if (a && b) selectPair(a, b);
+    });
+  });
+
   bindGraph();
 }
 
@@ -601,10 +798,12 @@ export function onGraphClick(e, host) {
     }
     return;
   }
-  // 「跳到下方滚动相关性」
+  // 点击统计相关操作（如「跳到下方滚动相关性」）时若折叠着统计抽屉则自动展开
   if (hit.dataset.jump) {
     const [a, b] = hit.dataset.jump.split('|');
     selectPair(a, b);
+    const statsDrawer = macroEl.querySelector('.macro-stats-disclosure');
+    if (statsDrawer) statsDrawer.open = true;
     document.getElementById('macro-pair-host')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     return;
   }
@@ -675,79 +874,93 @@ export function renderMacro() {
     <div class="d-top">
       <button type="button" class="back-btn" id="back-macro">← 返回列表</button>
       <div class="d-id">
-        <h2>世界经济关联 · 传导图谱与统计检验</h2>
-        <p>股 / 债 / 汇 / 商品 / 加密 / 波动率 · ${data.matrix.ids.length} 个市场 · 上半场定性沙盘 / 下半场${data.freq === 'week' ? '周' : '日'}频统计</p>
+        <h2>今日关联分析 · 世界经济关联</h2>
+        <p>一眼看清今天各类金融资产谁带动谁、哪里同步哪里背离</p>
       </div>
       <div class="macro-status">
         ${
           ra.label
             ? html`<span class="risk-badge ${ra.label === 'Risk-On' ? 'on' : ra.label === 'Risk-Off' ? 'off' : 'neutral'}">${ra.label}</span>
-               <span class="risk-note" title="风险篮子（${(ra.riskMembers ?? []).join(' / ')}）与避险篮子（${(ra.hedgeMembers ?? []).join(' / ')}，美债按债券价格口径）各自按 60 期波动率标准化后的 Z 值均值之差。单位是标准差，不是百分比；${
-                 ra.aligned ? '成员已对齐到同一交易日' : `成员日期不一致（${(ra.memberDates ?? []).join(' / ')}），存在跨日错位`
-               }">风险端 ${ra.risk == null ? '—' : `${ra.risk >= 0 ? '+' : ''}${ra.risk.toFixed(2)}σ`} · 避险端 ${
-                 ra.hedge == null ? '—' : `${ra.hedge >= 0 ? '+' : ''}${ra.hedge.toFixed(2)}σ`
-               }${ra.aligned === false ? ' · 跨日错位' : ''}</span>
-               <span class="risk-note" title="隐含波动率减实现波动率（VIX − 标普 500 的 20 日实现年化波动率）。这是「隐含减实现」的波动率差，不是精确分解出来的方差风险溢价；RV 固定用日线算，切日/周不会变。">${
-                 data.vrp
-                   ? `隐含−实现 ${data.vrp.vrp >= 0 ? '+' : ''}${data.vrp.vrp.toFixed(2)} · VIX ${data.vrp.vix.toFixed(2)} − RV20 ${data.vrp.rv20.toFixed(2)}${
-                       data.vrp.asOf ? `（RV 截至 ${data.vrp.asOf}）` : ''
-                     }`
-                   : ''
-               }</span>`
+               <details class="macro-quant-disclosure">
+                 <summary class="macro-quant-trigger">风险与波动率参数</summary>
+                 <div class="macro-quant-body">
+                   <span class="risk-note" title="风险篮子（${(ra.riskMembers ?? []).join(' / ')}）与避险篮子（${(ra.hedgeMembers ?? []).join(' / ')}，美债按债券价格口径）各自按 60 期波动率标准化后的 Z 值均值之差。单位是标准差，不是百分比；${
+                     ra.aligned ? '成员已对齐到同一交易日' : `成员日期不一致（${(ra.memberDates ?? []).join(' / ')}），存在跨日错位`
+                   }">风险端 ${ra.risk == null ? '—' : `${ra.risk >= 0 ? '+' : ''}${ra.risk.toFixed(2)}σ`} · 避险端 ${
+                     ra.hedge == null ? '—' : `${ra.hedge >= 0 ? '+' : ''}${ra.hedge.toFixed(2)}σ`
+                   }${ra.aligned === false ? ' · 跨日错位' : ''}</span>
+                   <span class="risk-note" title="隐含波动率减实现波动率（VIX − 标普 500 的 20 日实现年化波动率）。这是「隐含减实现」的波动率差，不是精确分解出来的方差风险溢价；RV 固定用日线算，切日/周不会变。">${
+                     data.vrp
+                       ? `隐含−实现 ${data.vrp.vrp >= 0 ? '+' : ''}${data.vrp.vrp.toFixed(2)} · VIX ${data.vrp.vix.toFixed(2)} − RV20 ${data.vrp.rv20.toFixed(2)}${
+                           data.vrp.asOf ? `（RV 截至 ${data.vrp.asOf}）` : ''
+                         }`
+                       : ''
+                   }</span>
+                 </div>
+               </details>`
             : ''
         }
       </div>
     </div>
 
-    <div id="macro-graph-host"></div>
+    ${macroTodayImpactHTML(data)}
 
-    <section class="d-block">
+    <section class="d-block macro-graph-block">
       <div class="chart-head">
-        <h3>相关性矩阵 <span class="h3-note">红色=正相关，蓝色=负相关；越深越强</span></h3>
-        <div class="seg" id="macro-freq">
-          <button type="button" data-f="day" class="${(data.freq ?? 'day') === 'day' ? 'on' : ''}">日频</button>
-          <button type="button" data-f="week" class="${data.freq === 'week' ? 'on' : ''}">周频</button>
-        </div>
-        <div class="seg" id="macro-window">
-          ${windows.map(
-            ([w, label]) =>
-              html`<button type="button" data-w="${w}" class="${data.windowSize === w ? 'on' : ''}">${label}</button>`,
-          )}
-        </div>
+        <h3>传导关系沙盘 <span class="h3-note">点击连线看具体机理 · 双击资产看关联导图</span></h3>
       </div>
-      ${macroMatrixHTML(data)}
-      <p class="macro-hint">
-        点任意格子 → 下方看这两个标的的滚动相关性与走势对比。样本量按两两共同${data.freq === 'week' ? '周' : '交易日'}计算（pairwise）。
-        ${
-          data.freq === 'week'
-            ? '周频能消除跨时区交易日切分的影响（例如国际金 ~ 沪金 日频仅 0.48，周频 0.79）。'
-            : '注意：国际金 / 沪金这类跨时区标的，日频会因交易日切分点不同而低估相关性，可切「周频」对照。'
-        }
-      </p>
+      <div id="macro-graph-host"></div>
     </section>
 
-    <section class="d-block">
-      <h3>历史领先滞后关系 <span class="h3-note">滞后相关明显强于同期相关才计入（<b>统计结果，不是因果</b>）· <b>*</b> 表示通过 BH 校正（约 1700 个滞后组合一起校正）· 单位=${data.freq === 'week' ? '周' : '交易日'}</span></h3>
-      ${macroLeadLagHTML(data)}
-    </section>
+    <details class="macro-stats-disclosure">
+      <summary class="macro-stats-trigger">展开专业统计检验与历史矩阵（${data.matrix.ids.length} 个市场 · ${data.freq === 'week' ? '周' : '日'}频相关 / 领先滞后 / 滚动走势）</summary>
+      <div class="macro-stats-body">
+        <section class="d-block">
+          <div class="chart-head">
+            <h3>相关性矩阵 <span class="h3-note">红色=正相关，蓝色=负相关；越深越强</span></h3>
+            <div class="seg" id="macro-freq">
+              <button type="button" data-f="day" class="${(data.freq ?? 'day') === 'day' ? 'on' : ''}">日频</button>
+              <button type="button" data-f="week" class="${data.freq === 'week' ? 'on' : ''}">周频</button>
+            </div>
+            <div class="seg" id="macro-window">
+              ${windows.map(
+                ([w, label]) =>
+                  html`<button type="button" data-w="${w}" class="${data.windowSize === w ? 'on' : ''}">${label}</button>`,
+              )}
+            </div>
+          </div>
+          ${macroMatrixHTML(data)}
+          <p class="macro-hint">
+            点击矩阵格查看滚动相关与走势对比 · 两两共同${data.freq === 'week' ? '周' : '交易日'}口径${
+              data.freq === 'day' ? '（跨时区标的建议切周频）' : ''
+            }
+          </p>
+        </section>
 
-    <section class="d-block">
-      <h3>滚动相关性 <span class="h3-note">40 ${data.freq === 'week' ? '周' : '交易日'}窗口</span></h3>
-      <div id="macro-pair-host">${macroPairSection(data)}</div>
-    </section>
+        <section class="d-block">
+          <h3>历史领先滞后关系 <span class="h3-note">滞后相关明显强于同期相关才计入（<b>统计结果，不是因果</b>）· <b>*</b> 表示通过 BH 校正（约 1700 个滞后组合一起校正）· 单位=${data.freq === 'week' ? '周' : '交易日'}</span></h3>
+          ${macroLeadLagHTML(data)}
+        </section>
 
-    <section class="d-block">
-      <h3>归一化走势对比 <span class="h3-note">近 ${data.recent?.dates?.length ?? 0} ${data.freq === 'week' ? '周' : '交易日'}</span></h3>
-      <div class="pick-row" id="macro-picks">
-        ${data.universe
-          .filter((u) => u.ok)
-          .map(
-            (u) =>
-              html`<button type="button" class="pick ${macroState.picked.has(u.id) ? 'on' : ''}" data-pick="${u.id}">${u.short}</button>`,
-          )}
+        <section class="d-block">
+          <h3>滚动相关性 <span class="h3-note">40 ${data.freq === 'week' ? '周' : '交易日'}窗口</span></h3>
+          <div id="macro-pair-host">${macroPairSection(data)}</div>
+        </section>
+
+        <section class="d-block">
+          <h3>归一化走势对比 <span class="h3-note">近 ${data.recent?.dates?.length ?? 0} ${data.freq === 'week' ? '周' : '交易日'}</span></h3>
+          <div class="pick-row" id="macro-picks">
+            ${data.universe
+              .filter((u) => u.ok)
+              .map(
+                (u) =>
+                  html`<button type="button" class="pick ${macroState.picked.has(u.id) ? 'on' : ''}" data-pick="${u.id}">${u.short}</button>`,
+              )}
+          </div>
+          <div id="macro-compare-host">${macroCompareHTML(data)}</div>
+        </section>
       </div>
-      <div id="macro-compare-host">${macroCompareHTML(data)}</div>
-    </section>
+    </details>
 
     <footer class="d-foot">
       <span>收益率口径：对数收益率（美债10年期用百分点差，展示换算为 bp）· 相关性按两两共同${data.freq === 'week' ? '周' : '交易日'}计算 · 相关不等于因果</span>
@@ -800,6 +1013,13 @@ export function renderMacro() {
       if (macroState.picked.has(id)) macroState.picked.delete(id);
       else if (macroState.picked.size < LINE_COLORS.length) macroState.picked.add(id);
       syncPairUI();
+    });
+  });
+
+  document.querySelectorAll('.macro-impact-card[data-impact-pair]').forEach((card) => {
+    card.addEventListener('click', () => {
+      const [a, b] = String(card.dataset.impactPair ?? '').split('|');
+      if (a && b) selectPair(a, b);
     });
   });
 
@@ -862,7 +1082,7 @@ export async function loadMacro(windowSize = 250, force = false) {
 export function mountMacro() {
   macroEl.hidden = false;
   window.scrollTo({ top: 0 });
-  loadMacro(macroState?.window ?? 250, true);
+  loadMacro(macroState?.window ?? 250, false);
 }
 
 export function unmountMacro() {

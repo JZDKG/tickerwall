@@ -13,7 +13,7 @@ export const PREF_STORAGE_KEY = 'tw.preferences.v1';
 export const DEFAULT_PREFERENCES = Object.freeze({
   colorScheme: 'cn',        // cn 红涨绿跌 | intl 绿涨红跌 | cb 蓝橙色盲友好
   theme: 'dark',            // dark 深空黑 | oled 纯黑 | light 浅色研报
-  density: 'grouped',       // grouped 分组 | wall 磁贴墙 | flat 平铺
+  density: 'wall',          // wall 磁贴墙（默认高密度） | grouped 分组 | flat 平铺
   anchorClock: 'default',   // default 前收 | ashare_close A股收盘 | intraday_open 分时首点
 });
 

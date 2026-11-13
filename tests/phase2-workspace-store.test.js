@@ -71,13 +71,13 @@ describe('createWorkspaceStore：持久化 + DOM dataset 双向同步', () => {
     const ws = createWorkspaceStore(storage, el);
     const seen = [];
     ws.subscribe((s) => seen.push(s));
-    ws.setState({ density: 'wall' });
-    expect(JSON.parse(storage.getItem(PREF_STORAGE_KEY))).toEqual({ ...DEFAULT_PREFERENCES, density: 'wall' });
-    expect(el.dataset.density).toBe('wall');
+    ws.setState({ density: 'grouped' });
+    expect(JSON.parse(storage.getItem(PREF_STORAGE_KEY))).toEqual({ ...DEFAULT_PREFERENCES, density: 'grouped' });
+    expect(el.dataset.density).toBe('grouped');
     expect(seen).toHaveLength(1);
-    expect(seen[0].density).toBe('wall');
+    expect(seen[0].density).toBe('grouped');
     // 同值不算变化，不重复通知 / 不重复落盘
-    ws.setState({ density: 'wall' });
+    ws.setState({ density: 'grouped' });
     expect(seen).toHaveLength(1);
   });
 

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="color-scheme" content="dark" />
+  <meta name="color-scheme" content="light dark" />
   <title>市场看板 · 金价 / 比特币 / 原油 / 美股 / 上证</title>
   <!-- 前端依赖的 bare specifier 解析表。
        浏览器原生加载 ES 模块，没有构建期改写，所以裸模块名必须在这里声明。
@@ -52,7 +52,7 @@
     <nav class="status tasks" id="tasks" aria-label="任务">
       <div class="task-group" data-task="today">
         <span class="task-label">今日理解</span>
-        <a class="nav-link" data-nav-hash="" href="#">行情与问题</a>
+        <a class="nav-link" data-nav-hash="" href="#">市场行情</a>
         <a class="nav-link" data-nav-hash="#/events" href="#/events">事件中心</a>
       </div>
       <div class="task-group" data-task="explore">
@@ -70,28 +70,29 @@
         <span id="updated" class="updated">连接中…</span>
         <span id="countdown" class="muted"></span>
         <!-- P4-T1：全局命令面板与智能预警中心入口。未读徽章由 alerts-panel.js 维护 -->
-        <button id="cmd-palette-btn" type="button" class="nav-link btn-link" title="搜索标的 / 视图 / 工作台动作（⌘K）">⌘K 搜索/命令</button>
+        <button id="cmd-palette-btn" type="button" class="nav-link btn-link" aria-label="打开命令面板与搜索（⌘K）" title="搜索标的 / 视图 / 工作台动作（⌘K）">⌘K 搜索</button>
         <button id="alerts-btn" type="button" class="nav-link btn-link" title="智能预警中心：规则与最近触发">预警中心<span id="alerts-unread" class="al-unread" hidden></span></button>
         <button id="refresh" type="button" title="立即刷新（快捷键 R）">刷新</button>
       </span>
     </nav>
   </header>
 
-  <!-- 问题优先区（产品 §3）：最多三张问题卡，行情之前 -->
-  <section id="questions" class="questions" aria-live="polite" hidden></section>
-
-  <!-- 关注简报 + 预期台账 + 生活连接（2.3 / 2.4 / 2.6）：
-       **折叠态**（摘要一行约 40px）放在行情之前 —— 展开是补充阅读，
-       收起时只占一行，行情仍在首屏 -->
-  <section id="home-brief" class="home-brief" hidden></section>
-
-  <!-- P2-T2 工作台控制条：配色 / 主题 / 密度 / 涨跌基准 -->
+  <!-- P2-T2 工作台控制条：视图 / 交易状态筛选 / 显示设置 -->
   <div id="ws-bar" class="ws-bar-host"></div>
 
   <!-- P2-T3 四大宏观合成指标（/api/quotes.synthetics） -->
   <div id="synthetics-strip" class="synthetics-strip" aria-live="polite"></div>
 
   <main id="rows" class="rows" aria-live="polite" aria-busy="true"></main>
+
+  <!-- 今日异动解读（默认折叠并置于行情墙下方，按需展开，不干扰行情首屏） -->
+  <section id="questions" class="questions" aria-live="polite" hidden></section>
+
+  <!-- 独立「今天重点 / 我的自选」视图（#/watch）：自选行情 + 宏观重点 + 关注简报/台账/生活连接 -->
+  <section id="watch" class="watch-view" hidden aria-live="polite">
+    <div id="watch-content"></div>
+    <section id="home-brief" class="home-brief watch-brief-host" hidden></section>
+  </section>
 
   <section id="detail" class="detail" hidden aria-live="polite"></section>
 

@@ -15,17 +15,18 @@
 
 import { PLACEHOLDER } from '../shared/store.js';
 import { esc } from '../shared/format.js';
+import { openModalDialog } from '../shared/modal-dialog.js';
 
 export const CMD_PALETTE_MODAL_ID = 'cmd-palette-modal';
 export const CMD_PALETTE_BTN_ID = 'cmd-palette-btn';
 
 /** 视图切换：hash 与 nav.js 的深链接口径一致（'' 代表列表页） */
 export const COMMAND_VIEWS = Object.freeze([
-  { id: 'view:home', label: '行情与问题', hint: '首页 · 问题优先 + 23 标的', hash: '', keywords: '行情 问题 首页 list home' },
+  { id: 'view:home', label: '市场行情', hint: '首页 · 23 全球标的', hash: '', keywords: '行情 市场 首页 list home' },
   { id: 'view:map', label: '全球态势地图', hint: '#/map · 177 国地理态势', hash: '#/map', keywords: '地图 全球 态势 map geo' },
-  { id: 'view:macro', label: '跨资产关联分析', hint: '#/macro · 传导图谱与相关矩阵', hash: '#/macro', keywords: '关联 分析 宏观 传导 macro graph' },
+  { id: 'view:macro', label: '跨资产关联分析', hint: '#/macro · 今日联动 + 传导图谱', hash: '#/macro', keywords: '关联 分析 宏观 传导 macro graph' },
   { id: 'view:events', label: '事件中心', hint: '#/events · 发布与冲击', hash: '#/events', keywords: '事件 新闻 日历 events' },
-  { id: 'view:watch', label: '我的关注', hint: '#/watch · 关注简报与台账', hash: '#/watch', keywords: '关注 自选 watch brief' },
+  { id: 'view:watch', label: '今天重点', hint: '#/watch · 我的自选 + 今日焦点简报', hash: '#/watch', keywords: '关注 自选 重点 watch brief' },
 ]);
 
 /** 工作台快捷动作：patch 交给 workspace.setState；panel 由 mount 的 handler 打开 */
@@ -110,30 +111,29 @@ export function commandItemHTML(item, index, active = false) {
       <span class="cp-label">${esc(item.label)}</span>
       <span class="cp-hint">${esc(item.hint ?? '')}</span>`;
   if (item.hash != null) {
-    return `<a class="${cls}" data-cmd-index="${index}" href="${esc(item.hash)}" role="option" aria-selected="${active ? 'true' : 'false'}">${body}</a>`;
+    return `<a id="cp-opt-${index}" class="${cls}" data-cmd-index="${index}" href="${esc(item.hash)}" role="option" aria-selected="${active ? 'true' : 'false'}" tabindex="-1">${body}</a>`;
   }
-  return `<button type="button" class="${cls}" data-cmd-index="${index}" role="option" aria-selected="${active ? 'true' : 'false'}">${body}</button>`;
+  return `<button type="button" id="cp-opt-${index}" class="${cls}" data-cmd-index="${index}" role="option" aria-selected="${active ? 'true' : 'false'}" tabindex="-1">${body}</button>`;
 }
 
 export function commandResultsHTML(items, activeIndex = 0) {
   if (!items.length) return '<p class="cp-empty">没有匹配的命令或标的</p>';
   // 列表项已由 commandItemHTML 逐字段 esc 过；拼成字符串后再插入 html`` 会
   // 被当普通字符串整体转义（<button> 变成 &lt;button&gt;）。这里直接拼接。
-  return `<div class="cp-list" role="listbox" aria-label="命令结果">${
+  return `<div id="cmd-palette-listbox" class="cp-list" role="listbox" aria-label="命令结果">${
     items.map((it, i) => commandItemHTML(it, i, i === activeIndex)).join('')
   }</div>`;
 }
 
 export function commandPaletteHTML() {
-  return `<div class="cp-backdrop" data-cp-dismiss="1"></div>
-    <div class="cp-dialog" role="dialog" aria-modal="true" aria-label="命令面板">
-      <div class="cp-head">
+  return `<div class="cp-head">
         <span class="cp-kbd">⌘K</span>
-        <input id="cmd-palette-input" type="text" class="cp-input" autocomplete="off"
-               placeholder="搜索标的、视图、工作台动作…（↑↓ 选择 · 回车执行 · Esc 关闭）" />
+        <input id="cmd-palette-input" type="text" class="cp-input" autocomplete="off" enterkeyhint="search"
+               role="combobox" aria-autocomplete="list" aria-expanded="false"
+               placeholder="搜索标的、视图、动作…" aria-label="搜索标的、视图或工作台动作" />
+        <button type="button" class="cp-close" data-cp-dismiss="1" aria-label="关闭">×</button>
       </div>
-      <div id="cmd-palette-results" class="cp-results"></div>
-    </div>`;
+      <div id="cmd-palette-results" class="cp-results"></div>`;
 }
 
 /**
@@ -162,6 +162,7 @@ export function mountCommandPalette(opts = {}) {
   const getPreferences = opts.getPreferences ?? (() => ({}));
 
   let host = null;
+  let dismissDialog = null;
   let items = [];
   let active = 0;
 
@@ -170,27 +171,74 @@ export function mountCommandPalette(opts = {}) {
   });
   const currentQuery = () => doc.getElementById('cmd-palette-input')?.value ?? '';
 
+  function syncActiveDescendant() {
+    const input = doc.getElementById('cmd-palette-input');
+    if (!input) return;
+    const hasListbox = items.length > 0 && Boolean(doc.getElementById('cmd-palette-listbox'));
+    if (hasListbox) {
+      input.setAttribute('aria-expanded', 'true');
+      input.setAttribute('aria-controls', 'cmd-palette-listbox');
+      input.setAttribute('aria-activedescendant', `cp-opt-${active}`);
+    } else {
+      input.setAttribute('aria-expanded', 'false');
+      input.removeAttribute('aria-controls');
+      input.removeAttribute('aria-activedescendant');
+    }
+  }
+
+  function updateActive() {
+    if (!host) return;
+    let activeEl = null;
+    for (const el of host.querySelectorAll('[data-cmd-index]')) {
+      const idx = Number(el.getAttribute('data-cmd-index'));
+      const on = idx === active;
+      el.classList.toggle('is-active', on);
+      el.setAttribute('aria-selected', on ? 'true' : 'false');
+      if (on) activeEl = el;
+    }
+    syncActiveDescendant();
+    activeEl?.scrollIntoView?.({ block: 'nearest' });
+  }
+
   function paint() {
     items = model();
     if (active >= items.length) active = 0;
     const box = doc.getElementById('cmd-palette-results');
     if (box) box.innerHTML = commandResultsHTML(items, active);
+    syncActiveDescendant();
   }
 
   function close() {
-    host?.remove();
+    const fn = dismissDialog;
+    dismissDialog = null;
     host = null;
     items = [];
     active = 0;
+    fn?.();
+    doc.getElementById(CMD_PALETTE_MODAL_ID)?.remove();
   }
 
   function open() {
     if (host) { doc.getElementById('cmd-palette-input')?.focus(); return; }
-    host = doc.createElement('div');
+    const opener = doc.activeElement;
+    host = doc.createElement('dialog');
     host.id = CMD_PALETTE_MODAL_ID;
-    host.className = 'cp-host';
-    doc.body?.appendChild?.(host);
+    host.className = 'cp-dialog';
+    host.setAttribute('closedby', 'any');
+    host.setAttribute('aria-label', '命令面板');
     host.innerHTML = commandPaletteHTML();
+    doc.body?.appendChild?.(host);
+    dismissDialog = openModalDialog(host, {
+      doc,
+      opener,
+      onClose: () => {
+        dismissDialog = null;
+        host = null;
+        items = [];
+        active = 0;
+        doc.getElementById(CMD_PALETTE_MODAL_ID)?.remove();
+      },
+    });
     active = 0;
     paint();
     doc.getElementById('cmd-palette-input')?.focus();
@@ -229,15 +277,19 @@ export function mountCommandPalette(opts = {}) {
       return;
     }
     if (!host) return;
-    if (e.key === 'Escape') { e.preventDefault(); close(); return; }
+    // 中文输入法合成候选阶段（Enter 上屏 / 方向键选词）不得误触发命令或移动结果列表
+    if (e.isComposing || e.keyCode === 229) return;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       if (!items.length) return;
       active = (active + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
-      paint();
+      updateActive();
       return;
     }
-    if (e.key === 'Enter') { e.preventDefault(); run(active); }
+    if (e.key === 'Enter' && !e.target?.closest?.('.cp-close, [data-cp-dismiss]') && !doc.activeElement?.closest?.('.cp-close, [data-cp-dismiss]')) {
+      e.preventDefault();
+      run(active);
+    }
   };
 
   doc.addEventListener('click', onClick);

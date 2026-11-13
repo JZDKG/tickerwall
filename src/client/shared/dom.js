@@ -15,5 +15,6 @@ export const detailEl = document.getElementById('detail');
 export const macroEl = document.getElementById('macro');
 export const eventsEl = document.getElementById('events');
 export const mapEl = document.getElementById('map');
-/** 首页问题卡容器（解释功能启用时才显示，见 views/explanations/questions.js） */
+export const watchEl = document.getElementById('watch');
+/** 首页异动解读容器（收起态置于行情下方，不遮挡行情首屏） */
 export const questionsEl = document.getElementById('questions');

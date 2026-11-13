@@ -22,7 +22,7 @@ export const TASKS = [
     label: '今日理解',
     hint: '今天发生了什么、和预期差多少',
     links: [
-      { hash: '', label: '行情与问题' },
+      { hash: '', label: '市场行情' },
       { hash: '#/events', label: '事件中心' },
     ],
   },
@@ -75,7 +75,10 @@ export function applyNavActive(root, hash) {
     el.classList.toggle('is-active', el.dataset.task === taskId);
   });
   root.querySelectorAll('[data-nav-hash]').forEach((el) => {
-    el.classList.toggle('is-active', isLinkActive(hash, el.getAttribute('data-nav-hash')));
+    const active = isLinkActive(hash, el.getAttribute('data-nav-hash'));
+    el.classList.toggle('is-active', active);
+    if (active) el.setAttribute('aria-current', 'page');
+    else el.removeAttribute('aria-current');
   });
   root.dataset.task = taskId;
   return taskId;

@@ -188,9 +188,10 @@ describe('问题优先的层级', () => {
    * 完整展开 800+px 会把 23 个标的挤出首屏；放在行情之后（Y≈6000）又等于沉底。
    * 折叠后摘要只占约 40px，两者兼得。
    */
-  it('简报在行情之前且默认收起', () => {
+  it('简报归入独立 #watch 页且默认渲染为折叠态', () => {
     const html = readFileSync('public/index.html', 'utf8');
-    expect(html.indexOf('id="home-brief"')).toBeLessThan(html.indexOf('id="rows"'));
+    expect(html.indexOf('id="rows"')).toBeLessThan(html.indexOf('id="watch"'));
+    expect(html.indexOf('id="watch"')).toBeLessThan(html.indexOf('id="home-brief"'));
     const el = document.createElement('div');
     renderHomeBrief(el, briefItems, ledgerOk);
     const details = el.querySelector('details.home-brief-accordion');
@@ -305,9 +306,10 @@ describe('问题优先的层级', () => {
    * 完整展开 800+px 会把 23 个标的挤出首屏；放在行情之后（Y≈6000）又等于沉底。
    * 折叠后摘要只占约 40px，两者兼得。
    */
-  it('简报在行情之前且默认收起', () => {
+  it('简报归入独立 #watch 页且默认渲染为折叠态', () => {
     const html = readFileSync('public/index.html', 'utf8');
-    expect(html.indexOf('id="home-brief"')).toBeLessThan(html.indexOf('id="rows"'));
+    expect(html.indexOf('id="rows"')).toBeLessThan(html.indexOf('id="watch"'));
+    expect(html.indexOf('id="watch"')).toBeLessThan(html.indexOf('id="home-brief"'));
     const el = document.createElement('div');
     renderHomeBrief(el, briefItems, ledgerOk);
     const details = el.querySelector('details.home-brief-accordion');

@@ -164,4 +164,23 @@ describe('宏观胶囊与接力带', () => {
     const capsules = document.querySelectorAll('.macro-capsule, .mc-risk, .mc-vix');
     expect(capsules.length).toBeGreaterThan(0);
   });
+
+  it('主题过滤胶囊输出 data-count 属性（匹配 0 条暗显规则）', () => {
+    store.events = { data: { items: events(1) } };
+    map.renderMap();
+    const pills = [...document.querySelectorAll('.map-pill')];
+    expect(pills.length).toBeGreaterThan(0);
+    for (const pill of pills) {
+      expect(pill.getAttribute('data-count')).toMatch(/^\d+$/);
+    }
+    expect(pills.some((p) => p.getAttribute('data-count') === '0')).toBe(true);
+  });
+
+  it('不渲染定时循环的红绿脉冲圆环（city-halo / rg-pulse）', () => {
+    store.quotes = [quote('sp500'), quote('sse')];
+    map.renderMap();
+    expect(document.querySelectorAll('.city-halo')).toHaveLength(0);
+    expect(document.querySelectorAll('.rg-pulse')).toHaveLength(0);
+    expect(document.querySelectorAll('.city-dot').length).toBeGreaterThan(0);
+  });
 });

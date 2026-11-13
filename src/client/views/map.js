@@ -897,7 +897,6 @@ export function renderMap() {
 
     citySvg += `<g class="map-city${openNow ? ' is-open' : ' is-closed'}" transform="translate(${x.toFixed(1)},${y.toFixed(1)})"
         data-city="${esc(city.key)}" data-open="${openNow ? 1 : 0}">
-      <circle class="city-halo scene-fixed" r="8" fill="${color}" />
       <circle class="city-dot scene-fixed" r="2.8" fill="${color}" />
       <circle class="city-hit scene-fixed" r="10" />
     </g>`;
@@ -934,7 +933,6 @@ export function renderMap() {
     const r = 2.5 + Math.min(7, evs.length * 0.9);
     const color = high > 0 ? '#f5455c' : '#e0a83c';
     regionSvg += `<g class="map-region${fresh > 0.7 ? ' hot' : ''}" data-region-anchor="${esc(region)}" transform="translate(${x.toFixed(1)},${y.toFixed(1)})">
-      <circle class="rg-pulse scene-fixed" r="${(r + 5).toFixed(1)}" fill="none" stroke="${color}" stroke-width="0.9" opacity="${(fresh * 0.55).toFixed(2)}" />
       <circle class="rg-core scene-fixed" r="${r.toFixed(1)}" fill="${color}" opacity="${(0.2 + fresh * 0.6).toFixed(2)}" />
       <title>${esc(a.label)} · ${evs.length} 条 · 最新 ${esc(evs[0]?.title?.slice(0, 40) ?? '')}</title>
     </g>`;
@@ -1024,7 +1022,7 @@ export function renderMap() {
       ${TOPIC_FILTERS.map((f) => {
         const on = f.key === mapFilter;
         const n = filterMapEvents(items, { filterKey: f.key, region: mapRegion }).length;
-        return html`<button type="button" class="map-pill${on ? ' on' : ''}" role="tab" aria-selected="${on}" data-filter="${f.key}">${f.label}<em>${n}</em></button>`;
+        return html`<button type="button" class="map-pill${on ? ' on' : ''}" role="tab" aria-selected="${on}" data-filter="${f.key}" data-count="${n}">${f.label}<em>${n}</em></button>`;
       })}
     </div>
     <div class="map-body">

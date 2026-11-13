@@ -137,7 +137,7 @@ describe('mountWorkspaceBar：点击过滤与解绑', () => {
   it('点非按钮区域不写 store', () => {
     const { host, workspace } = setup();
     host.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-    expect(workspace.getState().density).toBe('grouped');
+    expect(workspace.getState().density).toBe('wall');
   });
 
   it('点按钮但没有任何 data-ws-* 属性时忽略', () => {
@@ -145,7 +145,7 @@ describe('mountWorkspaceBar：点击过滤与解绑', () => {
     const btn = document.createElement('button');
     host.appendChild(btn);
     btn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-    expect(workspace.getState().density).toBe('grouped');
+    expect(workspace.getState().density).toBe('wall');
   });
 
   it('解绑移除 click 监听并退订 workspace', () => {

@@ -107,7 +107,11 @@ export function renderHomeBrief(host, brief, ledger, handlers = {}) {
     return false;
   }
   host.innerHTML = homeBriefHTML(brief, ledger, lifePath, { open: handlers.open === true });
-  host.hidden = false;
+  const inWatchShell = Boolean(host.closest?.('#watch'));
+  const view = host.ownerDocument?.documentElement?.dataset?.view;
+  host.hidden = inWatchShell
+    ? Boolean(view && view !== 'watch')
+    : Boolean(view && view !== 'list' && view !== 'watch');
   host.querySelector('#wb-pick')?.addEventListener('click', () => handlers.onPick?.());
   return true;
 }
@@ -124,7 +128,7 @@ export function watchPickerHTML(questions, chosen = []) {
       </label>`;
   });
   return html`<div class="wp" role="group" aria-label="选择关心的问题">
-    <p class="wp-hint">最多选三个。选多了简报就变成「全部市场」，和现在没区别。</p>
+    <p class="wp-hint">最多选三个关注问题</p>
     ${list}
   </div>`;
 }

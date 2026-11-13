@@ -7,6 +7,7 @@ import { route } from './router.js';
 import { countdownEl, refreshBtn, updatedEl } from './shared/dom.js';
 import { store } from './shared/store.js';
 import { api } from './shared/api.js';
+import { html } from './shared/format.js';
 import { attachGlossary } from './shared/glossary.js';
 import { apply, renderSkeleton } from './views/list.js';
 import { questionsEl } from './shared/dom.js';
@@ -106,8 +107,19 @@ export async function refreshQuestions({ force = false } = {}) {
       questionsEl.innerHTML = '';
       return;
     }
-    questionsEl.innerHTML = questionCardsHTML(cards);
-    questionsEl.hidden = false;
+    const details = document.createElement('details');
+    details.className = 'q-disclosure';
+    const summary = document.createElement('summary');
+    summary.className = 'q-disclosure-summary';
+    const preview = cards.map((c) => `${c.assetName}${c.fact ? ` ${c.fact.replace(/\s+/g, '')}` : ''}`).join(' · ');
+    summary.innerHTML = html`<span class="q-disclosure-title">今日异动解读（${cards.length} 项）</span><span class="q-disclosure-preview">${preview}</span><span class="q-disclosure-more">展开</span>`.toString();
+    const body = document.createElement('div');
+    body.className = 'q-disclosure-body';
+    body.innerHTML = questionCardsHTML(cards);
+    details.append(summary, body);
+    questionsEl.replaceChildren(details);
+    const view = document.documentElement.dataset.view;
+    questionsEl.hidden = Boolean(view && view !== 'list');
   } catch {
     // 解释取不到不该影响行情首屏：静默隐藏问题区
     questionsEl.hidden = true;
@@ -148,8 +160,10 @@ refreshBtn.addEventListener('click', () => loadQuotes(true));
 document.addEventListener('keydown', (e) => {
   if (e.key === 'r' || e.key === 'R') {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
-    const tag = document.activeElement?.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    const active = document.activeElement;
+    const tag = active?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || active?.isContentEditable) return;
+    if (document.querySelector('dialog[open]')) return;
     e.preventDefault();
     loadQuotes(true);
   }
@@ -189,7 +203,7 @@ mountCommandPalette({
     if (name === 'alerts') openAlerts();
   },
 });
-mountAlertsPanel({ bus });
+mountAlertsPanel({ bus, toast: false });
 // P4-T3：生活场景切换胶囊。事件委托在 document 上，首页补充区重绘后仍有效
 mountLifePathSwitcher({ fetchLifePath });
 document.addEventListener('click', (e) => {

@@ -79,7 +79,10 @@ export function buildRow(item) {
   el.innerHTML = html`
     <button type="button" class="pin-btn" data-pin aria-label="星标自选" aria-pressed="false" title="置顶到我的自选">☆</button>
     <div class="id">
-      <div class="name">${item.name}</div>
+      <div class="name">
+        <span data-f="name">${item.name}</span>
+        <span class="session-pill" data-f="session" hidden></span>
+      </div>
       <div class="sub">${item.sub}</div>
       <div class="extras" data-f="extras"></div>
     </div>
@@ -117,9 +120,12 @@ export function buildRow(item) {
     location.hash = `#/d/${encodeURIComponent(id)}`;
   });
   el.addEventListener('keydown', (e) => {
+    if (e.target !== el && e.target?.closest?.('button, a, input, select, [data-pin]')) return;
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      location.hash = `#/d/${encodeURIComponent(item.id)}`;
+      const hit = e.target?.closest?.('[data-detail-id]');
+      const id = hit ? hit.dataset.detailId : item.id;
+      location.hash = `#/d/${encodeURIComponent(id)}`;
     }
   });
 
@@ -134,9 +140,10 @@ export function buildRow(item) {
     extras: q('extras'),
     stale: q('stale'),
     fresh: q('fresh'),
+    session: q('session'),
     err: q('err'),
     unitEl: el.querySelector('.unit'),
-    nameEl: el.querySelector('.name'),
+    nameEl: q('name') ?? el.querySelector('.name'),
     subEl: el.querySelector('.sub'),
     lastPrice: null,
   };
@@ -250,6 +257,28 @@ export function updateRow(item, prefs = getWorkspaceStore().getState()) {
   else ref.el.classList.remove('suspect');
 
   ref.err.textContent = !ok && item.error ? `取数失败：${item.error}` : '';
+
+  const ms = item.marketStatus;
+  if (ref.session) {
+    if (ms?.label) {
+      const phase = ms.phase || (ms.open ? 'open' : 'closed');
+      ref.session.textContent = ms.label;
+      ref.session.hidden = false;
+      ref.session.dataset.phase = phase;
+      ref.el.dataset.open = ms.open ? '1' : '0';
+      ref.el.dataset.session = phase;
+      const tipParts = [];
+      if (ms.open && ms.nextCloseAt) tipParts.push(`预计收盘 ${ms.nextCloseAt}`);
+      if (!ms.open && ms.nextOpenAt) tipParts.push(`预计开盘 ${ms.nextOpenAt}`);
+      ref.session.title = tipParts.join(' · ');
+    } else {
+      ref.session.hidden = true;
+      ref.session.textContent = '';
+      delete ref.session.dataset.phase;
+      delete ref.el.dataset.open;
+      delete ref.el.dataset.session;
+    }
+  }
 }
 
 
@@ -293,6 +322,8 @@ export function apply(data) {
 
   // 报价更新后广播一次；地图在挂载期间订阅（等价于原来「地图可见才刷」的判断）
   syncPinButtons();
+  updateSessionToolbar(store.quotes);
+  applySessionFilter(store.sessionFilter ?? 'all');
   emit('quotes', data);
 
   const failed = (data.items ?? []).filter((i) => i.ok === false).length;
@@ -333,6 +364,63 @@ function groupOf(id) {
   return PLACEHOLDER.find((p) => p.id === id)?.group ?? 'core';
 }
 
+export function computeSessionCounts(items = []) {
+  const list = Array.isArray(items) ? items : [];
+  let known = 0;
+  let open = 0;
+  let closed = 0;
+  for (const q of list) {
+    if (!q?.marketStatus) continue;
+    known += 1;
+    if (q.marketStatus.open) open += 1;
+    else closed += 1;
+  }
+  return known > 0 ? { all: list.length, open, closed } : null;
+}
+
+function updateSessionToolbar(items = store.quotes) {
+  const host = document.getElementById('ws-bar');
+  if (!host) return;
+  const counts = computeSessionCounts(items);
+  store.sessionCounts = counts;
+  const mode = store.sessionFilter ?? 'all';
+  const labels = { all: '全部', open: '交易中', closed: '已收盘' };
+  for (const key of ['all', 'open', 'closed']) {
+    const btn = host.querySelector(`button[data-ws-session="${key}"]`);
+    if (!btn) continue;
+    btn.setAttribute('aria-pressed', mode === key ? 'true' : 'false');
+    btn.textContent = counts ? `${labels[key]} (${counts[key]})` : labels[key];
+  }
+}
+
+/** 按「交易中 / 已收盘 / 全部」筛选列表行，并在分组模式下隐藏空分组头 */
+export function applySessionFilter(mode = store.sessionFilter ?? 'all') {
+  store.sessionFilter = mode;
+  for (const ref of refs.values()) {
+    const open = ref.el.dataset.open;
+    const hide =
+      mode === 'open' ? open !== '1' :
+      mode === 'closed' ? open !== '0' :
+      false;
+    ref.el.hidden = hide;
+  }
+  if (rowsEl.dataset.density === 'grouped') {
+    const heads = [...rowsEl.querySelectorAll('.row-group-head')];
+    for (const h of heads) {
+      let cur = h.nextElementSibling;
+      let anyVisible = false;
+      while (cur && !cur.classList.contains('row-group-head')) {
+        if (cur.classList.contains('row') && !cur.hidden) {
+          anyVisible = true;
+          break;
+        }
+        cur = cur.nextElementSibling;
+      }
+      h.hidden = !anyVisible;
+    }
+  }
+}
+
 /** 工作台控制条：只在首次挂载，偏好变化时重排列表（不重新取数） */
 let barOff = null;
 
@@ -340,10 +428,18 @@ function mountBar() {
   const host = document.getElementById('ws-bar');
   if (!host || barOff) return;
   barOff = mountWorkspaceBar(host, {
+    getSessionState: () => ({
+      sessionFilter: store.sessionFilter ?? 'all',
+      counts: computeSessionCounts(store.quotes),
+    }),
+    onSessionFilter: (mode) => {
+      applySessionFilter(mode);
+    },
     onChange: (prefs) => {
       applyDensity(prefs.density);
       const items = store.quotes ?? [];
       for (const item of items) updateRow(item, prefs);
+      applySessionFilter(store.sessionFilter ?? 'all');
     },
   });
 }

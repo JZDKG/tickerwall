@@ -106,9 +106,9 @@ describe('渲染：转义与选中态', () => {
     expect(commandResultsHTML(filterCommandItems('地图'))).toContain('role="listbox"');
   });
 
-  it('模态骨架带输入框、dialog 语义与关闭背景', () => {
+  it('模态骨架带 combobox 输入框、结果容器与关闭按钮', () => {
     expect(commandPaletteHTML()).toContain('id="cmd-palette-input"');
-    expect(commandPaletteHTML()).toContain('role="dialog"');
+    expect(commandPaletteHTML()).toContain('role="combobox"');
     expect(commandPaletteHTML()).toContain('data-cp-dismiss="1"');
   });
 });

@@ -13,7 +13,7 @@ const GROUPS = [
   {
     key: 'density', attr: 'density', label: '视图',
     options: [
-      ['grouped', '分组列表'], ['wall', '磁贴墙'], ['flat', '全部平铺'],
+      ['wall', '磁贴墙'], ['grouped', '分组列表'], ['flat', '全部平铺'],
     ],
   },
   {
@@ -41,7 +41,6 @@ const GROUPS = [
  * 不需要 raw() 绕过转义 —— 这正是 html`` 默认就该赢的场景。
  */
 function groupButtons(g, prefs) {
-  const attr = `data-ws-${g.attr}`;
   const on = (v) => (prefs[g.key] === v ? 'true' : 'false');
   const htmlOf = {
     density: (v, label) => html`<button type="button" data-ws-density="${v}" aria-pressed="${on(v)}" title="视图：${label}">${label}</button>`,
@@ -52,32 +51,69 @@ function groupButtons(g, prefs) {
   return new SafeHtml(g.options.map(([v, label]) => htmlOf(v, label).toString()).join(''));
 }
 
-export function workspaceBarHTML(prefs) {
-  return html`<div class="ws-bar" role="toolbar" aria-label="工作台控制条">
-    ${GROUPS.map((g) => html`<div class="ws-group" data-ws-group="${g.attr}">
-      <span class="ws-label">${g.label}</span>
-      <div class="ws-seg">${groupButtons(g, prefs)}</div>
-    </div>`)}
-    <div class="ws-group ws-desktop">
-      <button type="button" data-action="toggle-pip" title="切换画中画盯盘（桌面端置顶）">画中画</button>
+function labelOf(group, value) {
+  return group.options.find(([v]) => v === value)?.[1] ?? '';
+}
+
+function renderGroup(group, prefs) {
+  return html`<div class="ws-group" data-ws-group="${group.attr}">
+    <span class="ws-label">${group.label}</span>
+    <div class="ws-seg">${groupButtons(group, prefs)}</div>
+  </div>`;
+}
+
+function sessionGroupHTML(sessionFilter = 'all', counts = null) {
+  const countLabel = (key) => (counts && Number.isFinite(counts[key]) ? ` (${counts[key]})` : '');
+  const btn = (val, label) =>
+    html`<button type="button" data-ws-session="${val}" aria-pressed="${sessionFilter === val ? 'true' : 'false'}" title="交易状态筛选：${label}">${label}${countLabel(val)}</button>`;
+  return html`<div class="ws-group" role="group" aria-label="交易状态筛选" data-ws-group="session">
+    <span class="ws-label">状态</span>
+    <div class="ws-seg">
+      ${btn('all', '全部')}
+      ${btn('open', '交易中')}
+      ${btn('closed', '已收盘')}
     </div>
   </div>`;
 }
 
-/**
- * 挂载控制条。host 是常驻容器；onChange 供列表重绘（默认重画控制条自身）。
- * 返回解绑函数。
- *
- * 变更统一走 workspace.setState：控制条内的点击只写 store，重绘与 onChange
- * 全交给下面的订阅，避免「点击直接调一次 + 订阅又调一次」的重复回调。
- * Cmd+K 命令面板等外部入口同样直接 setState，订阅让控制条和列表密度/行内
- * 标注即时跟上，而不只认控制条自己的点击。
- */
-export function mountWorkspaceBar(host, { workspace = getWorkspaceStore(), onChange } = {}) {
+/** 生成工作台控制条的 HTML；暴露核心「视图」与「交易状态筛选」，次级偏好收敛在展开面板中（渐进披露）。 */
+export function workspaceBarHTML(prefs, { sessionFilter = 'all', counts = null } = {}) {
+  const densityGroup = GROUPS[0];
+  const secondaryGroups = GROUPS.slice(1);
+  const summaryText = secondaryGroups.map((g) => labelOf(g, prefs[g.key])).filter(Boolean).join(' · ');
+  return html`<div class="ws-bar" role="toolbar" focusgroup="toolbar wrap" aria-label="工作台控制条">
+    ${renderGroup(densityGroup, prefs)}
+    ${sessionGroupHTML(sessionFilter, counts)}
+    <details class="ws-prefs-disclosure">
+      <summary class="ws-prefs-trigger">显示设置${summaryText ? html`<span class="ws-prefs-summary">${summaryText}</span>` : ''}</summary>
+      <div class="ws-prefs-body">
+        ${secondaryGroups.map((g) => renderGroup(g, prefs))}
+        <div class="ws-group ws-desktop">
+          <button type="button" data-action="toggle-pip" title="切换画中画盯盘（桌面端置顶）">画中画</button>
+        </div>
+      </div>
+    </details>
+  </div>`;
+}
+
+export function mountWorkspaceBar(host, { workspace = getWorkspaceStore(), onChange, getSessionState, onSessionFilter } = {}) {
   if (!host) return () => {};
-  host.innerHTML = workspaceBarHTML(workspace.getState()).toString();
+  const sessionOpts = () => (typeof getSessionState === 'function' ? getSessionState() : {});
+  host.innerHTML = workspaceBarHTML(workspace.getState(), sessionOpts()).toString();
 
   const onClick = (e) => {
+    const sessBtn = e.target?.closest?.('button[data-ws-session]');
+    if (sessBtn && host.contains(sessBtn)) {
+      const nextMode = sessBtn.getAttribute('data-ws-session');
+      if (nextMode === 'all' || nextMode === 'open' || nextMode === 'closed') {
+        host.querySelectorAll('button[data-ws-session]').forEach((b) => {
+          b.setAttribute('aria-pressed', b === sessBtn ? 'true' : 'false');
+        });
+        if (onSessionFilter) onSessionFilter(nextMode);
+      }
+      return;
+    }
+
     const btn = e.target?.closest?.('button[data-ws-density],button[data-ws-anchor],button[data-ws-scheme],button[data-ws-theme]');
     if (!btn || !host.contains(btn)) return;
     let patch = null;
@@ -91,7 +127,10 @@ export function mountWorkspaceBar(host, { workspace = getWorkspaceStore(), onCha
   };
 
   const unsubscribe = workspace.subscribe((next) => {
-    host.innerHTML = workspaceBarHTML(next).toString();
+    const wasOpen = Boolean(host.querySelector('.ws-prefs-disclosure')?.open);
+    host.innerHTML = workspaceBarHTML(next, sessionOpts()).toString();
+    const details = host.querySelector('.ws-prefs-disclosure');
+    if (details && wasOpen) details.open = true;
     if (onChange) onChange(next);
   });
 

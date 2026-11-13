@@ -9,7 +9,7 @@
  * ================================================================== */
 import { loadCalendarCached } from '../shared/calendar.js';
 import { eventsEl } from '../shared/dom.js';
-import { clockText, esc, html, safeHref } from '../shared/format.js';
+import { clockText, html, safeHref } from '../shared/format.js';
 import { todayFocusHTML } from './today-focus.js';
 import { PLACEHOLDER, store } from '../shared/store.js';
 import { getJson } from '../shared/fetch-json.js';
@@ -148,7 +148,10 @@ export function revisionPanelHTML(eventId, rows) {
   const list = (rows ?? []).slice(-5).reverse();
   if (!list.length) return '';
   return html`<div class="ev-rev-panel" data-panel="${eventId}">
-    <div class="ev-rev-head">这条事件的 ${list.length} 个版本 <span class="ev-rev-note">修订是追加的：旧版本不会被覆盖</span></div>
+    <div class="ev-rev-head">
+      <span>这条事件的 ${list.length} 个版本 <span class="ev-rev-note">修订是追加的：旧版本不会被覆盖</span></span>
+      <button type="button" class="ev-rev-close" aria-label="关闭版本面板">×</button>
+    </div>
     <ul class="ev-rev-list">${list.map(revisionRowHTML)}</ul>
   </div>`;
 }
@@ -226,6 +229,7 @@ export function eventRowHTML(row) {
 export function bindRevisionChips(root = document) {
   for (const btn of root.querySelectorAll('[data-event-revisions]')) {
     btn.addEventListener('click', async () => {
+      if (btn.dataset.loading === '1') return;
       const id = btn.dataset.eventRevisions;
       const article = btn.closest('article.event');
       const existing = article?.nextElementSibling;
@@ -234,14 +238,27 @@ export function bindRevisionChips(root = document) {
         btn.setAttribute('aria-expanded', 'false');
         return;
       }
+      btn.dataset.loading = '1';
       btn.setAttribute('aria-expanded', 'true');
-      const rows = await loadEventRevisions(id);
+      let rows = [];
+      try {
+        rows = await loadEventRevisions(id);
+      } catch {
+        rows = [];
+      } finally {
+        delete btn.dataset.loading;
+      }
       const holder = document.createElement('div');
       holder.innerHTML = rows.length
         ? revisionPanelHTML(id, rows).toString()
-        : '<div class="ev-rev-panel ev-rev-empty">这个事件的版本记录取不到（接口不可用或尚未落库）</div>';
-      article?.after(holder.firstElementChild ?? holder);
-      holder.querySelector('.ev-rev-close')?.addEventListener('click', () => holder.remove());
+        : '<div class="ev-rev-panel ev-rev-empty"><div class="ev-rev-head"><span>这个事件的版本记录取不到（接口不可用或尚未落库）</span><button type="button" class="ev-rev-close" aria-label="关闭版本面板">×</button></div></div>';
+      const panel = holder.firstElementChild ?? holder;
+      panel.querySelector('.ev-rev-close')?.addEventListener('click', () => {
+        panel.remove();
+        btn.setAttribute('aria-expanded', 'false');
+        btn.focus?.();
+      });
+      article?.after(panel);
     });
   }
 }
@@ -366,9 +383,9 @@ export function renderEvents(opts = {}) {
       </div>
     </section>
 
-    <section class="d-block">
+    <section class="d-block" id="events-study-section">
       <h3>事件研究 <span class="h3-note">这些日子真的更动荡吗 · 事件日 vs 普通日波动对照</span></h3>
-      ${eventStudyHTML(st.study, st.studyMode ?? 'auto')}
+      <div id="events-study-host">${eventStudyHTML(st.study, st.studyMode ?? 'auto')}</div>
     </section>
 
     <footer class="d-foot">
@@ -381,7 +398,8 @@ export function renderEvents(opts = {}) {
     location.hash = '';
   });
   document.getElementById('refresh-events')?.addEventListener('click', () => {
-    loadEvents(true);
+    void loadEvents(true);
+    void hydrateTodayFocus();
   });
   document.getElementById('jump-new')?.addEventListener('click', () => {
     store.events.newIds = null;
@@ -414,18 +432,22 @@ export function renderEvents(opts = {}) {
     });
   });
   // 事件研究的 T+0 / T+1 / 智能对齐 口径切换（纯前端切行，不重新请求）
-  document.querySelectorAll('#study-lag button').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const v = btn.dataset.lag;
-      store.events.studyMode = v === 'auto' ? 'auto' : Number(v);
-      renderEvents();
-    });
-  });
+  bindStudyLag();
 
   // 顶部槽位是这次重建里被清掉的那一块：用缓存补回来（没有缓存才发请求）
   paintTodayFocus();
 
   if (keepScroll != null) window.scrollTo(0, keepScroll);
+}
+
+function bindStudyLag() {
+  document.querySelectorAll('#study-lag button').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const v = btn.dataset.lag;
+      store.events.studyMode = v === 'auto' ? 'auto' : Number(v);
+      renderEvents({ keepScroll: true });
+    });
+  });
 }
 
 export function stopEventsTimer() {
@@ -437,14 +459,27 @@ export function stopEventsTimer() {
 
 export async function loadEvents(force = false) {
   try {
-    const [data, cal, study] = await Promise.all([
+    // 并行触发三路请求，先等轻量的「事件流 + 财经日历」落地即刻首屏渲染，
+    // 较重的「事件研究」异步就位后局部更新，避免阻塞首次进入。
+    const studyP = loadEventStudy(false);
+    const [data, cal] = await Promise.all([
       // 共享请求层：与地图共用同一份 in-flight，两边同时进不会打两次
       api.get('api/events', { params: force ? { force: 1 } : null }).then((r) => r.data),
       loadCalendarCached(force),
-      loadEventStudy(false),
     ]);
-    if (!store.events) store.events = { data, calendar: cal, study, level: '', topic: '', origin: '', studyMode: 'auto', newIds: null, newCount: 0 };
-    store.events.study = study;
+    if (!store.events) {
+      store.events = {
+        data,
+        calendar: cal,
+        study: studyCacheClient ?? undefined,
+        level: '',
+        topic: '',
+        origin: '',
+        studyMode: 'auto',
+        newIds: null,
+        newCount: 0,
+      };
+    }
 
     // 增量：只有真正「没见过」的条目才标记为 NEW，避免整页闪
     const prevIds = new Set((store.events.data?.items ?? []).map((i) => i.id));
@@ -470,6 +505,16 @@ export async function loadEvents(force = false) {
       }
     } else {
       store.events.llmRetryCount = 0;
+    }
+
+    const study = await studyP;
+    if (store.events) store.events.study = study;
+    if (location.hash.startsWith('#/events') && !eventsEl.hidden) {
+      const host = document.getElementById('events-study-host');
+      if (host) {
+        host.innerHTML = eventStudyHTML(study, store.events?.studyMode ?? 'auto').toString();
+        bindStudyLag();
+      }
     }
   } catch (err) {
     eventsEl.innerHTML = html`<div class="d-top"><button type="button" class="back-btn" id="back-events">← 返回列表</button><div class="d-id"><h2>全球事件中心</h2><p>加载失败</p></div></div><div class="d-error">${err?.message ?? String(err)}</div>`.toString();
@@ -497,6 +542,9 @@ export function ratioBg(ratio) {
 }
 
 export function eventStudyHTML(study, mode = 'auto') {
+  if (study === undefined) {
+    return html`<div class="chart-empty">正在计算事件波动统计…</div>`;
+  }
   if (!study?.ok) {
     return html`<div class="chart-empty">${study?.error ?? '暂无足够历史事件'}</div>`;
   }
@@ -535,9 +583,9 @@ export function eventStudyHTML(study, mode = 'auto') {
 
   const headCells = kinds.map((k) => {
     const info = study.kinds.find((x) => x.kind === k);
-    return html`<th>${STUDY_KIND_LABEL[k] ?? k}<em>n=${info?.count ?? 0}</em></th>`;
+    return html`<th scope="col">${STUDY_KIND_LABEL[k] ?? k}<em>n=${info?.count ?? 0}</em></th>`;
   });
-  const head = html`<tr><th class="corner">标的</th>${headCells}</tr>`;
+  const head = html`<tr><th scope="col" class="corner">标的</th>${headCells}</tr>`;
 
   const bodyRows = symbols.map((s) => {
     const cells = kinds.map((k) => {
@@ -561,7 +609,7 @@ export function eventStudyHTML(study, mode = 'auto') {
         lagTag ? html`<i class="lag-tag">${lagTag}</i>` : ''
       }</td>`;
     });
-    return html`<tr><th class="row-head">${s.name}</th>${cells}</tr>`;
+    return html`<tr><th scope="row" class="row-head">${s.name}</th>${cells}</tr>`;
   });
 
   const top = [...cell.values()]
@@ -591,14 +639,16 @@ export function eventStudyHTML(study, mode = 'auto') {
       ${modeBtn('1', 'T+1', '全部按事件后一个交易日口径（不区分市场）')}
     </div>
   </div>
-  <div class="matrix-wrap">
+  <div class="matrix-wrap" tabindex="0" role="region" aria-label="事件研究波动矩阵">
     <table class="corr-matrix study-matrix"><thead>${head}</thead><tbody>${bodyRows}</tbody></table>
   </div>
   <p class="macro-hint">
-    数字 = 事件日平均绝对波动 ÷ 普通日平均绝对波动（>1 说明这天更动荡），带 <b>*</b> 表示 Welch t 检验 |t|>1.96。
-    悬停看具体数值与中位数口径。<br>
-    ${hint}
+    比值 = 事件日平均绝对波动 ÷ 普通日平均绝对波动（&gt;1 表示更动荡）· <b>*</b> 为 Welch t 检验 |t|&gt;1.96 · 悬停看中位数与样本量
   </p>
+  <details class="study-method">
+    <summary>时区对齐说明</summary>
+    <p class="macro-hint">${hint}</p>
+  </details>
   ${
     top.length
       ? html`<div class="study-top"><span class="study-top-label">统计上最显著：</span>${topChips}</div>`
@@ -655,6 +705,7 @@ export async function hydrateTodayFocus({ fetchImpl = null } = {}) {
     return null;
   }
   todayFocusCache = body;
+  store.todayFocus = body;
   slot.innerHTML = todayFocusHTML(body).toString();
   return body;
 }
@@ -662,11 +713,22 @@ export async function hydrateTodayFocus({ fetchImpl = null } = {}) {
 export function mountEvents() {
   eventsEl.hidden = false;
   window.scrollTo({ top: 0 });
-  /**
-   * 顺序很关键：`loadEvents` 会重写 eventsEl.innerHTML，槽位是它的一部分。
-   * 先 hydrate 再 loadEvents，会把刚填好的内容冲掉（真实浏览器里槽位一直是空的）。
-   */
-  void loadEvents(true).then(() => hydrateTodayFocus());
+  if (store.events?.data) {
+    renderEvents({ keepScroll: false });
+  } else {
+    eventsEl.innerHTML = html`<div id="today-focus-slot"></div>
+      <div class="d-top">
+        <button type="button" class="back-btn" id="back-events">← 返回列表</button>
+        <div class="d-id"><h2>全球事件中心</h2><p>正在加载实时快讯与财经日历…</p></div>
+      </div>
+      <div class="d-loading">正在读取事件流…</div>`.toString();
+    document.getElementById('back-events')?.addEventListener('click', () => {
+      location.hash = '';
+    });
+  }
+  // 并行加载，且进入时命中服务端 TTL 缓存而非强制穿透拉上游，显著降低首屏等待
+  void hydrateTodayFocus();
+  void loadEvents(false);
   eventsTimer = setInterval(() => loadEvents(false), 30000);
 }
 

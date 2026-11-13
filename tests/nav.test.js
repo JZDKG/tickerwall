@@ -149,4 +149,17 @@ describe('B6：#/watch 是「我的关注」的独立任务', () => {
   it('#/events 仍然归 today（没有把事件中心抢走）', () => {
     expect(activeTaskOf('#/events')).toBe('today');
   });
+
+  it('applyNavActive 为激活链接写入 aria-current="page" 并清除其余链接', () => {
+    const el = document.createElement('nav');
+    el.innerHTML = `
+      <div data-task="today"><a class="nav-link" data-nav-hash="">首页</a><a class="nav-link" data-nav-hash="#/events">事件</a></div>
+      <div data-task="explore"><a class="nav-link" data-nav-hash="#/map">地图</a></div>`;
+    applyNavActive(el, '#/map');
+    expect(el.querySelector('[data-nav-hash="#/map"]').getAttribute('aria-current')).toBe('page');
+    expect(el.querySelector('[data-nav-hash=""]').hasAttribute('aria-current')).toBe(false);
+    applyNavActive(el, '');
+    expect(el.querySelector('[data-nav-hash=""]').getAttribute('aria-current')).toBe('page');
+    expect(el.querySelector('[data-nav-hash="#/map"]').hasAttribute('aria-current')).toBe(false);
+  });
 });

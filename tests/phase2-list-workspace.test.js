@@ -122,4 +122,64 @@ describe('列表密度与分组', () => {
     expect(row.dataset.anchor).toBe('intraday_open');
     ws.reset();
   });
+
+  it('行内渲染交易状态徽章与时段过滤（全部 / 交易中 / 已收盘）', () => {
+    list.renderSkeleton();
+    const items = [
+      { ...PLACEHOLDER[0], marketStatus: { open: true, phase: 'open', continuous: true, label: '24×7' } },
+      { ...PLACEHOLDER[1], marketStatus: { open: false, phase: 'closed', label: '已收盘', nextOpenAt: '09:30' } },
+      { ...PLACEHOLDER[2], marketStatus: { open: true, phase: 'open', label: '交易中', nextCloseAt: '15:00' } },
+    ];
+    list.apply({ items });
+    const r0 = refs.get(PLACEHOLDER[0].id).el;
+    const r1 = refs.get(PLACEHOLDER[1].id).el;
+    expect(r0.dataset.open).toBe('1');
+    expect(r0.querySelector('.session-pill').textContent).toBe('24×7');
+    expect(r1.dataset.open).toBe('0');
+    expect(r1.querySelector('.session-pill').textContent).toBe('已收盘');
+
+    expect(list.computeSessionCounts(items)).toEqual({ all: 3, open: 2, closed: 1 });
+
+    list.applySessionFilter('open');
+    expect(r0.hidden).toBe(false);
+    expect(r1.hidden).toBe(true);
+
+    list.applySessionFilter('closed');
+    expect(r0.hidden).toBe(true);
+    expect(r1.hidden).toBe(false);
+
+    list.applySessionFilter('all');
+    expect(r0.hidden).toBe(false);
+    expect(r1.hidden).toBe(false);
+  });
+
+  it('grouped 模式下隐藏全闭合分组标题，工具条状态按钮联动筛选', () => {
+    getWorkspaceStore().setState({ density: 'grouped' });
+    list.renderSkeleton();
+    const coreHead = [...rowsEl.querySelectorAll('.row-group-head')][0];
+    const items = PLACEHOLDER.map((x, idx) => ({
+      ...x,
+      marketStatus: idx === 0
+        ? { open: true, phase: 'open', label: '交易中' }
+        : { open: false, phase: 'closed', label: '已收盘' },
+    }));
+    list.apply({ items });
+
+    // 通过工作台工具条点击「已收盘」：仅保留 closed 项，第 0 组含 open 项但组内还有其他 closed 项 -> 头仍可见
+    const closedBtn = document.querySelector('#ws-bar [data-ws-session="closed"]');
+    closedBtn.click();
+    expect(store.sessionFilter).toBe('closed');
+    expect(refs.get(PLACEHOLDER[0].id).el.hidden).toBe(true);
+    expect(coreHead.hidden).toBe(false);
+
+    // 点「交易中」：第 1 组（regional）全员 closed -> 该分组标题应被隐藏
+    const openBtn = document.querySelector('#ws-bar [data-ws-session="open"]');
+    openBtn.click();
+    expect(store.sessionFilter).toBe('open');
+    const heads = [...rowsEl.querySelectorAll('.row-group-head')];
+    expect(heads[heads.length - 1].hidden).toBe(true);
+
+    document.querySelector('#ws-bar [data-ws-session="all"]').click();
+    expect(heads[heads.length - 1].hidden).toBe(false);
+  });
 });

@@ -52,14 +52,18 @@ describe('标签闭合', () => {
   });
 });
 
-describe('首页区块顺序（看板核心不该被挤到两屏外）', () => {
-  it('问题 → 简报 → 行情（简报折叠态，只占一行）', () => {
+describe('首页区块顺序（行情与磁贴墙直出首屏）', () => {
+  it('工作台工具条 → 行情（#rows） → 问题解读，简报归入独立 #watch 视图', () => {
+    const ws = html.indexOf('id="ws-bar"');
     const q = html.indexOf('id="questions"');
     const rows = html.indexOf('id="rows"');
+    const watch = html.indexOf('id="watch"');
     const brief = html.indexOf('id="home-brief"');
-    expect(q).toBeGreaterThan(0);
-    expect(q).toBeLessThan(brief);
-    expect(brief).toBeLessThan(rows);
+    expect(ws).toBeGreaterThan(0);
+    expect(ws).toBeLessThan(rows);
+    expect(rows).toBeLessThan(q);
+    expect(watch).toBeGreaterThan(rows);
+    expect(watch).toBeLessThan(brief);
   });
 });
 

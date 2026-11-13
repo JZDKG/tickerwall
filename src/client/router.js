@@ -13,57 +13,54 @@
  * 这里保持（不做「同路由跳过」优化），否则返回列表再点同一标的不会刷新。
  * ================================================================== */
 
-import { detailEl, eventsEl, listEl, macroEl, mapEl } from './shared/dom.js';
+import { detailEl, eventsEl, listEl, macroEl, mapEl, watchEl } from './shared/dom.js';
 import { mountDetail, unmountDetail } from './views/detail.js';
 import { mountEvents, unmountEvents } from './views/events.js';
 import { mountMacro, unmountMacro } from './views/macro.js';
 import { mountMap, unmountMap } from './views/map.js';
+import { mountWatch, unmountWatch } from './views/watch.js';
 import { applyNavActive } from './nav.js';
 import { isEmbedMode, stripEmbedParam, applyEmbedMode } from './shared/share-card.js';
 
-/**
- * 列表页：它是默认视图，DOM 由 main 的轮询持续维护。
- * 离场只隐藏、不清空 —— 清空的话返回列表要重新拉一次报价才有内容。
- * 但**必须隐藏**：原 route() 每个非列表分支都写了 listEl.hidden = true，
- * 漏掉就会出现「详情页下面还压着整个列表」。
- */
+/** 仅在首页列表路由保留首页控制条、合成条与底部异动解读；离开首页立即同步隐藏。 */
+function syncHomeChrome(visible) {
+  for (const id of ['ws-bar', 'synthetics-strip']) {
+    const el = document.getElementById(id);
+    if (el) el.hidden = !visible;
+  }
+  const qEl = document.getElementById('questions');
+  if (qEl) {
+    if (!visible) qEl.hidden = true;
+    else if (qEl.innerHTML.trim().length > 0) qEl.hidden = false;
+  }
+}
+
 const listView = {
   el: listEl,
   mount() {
     listEl.hidden = false;
+    syncHomeChrome(true);
     window.scrollTo({ top: 0 });
   },
   unmount() {
     listEl.hidden = true;
+    syncHomeChrome(false);
   },
 };
 
 /**
- * 「我的关注」的深链接（#/watch）。
- *
- * 关注简报本来就在首页的 #home-brief 里（折叠态），所以复用列表视图，不新造
- * 一个视图层。落地时把折叠展开并标出来：点「我的关注」应该直接看到关注内容，
- * 而不是回到首页再自己找那一行摘要。
+ * 「今天重点」的独立视图（#/watch）：
+ * 我的自选标的、今日宏观重点与关注简报/预期台账/生活连接集中展示在此。
  */
-function focusWatchBrief() {
-  const host = document.getElementById('home-brief');
-  if (!host) return;
-  host.classList.add('watch-focused');
-  const accordion = host.querySelector('details.home-brief-accordion');
-  if (accordion) accordion.open = true;
-  host.scrollIntoView?.({ block: 'start' });
-}
-
 const watchView = {
-  el: listEl,
+  el: watchEl,
   mount() {
-    listView.mount();
-    focusWatchBrief();
+    if (watchEl) watchEl.hidden = false;
+    mountWatch();
   },
   unmount() {
-    const host = document.getElementById('home-brief');
-    host?.classList.remove('watch-focused');
-    listView.unmount();
+    unmountWatch();
+    if (watchEl) watchEl.hidden = true;
   },
 };
 
@@ -130,6 +127,7 @@ export function route() {
   applyEmbedFromLocation();
 
   const { name, view, arg } = resolve(location.hash);
+  document.documentElement.dataset.view = name;
 
   // 0) 幂等：同一视图同一参数不再重挂（重挂会清掉视图内部状态）
   if (mounted && mounted.name === name && mounted.arg === (arg ?? null)) return;
@@ -150,7 +148,12 @@ window.addEventListener('hashchange', route);
 applyEmbedFromLocation();
 
 document.addEventListener('keydown', (e) => {
-  const overlayOpen = !detailEl.hidden || !macroEl.hidden || !eventsEl.hidden || !mapEl.hidden;
+  const overlayOpen =
+    !detailEl.hidden
+    || !macroEl.hidden
+    || !eventsEl.hidden
+    || !mapEl.hidden
+    || Boolean(watchEl && !watchEl.hidden);
   if (e.key === 'Escape' && overlayOpen) location.hash = '';
 });
 
