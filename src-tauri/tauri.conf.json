@@ -4,10 +4,10 @@
   "productName": "TickerWall",
   "version": "2.0.0",
   "build": {
-    "frontendDist": "../public",
+    "frontendDist": "../dist-desktop",
     "devUrl": "http://127.0.0.1:8787",
     "beforeDevCommand": "node server.mjs",
-    "beforeBuildCommand": "npm run build"
+    "beforeBuildCommand": "npm run build:desktop"
   },
   "app": {
     "windows": [

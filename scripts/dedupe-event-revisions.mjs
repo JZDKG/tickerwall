@@ -12,18 +12,23 @@
  * 用法：node scripts/dedupe-event-revisions.mjs [--dry-run]
  * ================================================================== */
 
-import { openDatabase, pruneDuplicateEventRevisions, closeDb } from '../src/server/db/index.js';
+import {
+  useDatabase,
+  getDb,
+  explanationStorageStatus,
+  pruneDuplicateEventRevisions,
+  closeDb,
+} from '../src/server/db/index.js';
 
 const dryRun = process.argv.includes('--dry-run');
 const dbFile = process.env.KANBAN_DB || 'data/kanban.db';
 
-openDatabase(dbFile);
-const before = (await import('../src/server/db/index.js')).explanationStorageStatus();
+useDatabase(dbFile);
+const before = explanationStorageStatus();
 
 if (dryRun) {
   // 干跑：只统计会被删多少，不写库
-  const rows = (await import('../src/server/db/index.js'));
-  const db = openDatabase(dbFile);
+  const db = getDb();
   const all = db.prepare('SELECT event_id, revision, payload FROM event_revisions ORDER BY event_id, revision').all();
   const lastHash = new Map();
   let removable = 0;

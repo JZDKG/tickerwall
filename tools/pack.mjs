@@ -48,16 +48,6 @@ const INCLUDE = [
 const RUNTIME_DEPS = ['ajv', 'ajv-formats', 'fast-deep-equal', 'fast-uri', 'json-schema-traverse', 'require-from-string'];
 
 const sha = (buf) => createHash('sha256').update(buf).digest('hex');
-const walk = (dir, base = dir) => {
-  const out = [];
-  for (const name of readdirSync(dir)) {
-    const full = join(dir, name);
-    const st = statSync(full);
-    if (st.isDirectory()) out.push(...walk(full, base));
-    else out.push({ path: relative(base, full), size: st.size, sha256: sha(readFileSync(full)) });
-  }
-  return out;
-};
 
 /** 递归收集一个目录下的普通文件；符号链接一律跳过（自链会让 walk 打转） */
 function collectDir(base, prefix) {

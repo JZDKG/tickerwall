@@ -19,6 +19,7 @@
     "start": "node server.mjs",
     "dev": "node --watch server.mjs",
     "build": "vite build",
+    "build:desktop": "npm run build && node tools/prepare-tauri-dist.mjs",
     "dev:web": "vite",
     "lab": "node tools/layout-lab.mjs",
     "test": "vitest run",

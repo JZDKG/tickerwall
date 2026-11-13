@@ -11,9 +11,11 @@
  * ================================================================== */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { prepareTauriDist } from '../tools/prepare-tauri-dist.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => readFileSync(path.join(ROOT, rel), 'utf8');
@@ -54,13 +56,29 @@ describe('Tauri v2 工程配置', () => {
     const conf = JSON.parse(read('src-tauri/tauri.conf.json'));
     expect(conf.identifier).toBe('com.tickerwall.desktop');
     expect(conf.productName).toBe('TickerWall');
-    expect(conf.build.frontendDist).toBe('../public');
+    expect(conf.build.frontendDist).toBe('../dist-desktop');
+    expect(conf.build.beforeBuildCommand).toBe('npm run build:desktop');
     expect(conf.build.devUrl).toBe('http://127.0.0.1:8787');
     const windows = conf.app.windows;
     const main = windows.find((w) => w.label === 'main');
     expect(main).toMatchObject({ width: 1440, height: 900 });
     const pip = windows.find((w) => w.label === 'pip');
     expect(pip).toMatchObject({ width: 420, height: 640, alwaysOnTop: true, decorations: false });
+  });
+
+  it('prepareTauriDist 产出含 public + src/client 且无越界 ../ 路径的自包含目录', () => {
+    const outDir = mkdtempSync(path.join(tmpdir(), 'tw-tauri-dist-'));
+    try {
+      const res = prepareTauriDist({ rootDir: ROOT, outDir });
+      for (const rel of res.required) {
+        expect(existsSync(path.join(outDir, rel))).toBe(true);
+      }
+      const appJs = readFileSync(path.join(outDir, 'app.js'), 'utf8');
+      expect(appJs).toContain('./src/client/main.js');
+      expect(appJs).not.toContain('../src/client');
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+    }
   });
 
   it('Cargo.toml 声明 tauri v2 与托盘/通知相关特性', () => {

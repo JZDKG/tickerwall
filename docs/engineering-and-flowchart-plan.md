@@ -373,7 +373,7 @@ Phase 2 会把手写的 `macroState` 单例改成按视图注入，`evaluateEdge
 | --- | --- | --- |
 | `distribution.js` | `normalCdf`、`pFromT` | 原 `server.mjs` 同名函数 |
 | `correlation.js` | `pearson`、`fisherCI`、`corrStats`、`alignSeries`、`pairwiseCorr` | 同上 |
-| `newey-west.js` | `olsNeoeyWest`、`nwCorrT` | 同上（两个变体带宽口径不同，保持原样） |
+| `newey-west.js` | `olsNeweyWest`、`nwCorrT` | 同上（两个变体带宽口径不同，保持原样） |
 | `fdr.js` | `benjaminiHochberg` | 同上 |
 
 比方案多拆了一个 `distribution.js`：正态 CDF 被 correlation 和 newey-west 都要用，单独放才能避免两个模块互相 import 成环，同时**保持所有原函数签名不变** —— `server.mjs` 的调用点一行都没改，只把函数体换成了 import。
