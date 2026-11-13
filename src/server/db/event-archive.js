@@ -40,9 +40,8 @@ export function todayKey() {
 
 export async function loadArchivedIds(day) {
   if (archivedDay === day) return;
-  archivedDay = day;
-  archivedIds = new Set();
   archivedIds = await readJsonlField(path.join(EVENTS_DIR, `${day}.jsonl`), 'id');
+  archivedDay = day;
 }
 
 /** 把本轮事件追加归档（按天分文件，同一天内按 id 去重） */

@@ -127,7 +127,8 @@ export function createCollector(opts = {}) {
       } catch (err) {
         const message = String(err?.message ?? err);
         const prev = store.read?.(key) ?? null;
-        const fails = (Number(prev?.fails) ?? 0) + 1;
+        const prevFails = Number(prev?.fails);
+        const fails = (Number.isFinite(prevFails) ? prevFails : 0) + 1;
         const wait = backoffFor(fails, {
           baseMs: job.backoffBaseMs ?? 60_000,
           maxMs: job.maxBackoffMs ?? 30 * 60_000,

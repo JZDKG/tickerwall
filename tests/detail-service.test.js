@@ -388,6 +388,21 @@ describe('分时：东财 / Binance', () => {
     expect(Number.isFinite(out.points[0].t)).toBe(true);
   });
 
+  it('东财 trends2 相同价格在不同分钟保留各自 HH:MM 标签', async () => {
+    fetchRaw.mockResolvedValue(
+      JSON.stringify({
+        data: {
+          trends: [
+            '2026-10-26 09:30,3200.0',
+            '2026-10-26 09:31,3200.0',
+          ],
+        },
+      }),
+    );
+    const out = await fetchIntradayByEm('1.000001');
+    expect(out.points.map((x) => x.label)).toEqual(['09:30', '09:31']);
+  });
+
   it('东财空数据返回 null', async () => {
     fetchRaw.mockResolvedValue(JSON.stringify({ data: { trends: [] } }));
     expect(await fetchIntradayByEm('1.1')).toBeNull();

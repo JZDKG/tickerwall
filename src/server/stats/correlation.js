@@ -1,5 +1,5 @@
 import { pFromT } from './distribution.js';
-import { olsNeoeyWest } from './newey-west.js';
+import { olsNeweyWest } from './newey-west.js';
 
 /* ================================================================== *
  * 相关系数统计：Pearson、Fisher z 区间、样本内外切分
@@ -59,7 +59,7 @@ export function corrStats(xs, ys) {
   const n = xs.length;
   const corr = pearson(xs, ys);
   const ci = fisherCI(corr, n);
-  const nw = olsNeoeyWest(xs, ys, 4);
+  const nw = olsNeweyWest(xs, ys, 4);
 
   // 朴素 t（假设独立同分布，通常过于乐观）
   const tPlain = n > 2 && corr != null ? corr * Math.sqrt((n - 2) / Math.max(1e-12, 1 - corr * corr)) : null;

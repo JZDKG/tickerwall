@@ -20,19 +20,6 @@ import { MOVE_SUSPECT_PCT } from '../domain/instruments.js';
 import { computeSynthetics } from '../domain/spreads.js';
 import { readDailyCache, takeSnapshot } from '../db/index.js';
 import {
-  fetchRaw,
-  toNum,
-  UA,
-  SINA_REFERER,
-  splitSina,
-  parseSinaSpot,
-  parseSinaGlobal,
-  cnbcQuoteOf,
-  parseCnbcQuotes,
-  fredQuoteFromRows,
-  cboeIndex,
-  fetchFredDaily,
-  historySourcesFor,
   DEFAULT_FETCH_TIMEOUT_MS,
 } from '../providers/index.js';
 import {

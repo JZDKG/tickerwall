@@ -2,7 +2,7 @@
  * Phase 3 / P3-T2：SQLite v5 四维智能预警引擎 + REST + SSE 告警推送
  *
  * 验收（规格书 §3.2）：
- *   · Migration v5 建 alert_rules / alert_events，SCHEMA_VERSION = 5；
+ *   · Migration v5 建 alert_rules / alert_events，v6 增加 alert_rules.mode（SCHEMA_VERSION = 6）；
  *   · evaluateAlertRules 覆盖 price / change_pct / spread / divergence 四类
  *     条件与 cooldown_ms 冷却去重；
  *   · GET /api/alerts 与 POST /api/alerts（创建/更新/删除/手动评估）端到端；
@@ -13,7 +13,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 
-import { MIGRATIONS, SCHEMA_VERSION, migrateDatabase } from '../src/server/db/migrations.js';
+import { MIGRATIONS, SCHEMA_VERSION, migrateDatabase, migrationChecksum } from '../src/server/db/migrations.js';
 import {
   evaluateAlertRules,
   ALERT_KINDS,
@@ -26,23 +26,24 @@ import { startCollector } from '../src/server/jobs/collector.js';
 
 /* ------------------------------ 迁移 ------------------------------ */
 
-describe('Migration v5：预警表', () => {
-  it('SCHEMA_VERSION = 5，且末尾迁移名为 alerts-engine', () => {
-    expect(SCHEMA_VERSION).toBe(5);
-    expect(MIGRATIONS[MIGRATIONS.length - 1]).toMatchObject({ version: 5, name: 'alerts-engine' });
+describe('Migration v5 / v6：预警表与 mode 持久化', () => {
+  it('SCHEMA_VERSION = 6，v5 为 alerts-engine 且末尾迁移为 alert-rule-mode', () => {
+    expect(SCHEMA_VERSION).toBe(6);
+    expect(MIGRATIONS.find((m) => m.version === 5)).toMatchObject({ version: 5, name: 'alerts-engine' });
+    expect(MIGRATIONS[MIGRATIONS.length - 1]).toMatchObject({ version: 6, name: 'alert-rule-mode' });
   });
 
-  it('在空库上建出 alert_rules / alert_events 及索引', () => {
+  it('在空库上建出 alert_rules（含 mode）/ alert_events 及索引', () => {
     const db = new DatabaseSync(':memory:');
     const out = migrateDatabase(db);
-    expect(out.to).toBe(5);
+    expect(out.to).toBe(6);
     const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map((r) => r.name);
     expect(tables).toContain('alert_rules');
     expect(tables).toContain('alert_events');
     const cols = db.prepare('PRAGMA table_info(alert_rules)').all().map((r) => r.name);
     expect(cols).toEqual([
       'id', 'name', 'kind', 'target_id', 'operator', 'threshold',
-      'enabled', 'cooldown_ms', 'last_triggered_at', 'created_at',
+      'enabled', 'cooldown_ms', 'last_triggered_at', 'created_at', 'mode',
     ]);
     db.close();
   });
@@ -53,6 +54,77 @@ describe('Migration v5：预警表', () => {
     expect(() => migrateDatabase(db)).not.toThrow();
     const rows = db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type='table' AND name='alert_rules'").get();
     expect(rows.n).toBe(1);
+    db.close();
+  });
+
+  it('从已填充数据的 v5 数据库升级到 v6 时保留数据并为已有规则回填 mode="signed"', () => {
+    const db = new DatabaseSync(':memory:');
+    db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+      version INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      checksum TEXT NOT NULL,
+      applied_at TEXT NOT NULL
+    )`);
+    for (const m of MIGRATIONS.filter((x) => x.version <= 5)) {
+      m.up(db);
+      db.exec(`PRAGMA user_version = ${m.version}`);
+      db.prepare('INSERT INTO schema_migrations (version, name, checksum, applied_at) VALUES (?, ?, ?, ?)')
+        .run(m.version, m.name, migrationChecksum(m), '2026-10-01T00:00:00.000Z');
+    }
+
+    const v5Cols = db.prepare('PRAGMA table_info(alert_rules)').all().map((r) => r.name);
+    expect(v5Cols).not.toContain('mode');
+
+    db.prepare(`INSERT INTO alert_rules
+      (id, name, kind, target_id, operator, threshold, enabled, cooldown_ms, last_triggered_at, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run('r_price', '金价破位', 'price', 'gold-intl', '>', 2750, 1, 300000, null, 1730000000000);
+    db.prepare(`INSERT INTO alert_rules
+      (id, name, kind, target_id, operator, threshold, enabled, cooldown_ms, last_triggered_at, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run('r_chg', 'BTC 跌幅', 'change_pct', 'btc', '<', -3, 0, 60000, 1730000001000, 1730000000500);
+    db.prepare(`INSERT INTO alert_rules
+      (id, name, kind, target_id, operator, threshold, enabled, cooldown_ms, last_triggered_at, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run('r_sp', '美股异动', 'change_pct', 'sp500', '>', 2, 1, 0, null, 1730000000800);
+    db.prepare(`INSERT INTO alert_events
+      (rule_id, kind, target_id, title, message, observed_value, triggered_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .run('r_chg', 'change_pct', 'btc', 'BTC 跌幅', '-3.5% < -3%', -3.5, 1730000001000);
+
+    const out = migrateDatabase(db);
+    expect(out.from).toBe(5);
+    expect(out.to).toBe(SCHEMA_VERSION);
+    expect(out.applied).toEqual(['alert-rule-mode']);
+
+    const v6Cols = db.prepare('PRAGMA table_info(alert_rules)').all().map((r) => r.name);
+    expect(v6Cols).toContain('mode');
+
+    const rules = db.prepare('SELECT * FROM alert_rules ORDER BY created_at ASC').all();
+    expect(rules).toHaveLength(3);
+    expect(rules[0]).toMatchObject({
+      id: 'r_price', name: '金价破位', kind: 'price', target_id: 'gold-intl',
+      operator: '>', threshold: 2750, enabled: 1, cooldown_ms: 300000, last_triggered_at: null, mode: 'signed',
+    });
+    expect(rules[1]).toMatchObject({
+      id: 'r_chg', name: 'BTC 跌幅', kind: 'change_pct', target_id: 'btc',
+      operator: '<', threshold: -3, enabled: 0, cooldown_ms: 60000, last_triggered_at: 1730000001000, mode: 'signed',
+    });
+    expect(rules[2]).toMatchObject({
+      id: 'r_sp', name: '美股异动', kind: 'change_pct', target_id: 'sp500',
+      operator: '>', threshold: 2, enabled: 1, cooldown_ms: 0, last_triggered_at: null, mode: 'signed',
+    });
+
+    const events = db.prepare('SELECT * FROM alert_events').all();
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ rule_id: 'r_chg', title: 'BTC 跌幅', observed_value: -3.5 });
+
+    const svc = createAlertsService({ db, now: () => 1730000100000 });
+    expect(svc.listRules()).toHaveLength(3);
+    // 迁移后按默认 signed 口径求值：-2.5 > 2 不触发；切为 abs_pct 后触发
+    expect(svc.evaluate({ quotes: [{ id: 'sp500', price: 5900, changePct: -2.5 }] })).toHaveLength(0);
+    expect(svc.updateRule('r_sp', { mode: 'abs_pct' }).mode).toBe('abs_pct');
+    expect(svc.evaluate({ quotes: [{ id: 'sp500', price: 5900, changePct: -2.5 }] })).toHaveLength(1);
     db.close();
   });
 });
@@ -187,6 +259,16 @@ describe('alerts.service：CRUD 与持久化', () => {
     expect(svc.deleteRule(r.id)).toBe(true);
     expect(svc.deleteRule('nope')).toBe(false);
     expect(svc.listRules()).toHaveLength(0);
+  });
+
+  it('createRule / updateRule 持久化 mode（signed / abs_pct）', () => {
+    const svc = baseService();
+    const absRule = svc.createRule({ name: 'BTC 日内巨震', kind: 'change_pct', target_id: 'btc', operator: '>', threshold: 3, mode: 'abs_pct' });
+    expect(svc.getRule(absRule.id).mode).toBe('abs_pct');
+    expect(svc.evaluate({ quotes: QUOTES })).toHaveLength(1);
+    const switched = svc.updateRule(absRule.id, { mode: 'signed' });
+    expect(switched.mode).toBe('signed');
+    expect(svc.getRule(absRule.id).mode).toBe('signed');
   });
 
   it('evaluate 写 alert_events、更新 last_triggered_at、遵守冷却', () => {

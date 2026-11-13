@@ -40,13 +40,15 @@ describe('版本面板', () => {
     expect(btn.getAttribute('aria-expanded')).toBe('true');
   });
 
-  it('再点一次收起面板', async () => {
+  it('点开会在条目紧后面插入 .ev-rev-panel 且再次点击可收起', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ revisions: [{ revision: 1 }] }) })));
     events.bindRevisionChips(document);
     const btn = document.querySelector('[data-event-revisions]');
     btn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     await new Promise((r) => setTimeout(r, 10));
+    expect(document.querySelector('article.event')?.nextElementSibling?.classList.contains('ev-rev-panel')).toBe(true);
     btn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    expect(document.querySelector('.ev-rev-panel')).toBeNull();
     expect(btn.getAttribute('aria-expanded')).toBe('false');
   });
 

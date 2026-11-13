@@ -1083,6 +1083,17 @@ describe('事件前提与方向', () => {
     expect(h.eventRefs[0]).toMatchObject({ eventId: 'e-dem', shockType: 'demand', direction: 'increase' });
   });
 
+  it('同侧反向事件（供给增加）也不能支持「供给减少」渠道（前提不符并保留引用）', () => {
+    const h = evaluateMechanism(oilMech, obs, {
+      windowKey: 'session',
+      eventEvidence: [{ eventId: 'e-sup-up', revision: 1, shockType: 'supply', direction: 'increase' }],
+      anchor: { start: '2026-10-28', end: '2026-10-29' },
+    });
+    expect(h.status).toBe('untested');
+    expect(h.reasons).toContain('SHOCK_DIRECTION_MISMATCH');
+    expect(h.eventRefs[0]).toMatchObject({ eventId: 'e-sup-up', shockType: 'supply', direction: 'increase' });
+  });
+
   it('方向未写清时保持未确认（不猜成供给减少）', () => {
     const h = evaluateMechanism(oilMech, obs, {
       windowKey: 'session',

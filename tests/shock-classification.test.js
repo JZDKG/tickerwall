@@ -26,8 +26,12 @@ describe('规则本身', () => {
 });
 
 describe('分类：判不出来就不判', () => {
-  it('OPEC 减产 → supply', () => {
+  it('OPEC 减产 → supply；产量增加 → supply/increase', () => {
     expect(classifyShockType({ title: 'OPEC+ 宣布减产 100 万桶/日' }).shockType).toBe('supply');
+    expect(classifyShockType({ title: '产油国宣布产量增加 50 万桶/日' })).toMatchObject({
+      shockType: 'supply',
+      direction: 'increase',
+    });
   });
 
   it('炼厂开工回升、补库 → demand', () => {

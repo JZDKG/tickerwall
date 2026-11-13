@@ -10,7 +10,7 @@
 
 
 import { createHash } from 'node:crypto';
-import { fetchRaw, toNum } from '../providers/index.js';
+import { fetchRaw } from '../providers/index.js';
 import { createCoalescer } from '../jobs/coalesce.js';
 import { fetchFeedCatalog, DIRECT_FEEDS, GOOGLE_FEEDS } from '../providers/news-feeds.js';
 import { COMPILED_TOPICS, IMPACT_WORDS, anyWordHit, sanitizeText, sanitizeUrl, guessRegion, isOfficialRoutine, dedupeKey } from '../domain/news-lexicon.js';
@@ -30,7 +30,6 @@ import {
 export { stripHtml, bjTimeString, NOISE_RE, fetchJin10, fetchSinaLive, fetchWscn };
 
 import {
-  readDshConfig,
   readDshLlmConfig,
   parseLooseJsonArray,
 } from '../providers/llm.js';

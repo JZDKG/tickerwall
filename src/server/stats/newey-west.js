@@ -2,7 +2,7 @@
  * Newey-West (Bartlett 核) HAC 稳健标准误
  *
  * 两个变体，别混用：
- *   · olsNeoeyWest —— 把相关系数看成 y 对 x 的 OLS 斜率，带宽固定 maxLag（默认 4，
+ *   · olsNeweyWest —— 把相关系数看成 y 对 x 的 OLS 斜率，带宽固定 maxLag（默认 4，
  *     且不超过 n/20）。给 corrStats() 的 250 期矩阵用。
  *   · nwCorrT —— 带宽用 Newey-West 经验式 floor(4·(n/100)^(2/9))，返回 t/p/n，
  *     给领先滞后扫描用（每个滞后要重算，样本长度随平移变化）。
@@ -16,7 +16,7 @@ import { pFromT } from './distribution.js';
  * 把相关系数看成 y 对 x 的 OLS 斜率，用 Bartlett 核加权残差自协方差，
  * 得到对自相关和异方差稳健的标准误。
  */
-export function olsNeoeyWest(xs, ys, maxLag = 4) {
+export function olsNeweyWest(xs, ys, maxLag = 4) {
   const n = xs.length;
   if (n < 30) return null;
   const mx = xs.reduce((a, b) => a + b, 0) / n;

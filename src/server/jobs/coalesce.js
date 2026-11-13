@@ -57,7 +57,6 @@ export function createCoalescer({ store = new Map(), now = () => Date.now() } = 
     const ageMs = entry ? Math.max(0, t - entry.at) : null;
     const maxAge = maxServeAgeMs ?? Math.max(ttlMs * 4, ttlMs);
 
-    const usable = entry && ageMs != null && ageMs <= maxAge;
     if (!force && entry && ageMs < ttlMs) {
       bump(key, 'hits');
       return { value: entry.value, state: 'ok', at: entry.at, ageMs };

@@ -156,15 +156,17 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
   if (mechanism.eventPremise) {
     const want = mechanism.eventPremise;
     const matched = events.filter((e) => e.shockType === want.shockType && e.direction === want.direction);
-    const wrongType = events.filter((e) => e.shockType !== want.shockType);
+    const mismatch = events.filter(
+      (e) => e.shockType !== want.shockType || (e.direction != null && e.direction !== want.direction),
+    );
     const unknownDir = events.filter((e) => e.shockType === want.shockType && !e.direction);
     if (!matched.length) {
       return {
         ...base,
         missing,
         status: 'untested',
-        reasons: [wrongType.length && !unknownDir.length ? 'SHOCK_DIRECTION_MISMATCH' : 'SHOCK_DIRECTION_UNKNOWN'],
-        eventRefs: [...wrongType, ...unknownDir].slice(0, 3).map((e) => ({ eventId: e.eventId, revision: e.revision, shockType: e.shockType, direction: e.direction ?? null })),
+        reasons: [mismatch.length && !unknownDir.length ? 'SHOCK_DIRECTION_MISMATCH' : 'SHOCK_DIRECTION_UNKNOWN'],
+        eventRefs: [...mismatch, ...unknownDir].slice(0, 3).map((e) => ({ eventId: e.eventId, revision: e.revision, shockType: e.shockType, direction: e.direction ?? null })),
       };
     }
     // 只把匹配的事件带下去
@@ -255,7 +257,7 @@ export function evaluateMechanism(mechanism, observations, opts = {}) {
     const chTo = toObs ? computeChange(toObs.series, { comparisonPolicy: toObs.definition?.comparisonPolicy, observations: observationsCount }) : null;
     return {
       ...base,
-      status: aligned.n >= 2 ? 'untested' : 'untested',
+      status: 'untested',
       reasons: aligned.n >= 2 ? ['STATISTICAL_ONLY'] : ['NO_COMMON_DATES'],
       missing,
       window: { key: windowKey, start: chTo?.start ?? null, end: chTo?.end ?? null, observations: aligned.n },

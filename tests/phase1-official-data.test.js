@@ -153,6 +153,14 @@ describe('确定性种子表：外网全挂也不空白', () => {
     expect(out.events.length).toBeGreaterThan(0);
     expect(out.ok).toBe(true);
   });
+
+  it('fomcSeedForYear 对非 2026 年份按对应年份展开并显式标记 estimated', () => {
+    const seed2027 = cal.fomcSeedForYear(2027);
+    expect(seed2027.length).toBe(8);
+    expect(seed2027.every((e) => e.date.startsWith('2027-') && e.estimated === true)).toBe(true);
+    expect(seed2027[0].note).toContain('2026 会议节奏估算');
+    expect(cal.FOMC_SEED.every((e) => e.estimated === false)).toBe(true);
+  });
 });
 
 describe('已公布事件补齐结构化 actual / expected / previous', () => {

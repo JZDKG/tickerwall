@@ -14,7 +14,7 @@ import { randomUUID } from 'node:crypto';
 import { evaluateAlertRules, ALERT_KINDS, OPERATORS, DEFAULT_COOLDOWN_MS } from '../domain/alerts.js';
 import { getDb } from '../db/index.js';
 
-const RULE_COLUMNS = 'id, name, kind, target_id, operator, threshold, enabled, cooldown_ms, last_triggered_at, created_at';
+const RULE_COLUMNS = 'id, name, kind, target_id, operator, threshold, mode, enabled, cooldown_ms, last_triggered_at, created_at';
 
 function numOrNull(v) {
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
@@ -50,8 +50,8 @@ export function normalizeRuleInput(input = {}, { partial = false } = {}) {
     const v = Number(input.cooldown_ms);
     out.cooldown_ms = Number.isFinite(v) && v >= 0 ? Math.floor(v) : DEFAULT_COOLDOWN_MS;
   } else if (!partial) out.cooldown_ms = DEFAULT_COOLDOWN_MS;
-  if (partial && 'mode' in input) out.mode = input.mode === 'abs_pct' ? 'abs_pct' : 'signed';
-  else if (!partial && 'mode' in input) out.mode = input.mode === 'abs_pct' ? 'abs_pct' : 'signed';
+  if ('mode' in input) out.mode = input.mode === 'abs_pct' ? 'abs_pct' : 'signed';
+  else if (!partial) out.mode = 'signed';
   if ('id' in input && typeof input.id === 'string' && input.id.trim()) out.id = input.id.trim().slice(0, 120);
   return out;
 }
@@ -82,22 +82,23 @@ export function createAlertsService(opts = {}) {
       target_id: r.target_id,
       operator: r.operator,
       threshold: r.threshold ?? null,
+      mode: r.mode,
       enabled: r.enabled,
       cooldown_ms: r.cooldown_ms,
       last_triggered_at: null,
       created_at: now(),
     };
-    db.prepare(`INSERT INTO alert_rules (${RULE_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    db.prepare(`INSERT INTO alert_rules (${RULE_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(row.id, row.name, row.kind, row.target_id, row.operator, row.threshold,
-        row.enabled, row.cooldown_ms, row.last_triggered_at, row.created_at);
-    return { ...row, mode: r.mode ?? 'signed' };
+        row.mode, row.enabled, row.cooldown_ms, row.last_triggered_at, row.created_at);
+    return row;
   }
 
   function updateRule(id, patch) {
     const current = getRule(id);
     if (!current) return null;
     const p = normalizeRuleInput(patch, { partial: true });
-    const allowed = ['name', 'kind', 'target_id', 'operator', 'threshold', 'enabled', 'cooldown_ms'];
+    const allowed = ['name', 'kind', 'target_id', 'operator', 'threshold', 'mode', 'enabled', 'cooldown_ms'];
     const sets = [];
     const values = [];
     for (const key of allowed) {

@@ -270,13 +270,18 @@ const FOMC_SEED_SPEC = [
   [7, 28, 29, false], [9, 15, 16, true], [10, 27, 28, false], [12, 8, 9, true],
 ];
 
-function fomcSeedForYear(year) {
+export function fomcSeedForYear(year) {
   const pad = (n) => String(n).padStart(2, '0');
+  const estimated = year !== 2026;
   const out = [];
   for (const [month, startDay, endDay, projection] of FOMC_SEED_SPEC) {
     const releaseUtc = zonedTimeToUtc(year, month, endDay, 14, 0, EASTERN_TZ);
     const bj = releaseUtc == null ? null : toBeijingRelease(releaseUtc);
     if (!bj) continue;
+    const notes = [
+      projection ? '含经济预测摘要 SEP 与点阵图' : null,
+      estimated ? '按 2026 会议节奏估算，官方排期发布后自动校准' : null,
+    ].filter(Boolean);
     out.push({
       date: bj.date,
       time: bj.time,
@@ -285,9 +290,10 @@ function fomcSeedForYear(year) {
       meetingEnd: `${year}-${pad(month)}-${pad(endDay)}`,
       kind: 'fomc',
       title: `美联储 FOMC 利率决议（${startDay}-${endDay} 日会议）`,
-      note: projection ? '含经济预测摘要 SEP 与点阵图' : null,
+      note: notes.length ? notes.join('；') : null,
+      estimated,
       importance: 3,
-      source: 'Federal Reserve (seed)',
+      source: estimated ? 'Federal Reserve (cadence seed)' : 'Federal Reserve (seed)',
       symbols: ['us10y', 'dxy', 'sp500', 'ndx100', 'gold-intl', 'btc'],
     });
   }
@@ -301,7 +307,7 @@ const BLS_SEED_SPEC = [
   { day: 11, kind: 'ppi', title: '美国 PPI 生产者物价指数', importance: 2, symbols: ['us10y', 'gold-intl'] },
 ];
 
-function blsSeedForMonths(months) {
+export function blsSeedForMonths(months) {
   const out = [];
   for (const { year, month } of months) {
     for (const spec of BLS_SEED_SPEC) {
@@ -311,6 +317,7 @@ function blsSeedForMonths(months) {
         date: rel.date, time: rel.time, releaseAt: rel.releaseAt,
         kind: spec.kind, title: spec.title,
         importance: spec.importance,
+        estimated: true,
         source: 'U.S. BLS (seed)',
         symbols: spec.symbols,
       });
@@ -439,7 +446,7 @@ export async function getCalendar({ force = false } = {}) {
   if (!events.length) {
     const seedMonths = months.map(({ year, month }) => ({ year, month }));
     events.push(...fomcSeedForYear(bjYear), ...blsSeedForMonths(seedMonths));
-    errors.push('官方源不可用：已启用确定性日程种子（FOMC_SEED / BLS_SEED）');
+    errors.push('官方源不可用：已启用确定性日程种子（FOMC_SEED / BLS_SEED；非 2026 年按参考节奏推算）');
   }
 
   const numbers = numbersRes.status === 'fulfilled' ? numbersRes.value : {};

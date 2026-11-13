@@ -56,19 +56,20 @@ export async function fetchIntradayByEm(secid) {
   const j = JSON.parse(await fetchRaw(url));
   const trends = j?.data?.trends;
   if (!Array.isArray(trends) || !trends.length) return null;
-  const points = [];
+  const fallbackNow = Date.now();
+  const normalized = [];
   for (const row of trends) {
     const [ts, val] = String(row).split(',');
     const p = toNum(val);
     if (!(p > 0)) continue;
     const t = Date.parse(`${ts.replace(' ', 'T')}:00+08:00`);
-    points.push({ t: Number.isFinite(t) ? t : null, p, label: ts.slice(-5) });
+    normalized.push({ t: Number.isFinite(t) ? t : fallbackNow, p, label: ts.slice(-5) });
   }
-  const kept = trimToLastSession(points.map((x) => ({ t: x.t ?? Date.now(), p: x.p })));
-  const labels = new Map(points.map((x) => [x.p, x.label]));
+  const kept = trimToLastSession(normalized.map((x) => ({ t: x.t, p: x.p })));
+  const labels = new Map(normalized.map((x) => [x.t, x.label]));
   return {
     date: trends[trends.length - 1].slice(0, 10),
-    points: kept.map((x) => ({ t: x.t, p: x.p, label: labels.get(x.p) ?? null })),
+    points: kept.map((x) => ({ t: x.t, p: x.p, label: labels.get(x.t) ?? null })),
   };
 }
 

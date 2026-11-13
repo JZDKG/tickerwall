@@ -265,6 +265,16 @@ export const MIGRATIONS = [
       db.exec('CREATE INDEX IF NOT EXISTS idx_alert_events_rule ON alert_events(rule_id, triggered_at DESC)');
     },
   },
+  {
+    version: 6,
+    name: 'alert-rule-mode',
+    up(db) {
+      const cols = new Set(db.prepare('PRAGMA table_info(alert_rules)').all().map((c) => c.name));
+      if (!cols.has('mode')) {
+        db.exec("ALTER TABLE alert_rules ADD COLUMN mode TEXT NOT NULL DEFAULT 'signed'");
+      }
+    },
+  },
 ];
 
 /** 当前代码期望的 schema 版本 */

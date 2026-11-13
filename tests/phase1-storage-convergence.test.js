@@ -2,7 +2,7 @@
  * Phase 1 / P1-T1：双轨 JSON 存储收敛到 SQLite
  *
  * 验收：
- *   · v4 建出 intraday_ring 与 llm_headline_cache（当前 SCHEMA_VERSION = 5，见 v5 预警表）；
+ *   · v4 建出 intraday_ring 与 llm_headline_cache（当前 SCHEMA_VERSION = 6）；
  *   · 分时点用一次 BEGIN IMMEDIATE ... COMMIT 批量写入，按品种保留 240 点；
  *   · 旧 history.json 启动时导入一次，且文件缺失时兼容回退；
  *   · LLM 标题分类缓存读写走 llm_headline_cache 表（不再整文件重写）。
@@ -51,9 +51,9 @@ afterEach(() => {
   closeDb();
 });
 
-describe('迁移 v4：两张收敛表（当前 SCHEMA_VERSION 已升到 5）', () => {
-  it('v4 仍是 sqlite-storage-convergence；当前版本为 5', () => {
-    expect(SCHEMA_VERSION).toBe(5);
+describe('迁移 v4：两张收敛表（当前 SCHEMA_VERSION 已升到 6）', () => {
+  it('v4 仍是 sqlite-storage-convergence；当前版本为 6', () => {
+    expect(SCHEMA_VERSION).toBe(6);
     const v4 = MIGRATIONS.find((m) => m.version === 4);
     expect(v4?.name).toMatch(/storage|ring|sqlite/i);
   });

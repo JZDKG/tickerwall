@@ -21,7 +21,7 @@ import {
   corrStats,
   alignSeries,
   pairwiseCorr,
-  olsNeoeyWest,
+  olsNeweyWest,
   nwCorrT,
   benjaminiHochberg,
 } from '../src/server/stats/index.js';
@@ -173,18 +173,18 @@ describe('fisherCI', () => {
  * Newey-West HAC
  * ================================================================== */
 
-describe('olsNeoeyWest', () => {
+describe('olsNeweyWest', () => {
   it('n < 30 返回 null（样本太短不硬算稳健标准误）', () => {
     const xs = Array.from({ length: 29 }, (_, i) => i);
     const ys = xs.map((v) => v + 0.5);
-    expect(olsNeoeyWest(xs, ys, 4)).toBeNull();
+    expect(olsNeweyWest(xs, ys, 4)).toBeNull();
   });
 
   it('斜率与 OLS 一致', () => {
     const rand = rng(23);
     const xs = Array.from({ length: 200 }, () => gauss(rand));
     const ys = xs.map((v) => 2.5 * v + gauss(rand) * 0.5);
-    const nw = olsNeoeyWest(xs, ys, 4);
+    const nw = olsNeweyWest(xs, ys, 4);
 
     const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
     const my = ys.reduce((a, b) => a + b, 0) / ys.length;
@@ -207,7 +207,7 @@ describe('olsNeoeyWest', () => {
     const err = ar1(n, 0.9, rand, 0.4);
     const ys = xs.map((v, i) => 1.2 * v + err[i]);
 
-    const nw = olsNeoeyWest(xs, ys, 4);
+    const nw = olsNeweyWest(xs, ys, 4);
 
     // 朴素 OLS 标准误
     const mx = xs.reduce((a, b) => a + b, 0) / n;
@@ -235,7 +235,7 @@ describe('olsNeoeyWest', () => {
     const xs = Array.from({ length: n }, () => gauss(rand));
     const err = ar1(n, 0.9, rand, 0.4);
     const ys = xs.map((v, i) => 1.2 * v + err[i]);
-    const nw = olsNeoeyWest(xs, ys, 4);
+    const nw = olsNeweyWest(xs, ys, 4);
 
     const mx = xs.reduce((a, b) => a + b, 0) / n;
     const my = ys.reduce((a, b) => a + b, 0) / n;
@@ -259,7 +259,7 @@ describe('olsNeoeyWest', () => {
     const n = 400;
     const xs = Array.from({ length: n }, () => gauss(rand));
     const ys = xs.map((v) => 0.8 * v + gauss(rand) * 1);
-    const nw = olsNeoeyWest(xs, ys, 4);
+    const nw = olsNeweyWest(xs, ys, 4);
 
     const mx = xs.reduce((a, b) => a + b, 0) / n;
     const my = ys.reduce((a, b) => a + b, 0) / n;
