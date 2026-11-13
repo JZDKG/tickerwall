@@ -168,7 +168,12 @@ Page({
       pairs.forEach((p) => {
         map[p.title] = p.zh;
       });
-      this._all = this._all.map((e) => (map[e.title] ? Object.assign({}, e, { zh: map[e.title] }) : e));
+      this._all = this._all.map((e) => {
+        const zh = map[e.title];
+        if (!zh) return e;
+        const origLine = e.foreign || (e.title !== zh && !e.title.includes(zh));
+        return Object.assign({}, e, { zh, origLine });
+      });
       this.applyFilter();
       this.setData({ 'tr.state': 'done', 'tr.model': model });
     } catch (err) {

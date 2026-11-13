@@ -21,13 +21,13 @@ miniapp/
 
 ## 快速开始
 
-1. **换 AppID**：`project.config.json` 里的 `appid` 当前是 `wx1d3d340126d06c18`（账号下的测试号），
+1. **换 AppID**：`project.config.json` 里的 `appid` 当前是 `wx9db9849343b6e407`（示例配置），
    换成你自己的小程序 AppID。
 2. **打开工程**：开发者工具 → 导入项目 → 选择 `miniapp/` 目录。
    `miniprogram_npm` 里的 TDesign 产物已随仓库提供，**不点「构建 npm」也能直接跑**；
    如果你改了 `package.json` 里的版本，再点一次「工具 → 构建 npm」。
 3. **部署云函数**：右键 `cloudfunctions/api` → 「上传并部署：云端安装依赖」。
-   云环境 ID 在 `miniprogram/config.js` 的 `envId` 里，默认 `tianfu-d4g8w3mb4380b4ae5`。
+   云环境 ID 在 `miniprogram/config.js` 的 `envId` 里，默认 `cloud1-d7g244bj346acc1ac`。
 4. （可选）**保持缓存热**：给 `api` 加一个 1 分钟的定时触发器（云开发控制台 → 云函数 → 定时触发器），
    这样首屏不会每次都走冷启动去抓上游。
 

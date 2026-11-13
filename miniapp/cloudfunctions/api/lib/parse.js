@@ -15,13 +15,6 @@ function toNum(v) {
   return Number.isFinite(n) ? n : null;
 }
 
-/** 取出 var hq_str_xxx="a,b,c"; 里的字段数组 */
-function splitSina(text) {
-  const m = /="([\s\S]*)"/.exec(text || '');
-  if (!m) return null;
-  return m[1].split(',');
-}
-
 /**
  * 新浪批量：一次 list=a,b,c 会回多行 var hq_str_a="..."; 
  * 返回 Map<code, fields[]>
@@ -93,20 +86,6 @@ function parseSinaIndexFull(f) {
     high: toNum(f[4]),
     low: toNum(f[5]),
     sessionTime: f[31] || null,
-  };
-}
-
-/** 新浪 A 股指数简版 s_sh000001：1 现价 · 2 涨跌额 · 3 涨跌幅% */
-function parseSinaSimpleIndex(f) {
-  if (!f) return null;
-  const price = toNum(f[1]);
-  if (!(price > 0)) return null;
-  const change = toNum(f[2]);
-  return {
-    price,
-    change,
-    changePct: toNum(f[3]),
-    prevClose: change != null ? price - change : null,
   };
 }
 
@@ -267,12 +246,10 @@ function parseSinaBtc(f) {
 
 module.exports = {
   toNum,
-  splitSina,
   parseSinaBatch,
   parseSinaSpot,
   parseSinaGlobal,
   parseSinaIndexFull,
-  parseSinaSimpleIndex,
   parseSinaForex,
   parseSinaFutures,
   parseSinaBtc,

@@ -83,17 +83,6 @@ function bjTime(input) {
   return `${get('year')}-${pad(get('month'))}-${pad(get('day'))} ${pad(get('hour'))}:${pad(get('minute'))}:${pad(get('second'))}`;
 }
 
-/**
- * 时间戳统一成毫秒。
- * 三个源的字段单位不一致：金十/新浪给「北京时间的墙钟字符串」，见闻给
- * 毫秒时间戳（不是秒 —— 乘 1000 会得到公元 58797 年）。
- */
-function toMs(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n) || n <= 0) return null;
-  return n > 1e12 ? n : n * 1000;
-}
-
 function clip(text, n) {
   const s = stripHtml(text);
   return s.length > n ? `${s.slice(0, n)}…` : s;

@@ -87,7 +87,7 @@ async function mapLimit(items, limit, fn) {
 /** 分时：按市场状态给不同 TTL —— 收盘后不会变，别每 3 分钟重抓一遍 */
 async function sparkFor(inst, status, now, budgetMs) {
   const cached = sparkCache.get(inst.id);
-  const ttl = status && status.open ? SPARK_TTL_MS : SPARK_TTL_MS * 8;
+  const ttl = status && status.open ? SPARK_TTL_MS : SPARK_CLOSED_TTL_MS;
   if (cached && now - cached.at < ttl) return cached.points;
 
   const budget = Math.max(1200, Math.min(4000, budgetMs || 4000));

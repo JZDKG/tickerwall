@@ -5,7 +5,6 @@
   "backgroundTextStyle": "dark",
   "usingComponents": {
     "trend-chart": "../../components/trend-chart/trend-chart",
-    "t-empty": "tdesign-miniprogram/empty/empty",
-    "t-icon": "tdesign-miniprogram/icon/icon"
+    "t-empty": "tdesign-miniprogram/empty/empty"
   }
 }

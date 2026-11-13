@@ -19,8 +19,7 @@
  * @property {'商品'|'股指'|'外汇'|'加密'} cat  小程序筛选分类
  * @property {boolean} [core] 是否进「核心」筛选
  * @property {string} [em]    东财 secid（报价 / 日K / 分时都用它）
- * @property {{code:string,kind:'spot'|'global'|'index'|'simple'|'forex'|'futures'}} [sina]
- * @property {{code:string}} [fut]   新浪国内期货（基差兜底）
+ * @property {{code:string,kind:'spot'|'global'|'index'|'forex'|'futures'}} [sina]
  * @property {string} [tencent]      腾讯行情 code
  * @property {string} [binance]      Binance symbol
  * @property {string} [coinbase]     Coinbase pair
@@ -61,7 +60,6 @@ const INSTRUMENTS = [
     core: true,
     sina: { code: 'gds_AU9999', kind: 'spot' },
     em: '118.AU9999',
-    fut: { code: 'nf_AU0' },
   },
   {
     id: 'gold-intl',

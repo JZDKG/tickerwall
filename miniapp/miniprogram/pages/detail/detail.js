@@ -63,7 +63,6 @@ Page({
     perfRows: [],
     riskRows: [],
     related: [],
-    emptyChart: false,
   },
 
   onLoad(query) {
@@ -141,7 +140,7 @@ Page({
     // 区间表现：用日线收盘 + 实时价（如果有）算，避免最后一根日线滞后
     const lastLive = Number.isFinite(quote.price) && quote.price > 0 ? quote.price : null;
     const series = closes.slice();
-    if (lastLive) series[series.length - 1] = lastLive;
+    if (lastLive && series.length) series[series.length - 1] = lastLive;
 
     const perfRows = RANGE_DAYS.map((r) => {
       const back = r.days;
@@ -200,9 +199,11 @@ Page({
   spanText(t1, t2) {
     const fmt = (t) => {
       if (!t) return '';
-      const d = new Date(t);
+      const ms = new Date(t).getTime();
+      if (!Number.isFinite(ms)) return '';
+      const bj = new Date(ms + 8 * 3_600_000);
       const pad = (n) => String(n).padStart(2, '0');
-      return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      return `${pad(bj.getUTCHours())}:${pad(bj.getUTCMinutes())}`;
     };
     return t1 && t2 ? `${fmt(t1)} – ${fmt(t2)}` : '';
   },

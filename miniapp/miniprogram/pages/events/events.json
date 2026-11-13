@@ -5,7 +5,6 @@
   "backgroundTextStyle": "dark",
   "usingComponents": {
     "t-empty": "tdesign-miniprogram/empty/empty",
-    "t-loading": "tdesign-miniprogram/loading/loading",
     "t-icon": "tdesign-miniprogram/icon/icon"
   }
 }

@@ -56,7 +56,6 @@ async function fetchSina(codes, kinds) {
     let q = null;
     if (kind === 'global') q = P.parseSinaGlobal(f);
     else if (kind === 'index') q = P.parseSinaIndexFull(f);
-    else if (kind === 'simple') q = P.parseSinaSimpleIndex(f);
     else if (kind === 'forex') q = P.parseSinaForex(f);
     else if (kind === 'futures') q = P.parseSinaFutures(f);
     else if (kind === 'btc') q = P.parseSinaBtc(f);

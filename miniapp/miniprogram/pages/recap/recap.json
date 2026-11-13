@@ -4,7 +4,6 @@
   "backgroundColor": "#080b10",
   "backgroundTextStyle": "dark",
   "usingComponents": {
-    "t-empty": "tdesign-miniprogram/empty/empty",
-    "t-icon": "tdesign-miniprogram/icon/icon"
+    "t-empty": "tdesign-miniprogram/empty/empty"
   }
 }
