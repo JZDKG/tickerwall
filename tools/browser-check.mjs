@@ -179,7 +179,7 @@ async function startMockLlmServer() {
                     index: 0,
                     id: 'call_browser_1',
                     type: 'function',
-                    function: { name: 'get_quotes', arguments: '{}' },
+                    function: { name: 'get_global_quotes', arguments: '{}' },
                   },
                 ],
               },
@@ -1040,11 +1040,11 @@ async function main() {
       String(askTestText.value ?? '').trim(),
     );
 
-    // 点击推荐问题卡触发真实 SSE：tool_calls(get_quotes) → 工具轨迹折叠 → 安全 Markdown + 表格 + 站内链接 → 会话落库
+    // 点击推荐问题卡触发真实 SSE：tool_calls(get_global_quotes) → 工具轨迹折叠 → 安全 Markdown + 表格 + 站内链接 → 会话落库
     await waitForCondition(() => cdp.evaluate(`Boolean(document.querySelector('#ask-empty .ask-chip'))`), { timeoutMs: 5000 });
     await cdp.evaluate(`document.querySelector('#ask-empty .ask-chip')?.click()`);
     await waitForCondition(
-      () => cdp.evaluate(`Boolean(document.querySelector('#ask-messages .ask-msg.is-assistant:not(.is-streaming) .ask-answer table') && document.querySelectorAll('#ask-messages .ask-trace-item').length >= 1)`),
+      () => cdp.evaluate(`Boolean(document.querySelector('#ask-messages .ask-msg.is-assistant:not(.is-streaming) .ask-answer table') && document.querySelectorAll('#ask-messages .ask-trace-item:not(.is-error)').length >= 1)`),
       { timeoutMs: 15000 },
     );
     await cdp.evaluate(`document.getElementById('ask-history-btn')?.click()`);
@@ -1060,6 +1060,7 @@ async function main() {
         traceCollapsedByDefault: trace ? !trace.open : null,
         traceSummary: summaryText.trim(),
         traceItems: document.querySelectorAll('#ask-messages .ask-trace-item').length,
+        traceErrors: document.querySelectorAll('#ask-messages .ask-trace-item.is-error').length,
         hasH3: Boolean(answer?.querySelector('h3')),
         hasTable: Boolean(answer?.querySelector('table')),
         linkHref: answer?.querySelector('a')?.getAttribute('href') ?? null,
@@ -1068,8 +1069,8 @@ async function main() {
     })()`);
     const as = askStreamRes.value ?? {};
     record(
-      as.traceCollapsedByDefault === true && as.traceSummary.includes('1') && (as.traceItems ?? 0) >= 1 && as.hasH3 && as.hasTable && as.linkHref === '#/d/gold-intl' && (as.sessionCount ?? 0) >= 1,
-      'SSE 流式提问、get_quotes 取数轨迹默认折叠、安全 Markdown 与会话历史全部闭环',
+      as.traceCollapsedByDefault === true && as.traceSummary.includes('1') && (as.traceItems ?? 0) >= 1 && as.traceErrors === 0 && as.hasH3 && as.hasTable && as.linkHref === '#/d/gold-intl' && (as.sessionCount ?? 0) >= 1,
+      'SSE 流式提问、get_global_quotes 成功取数与轨迹折叠、安全 Markdown 与会话历史全部闭环',
       JSON.stringify(as),
     );
 
