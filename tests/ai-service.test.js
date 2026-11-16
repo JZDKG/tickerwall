@@ -404,6 +404,31 @@ describe('ask：原生 tools 循环', () => {
     expect(secondMessages.filter((m) => m.role === 'tool')).toHaveLength(2);
   });
 
+  it('多轮工具调用前有过渡句时，续写前自动补空行避免粘住 Markdown 标题', async () => {
+    const db = makeDb();
+    const streamChat = makeStream([
+      [
+        { type: 'delta', text: '我先确认代码。' },
+        { type: 'tool_calls', calls: [{ id: 'c1', name: 'get_global_quotes', arguments: {} }] },
+        { type: 'done', usage: null },
+      ],
+      [
+        { type: 'delta', text: '## 结论\n\n已获取。' },
+        { type: 'done', usage: null },
+      ],
+    ]);
+    const svc = makeService({ db, streamChat });
+    const { events, emit } = collect();
+    await svc.ask({ question: '看看行情' }, emit);
+
+    const streamed = events.filter((e) => e.type === 'delta').map((e) => e.text).join('');
+    expect(streamed).toBe('我先确认代码。\n\n## 结论\n\n已获取。');
+    expect(db.appendAiMessage).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ role: 'assistant', content: '我先确认代码。\n\n## 结论\n\n已获取。' }),
+    );
+  });
+
   it('原生模式不支持 tools 时自动降级 ReAct 并重试当前轮', async () => {
     const unsupported = Object.assign(new Error('tools are not supported by this model'), { status: 400 });
     const streamChat = makeStream([

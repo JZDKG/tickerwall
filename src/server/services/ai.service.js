@@ -69,6 +69,13 @@ function tryJson(text) {
   }
 }
 
+/** 跨工具轮次续写文本时补齐空行，避免上轮过渡语粘到下轮 Markdown 标题前缀 */
+function roundBoundaryGap(existing, next) {
+  if (!existing || /^\n/.test(next)) return '';
+  if (existing.endsWith('\n\n')) return '';
+  return existing.endsWith('\n') ? '\n' : '\n\n';
+}
+
 /**
  * 从模型输出里解析 ReAct 工具动作。
  * 只认 ```json 代码块（或整段就是 JSON）里的 {"tool":"…","args":{…}} / 数组。
@@ -406,6 +413,7 @@ export function createAiService(deps = {}) {
 
       const useNative = !reactMode;
       let text = '';
+      let roundEmitted = false;
       const calls = [];
 
       try {
@@ -419,6 +427,14 @@ export function createAiService(deps = {}) {
           if (ev?.type === 'delta' && ev.text) {
             text += ev.text;
             if (useNative) {
+              if (!roundEmitted) {
+                const gap = roundBoundaryGap(finalText, ev.text);
+                if (gap) {
+                  finalText += gap;
+                  emit({ type: 'delta', text: gap });
+                }
+              }
+              roundEmitted = true;
               finalText += ev.text;
               emittedDelta = true;
               emit({ type: 'delta', text: ev.text });
