@@ -217,9 +217,9 @@ export const FOCUS_PILLS = [
 export const SHOCK_SOURCES = ['oil', 'dxy', 'us10y', 'vix', 'copper', 'ndx100'];
 
 export const MODES = [
-  ['compass', '🌐 全局罗盘'],
-  ['mindmap', '🌿 单点思维导图'],
-  ['sandbox', '⚡ 沙盘推演'],
+  ['compass', '全局罗盘'],
+  ['mindmap', '单点思维导图'],
+  ['sandbox', '沙盘推演'],
 ];
 
 /* ------------------------------------------------------------------ *

@@ -246,14 +246,14 @@
   border-radius: 4px;
   font-size: 10px;
   font-family: var(--sans, inherit);
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
 }
 
 /* 一手：媒体/机构自己的 feed，链接直达原文 */
 .ev-origin.direct {
-  color: var(--down);
-  background: var(--down-bg);
-  border: 1px solid rgba(63, 185, 120, 0.32);
+  color: var(--accent);
+  background: var(--cold-bg);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
 /* 索引：经 Google News 转手，出处由聚合方提供 */
@@ -265,9 +265,9 @@
 
 .ev-lang {
   padding: 0 4px;
-  border-radius: 3px;
+  border-radius: 4px;
   font-size: 10px;
-  text-transform: uppercase;
+  text-transform: none;
   color: var(--muted-2);
   background: var(--panel);
 }
@@ -388,25 +388,26 @@
 }
 
 .ev-ai {
-  font-size: 9.5px;
+  font-size: 10px;
   font-family: var(--mono);
   padding: 1px 5px;
   border-radius: 4px;
-  color: #a7c7ff;
-  background: rgba(91, 156, 248, 0.14);
-  border: 1px solid rgba(91, 156, 248, 0.3);
-  letter-spacing: 0.4px;
+  color: var(--accent);
+  background: var(--cold-bg);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  letter-spacing: 0;
 }
 
 .ev-new {
-  font-size: 9.5px;
-  font-family: var(--mono);
+  font-size: 10px;
+  font-family: inherit;
+  font-weight: 500;
   padding: 1px 5px;
   border-radius: 4px;
-  color: #ffd9a0;
-  background: rgba(224, 168, 60, 0.16);
-  border: 1px solid rgba(224, 168, 60, 0.36);
-  letter-spacing: 0.4px;
+  color: var(--warn);
+  background: var(--warn-bg);
+  border: 1px solid color-mix(in srgb, var(--warn) 34%, transparent);
+  letter-spacing: 0;
 }
 
 .event.is-new {
@@ -415,7 +416,7 @@
 
 @keyframes evFlash {
   0% {
-    background: rgba(224, 168, 60, 0.13);
+    background: rgba(212, 155, 56, 0.13);
   }
   100% {
     background: transparent;
@@ -432,16 +433,16 @@
   cursor: pointer;
   font: inherit;
   font-size: 12px;
-  padding: 6px 16px;
-  border-radius: 20px;
-  color: #ffd9a0;
-  background: rgba(40, 30, 12, 0.92);
-  border: 1px solid rgba(224, 168, 60, 0.45);
-  backdrop-filter: blur(6px);
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: var(--radius-md, 8px);
+  color: var(--warn);
+  background: var(--bg-elev);
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--line));
 }
 
 .new-banner:hover {
-  background: rgba(56, 42, 16, 0.95);
+  background: var(--panel-2);
 }
 
 /* 事件研究矩阵 */
@@ -502,7 +503,7 @@
   line-height: 1;
   padding: 2px 6px;
   border-radius: 4px;
-  letter-spacing: 0.3px;
+  letter-spacing: 0;
   border: 1px solid transparent;
 }
 

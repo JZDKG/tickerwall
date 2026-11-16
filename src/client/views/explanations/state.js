@@ -207,7 +207,8 @@ export function renderExplainCard(state, { assetName } = {}) {
   const diffEntry = canDiff
     ? `${diffToggleHTML(state.explanation.id)}<div class="explain-diff-slot" data-explain-diff-slot="1"></div>`
     : '';
-  return `${banner}${card}${history}${diffEntry}`;
+  const aux = history || diffEntry ? `<div class="explain-aux">${history}${diffEntry}</div>` : '';
+  return `${banner}${card}${aux}`;
 }
 
 /**

@@ -22,39 +22,41 @@
     "id price delta spark"
     "meta meta meta meta";
   align-items: center;
-  gap: 6px 22px;
-  padding: 12px 22px 11px;
+  gap: 8px 20px;
+  padding: 12px 20px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   overflow: hidden;
-  transition: background 0.18s ease, border-color 0.18s ease;
+  transition: background var(--t-fast, 160ms) var(--ease-out, ease), border-color var(--t-fast, 160ms) var(--ease-out, ease);
 }
 
 .row::before {
   content: "";
   position: absolute;
   inset: 0 auto 0 0;
-  width: 3px;
+  width: 2px;
   background: var(--flat);
-  opacity: 0.75;
-  transition: background 0.2s ease;
+  opacity: 0.45;
+  transition: background var(--t-fast, 160ms) var(--ease-out, ease), opacity var(--t-fast, 160ms) var(--ease-out, ease);
 }
 
 .row[data-dir="up"]::before {
   background: var(--up);
+  opacity: 0.9;
 }
 .row[data-dir="down"]::before {
   background: var(--down);
+  opacity: 0.9;
 }
 
 .row:hover {
   background: var(--panel-2);
-  border-color: rgba(255, 255, 255, 0.12);
+  border-color: color-mix(in srgb, var(--line) 45%, var(--muted) 55%);
 }
 
 .row.is-error {
-  border-color: rgba(245, 69, 92, 0.35);
+  border-color: rgba(239, 75, 96, 0.35);
 }
 
 .row .id {
@@ -63,9 +65,9 @@
 }
 
 .row .name {
-  font-size: 16.5px;
-  font-weight: 620;
-  letter-spacing: 0.2px;
+  font-size: 15.5px;
+  font-weight: 600;
+  letter-spacing: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -158,10 +160,10 @@
 }
 
 .row[data-dir="up"] .value {
-  color: var(--up);
+  color: var(--text);
 }
 .row[data-dir="down"] .value {
-  color: var(--down);
+  color: var(--text);
 }
 .row.is-stale .value {
   opacity: 0.45;
@@ -177,14 +179,14 @@
 
 .row .pct {
   font-family: var(--mono);
-  font-size: 15px;
+  font-size: 14.5px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  padding: 3px 9px;
-  border-radius: 8px;
-  min-width: 78px;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm, 6px);
+  min-width: 76px;
   text-align: right;
-  background: rgba(139, 151, 168, 0.12);
+  background: rgba(139, 148, 163, 0.10);
   color: var(--flat);
 }
 
@@ -312,10 +314,11 @@
 }
 
 .row-group-head {
-  padding: 10px 4px 2px;
+  padding: 12px 2px 6px;
   color: var(--muted);
   font-size: 12px;
-  letter-spacing: 0.08em;
+  font-weight: 500;
+  letter-spacing: 0;
   border-bottom: 1px solid var(--line);
 }
 
@@ -328,10 +331,10 @@
   padding-bottom: 8px;
 }
 
-/* 磁贴墙：23 个品种铺成响应式网格，涨跌幅强度映射到背景深浅 */
+/* 磁贴墙：23 个品种铺成响应式网格，静态中性表面 + 左侧 2px 语义边线 */
 .rows[data-density="wall"] {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(216px, 1fr));
   gap: 10px;
 }
 
@@ -344,28 +347,28 @@
     "meta meta";
   gap: 4px 10px;
   padding: 12px 14px;
-  min-height: 128px;
+  min-height: 124px;
 }
 
 .rows[data-density="wall"] .row .delta .pct {
-  font-size: 22px;
-  font-weight: 700;
+  font-size: 18px;
+  font-weight: 600;
   font-family: var(--mono);
 }
 
 .rows[data-density="wall"] .row .price .value {
-  font-size: 20px;
+  font-size: 19px;
   font-family: var(--mono);
 }
 
 .rows[data-density="wall"] .row[data-dir="up"] {
-  background: var(--up-bg);
-  border-color: var(--up);
+  background: var(--panel);
+  border-color: var(--line);
 }
 
 .rows[data-density="wall"] .row[data-dir="down"] {
-  background: var(--down-bg);
-  border-color: var(--down);
+  background: var(--panel);
+  border-color: var(--line);
 }
 
 .rows[data-density="wall"] .row[data-dir="up"] .pct,

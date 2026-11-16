@@ -9,6 +9,7 @@ import { watchEl } from '../shared/dom.js';
 import { on } from '../shared/bus.js';
 import { getJson } from '../shared/fetch-json.js';
 import { dirOf, fmtPct, fmtPrice, fmtSigned, html } from '../shared/format.js';
+import { iconHtml } from '../shared/icons.js';
 import { PLACEHOLDER, store } from '../shared/store.js';
 import { getWorkspaceStore } from '../shared/workspace-store.js';
 import { readPinnedAssets, togglePinnedAsset, isAssetPinned } from '../shared/watchlist.js';
@@ -59,7 +60,7 @@ export function watchPinnedHTML(pinnedIds, byId, prefs, pickerOpen = false) {
             <div class="watch-pin-top">
               <a class="watch-pin-title" href="#/d/${encodeURIComponent(item.id)}">${item.name}</a>
               ${ms?.label ? html`<span class="session-pill" data-phase="${phase}">${ms.label}</span>` : ''}
-              <button type="button" class="watch-unpin-btn" data-watch-pin="${item.id}" aria-label="取消自选 ${item.name}" aria-pressed="true" title="移出我的自选">★</button>
+              <button type="button" class="watch-unpin-btn" data-watch-pin="${item.id}" aria-label="取消自选 ${item.name}" aria-pressed="true" title="移出我的自选">${iconHtml('star-filled', 14)}</button>
             </div>
             <div class="watch-pin-sub">${item.sub ?? ''}</div>
             <div class="watch-pin-num">
@@ -72,7 +73,7 @@ export function watchPinnedHTML(pinnedIds, byId, prefs, pickerOpen = false) {
       </div>`
     : html`<div class="watch-empty">
         <p class="watch-empty-title">还没有星标自选标的</p>
-        <p class="watch-empty-hint">点击常用基准快速加入，或在右上角「管理自选」自由勾选，首页磁贴墙的 ☆ 也会同步到此处。</p>
+        <p class="watch-empty-hint">点击常用基准快速加入，或在右上角「管理自选」自由勾选，首页磁贴墙的星标也会同步到此处。</p>
         <div class="watch-starter-picks">
           ${STARTER_IDS.map((id) => {
             const meta = byId.get(id);
@@ -86,7 +87,7 @@ export function watchPinnedHTML(pinnedIds, byId, prefs, pickerOpen = false) {
     ? html`<div class="watch-pin-picker" id="watch-pin-picker">
         ${PLACEHOLDER.map((item) => {
           const on = isAssetPinned(storageOf(), item.id);
-          return html`<button type="button" class="pick ${on ? 'on' : ''}" data-watch-pin="${item.id}" aria-pressed="${on ? 'true' : 'false'}">${on ? '★ ' : '☆ '}${item.name}</button>`;
+          return html`<button type="button" class="pick ${on ? 'on' : ''}" data-watch-pin="${item.id}" aria-pressed="${on ? 'true' : 'false'}">${iconHtml(on ? 'star-filled' : 'star', 13)} ${item.name}</button>`;
         })}
       </div>`
     : '';

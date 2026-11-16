@@ -16,6 +16,8 @@
  * evaluateAll() 统一算好，以 Map<edgeId, row> 传进来，这里不重复计算。
  * ================================================================== */
 
+import { iconStr } from '../../shared/icons.js';
+
 import {
   MACRO_TRANSMISSION_EDGES,
   CORE_EDGES,
@@ -194,7 +196,7 @@ export function edgeCard(data, edge, reality, state) {
       <span class="mg-addr">${esc(B?.short ?? edge.to)}</span>
       <span class="mg-arrowsign ${tone}">◄──[${arrow}]──</span>
       <span class="mg-addr">${esc(A?.short ?? edge.from)}</span>
-      <span class="mg-badge ${tone}">${esc(r?.badge ?? '')}</span>
+      <span class="mg-badge ${tone}">${esc(String(r?.badge ?? '').replace(/^[⚡✓○]\s*/, ''))}</span>
     </div>
     <p class="mg-lead"><b>${esc(edge.label)}</b>　${esc(edge.id)}　关系类型：${esc(rel.label)}　（${esc(rel.plain)}）</p>
 
@@ -243,12 +245,12 @@ export function mindCardPanel(data, focusId, reality, explanation = null) {
   return `<div class="mg-card-head"><span class="mg-addr big">${esc(f?.name ?? focusId)}</span>
       <span class="mg-badge ${f ? 'pos' : 'neg'}">焦点</span></div>
     <p class="mg-lead">上游 ${up.length} 条驱动 · 下游 ${down.length} 条传导。右侧数字是近 20 期实测相关。</p>
-    <div class="mg-sect"><i class="dot"></i><h4>⬅ 谁在驱动它</h4>
+    <div class="mg-sect"><i class="dot"></i><h4>谁在驱动它</h4>
       <ul class="mg-mini-list">${
         up.map((e) => line(e, data.universe.find((u) => u.id === e.from)?.short ?? e.from, 'up')).join('') || '<li class="mg-mini empty">无已登记上游</li>'
       }</ul>
     </div>
-    <div class="mg-sect"><i class="dot"></i><h4>它影响谁 ➡</h4>
+    <div class="mg-sect"><i class="dot"></i><h4>它影响谁</h4>
       <ul class="mg-mini-list">${
         down.map((e) => line(e, data.universe.find((u) => u.id === e.to)?.short ?? e.to, 'down')).join('') || '<li class="mg-mini empty">无已登记下游</li>'
       }</ul>
@@ -287,7 +289,7 @@ export function sandboxPanel(data, state) {
   };
 
   const conflictBlock = target && target[1].conflict
-    ? `<div class="mg-sect"><i class="dot warn"></i><h4>⚡ 相反渠道拆解：${esc(nameOf(target[0]))}</h4>
+    ? `<div class="mg-sect"><i class="dot warn"></i><h4>相反渠道拆解：${esc(nameOf(target[0]))}</h4>
         <ul class="mg-path-list">${target[1].paths
           .filter((p) => p.hop <= 2)
           .map((p) => {
@@ -365,7 +367,7 @@ export function playbookPanel(pb, data, reality) {
       const r = reality.get(e.id);
       const tone = pb.breaks.includes(e.id) ? 'div' : r?.status === 'diverged' ? 'div' : e.sign > 0 ? 'pos' : 'neg';
       return `<li class="mg-mini" data-edge="${esc(e.id)}">
-        <span class="mg-mini-dir ${tone}">${pb.breaks.includes(e.id) ? '⚡' : signChar(e.sign) + '▶'}</span>
+        <span class="mg-mini-dir ${tone}">${pb.breaks.includes(e.id) ? iconStr('bolt', 11) : `${signChar(e.sign)}▶`}</span>
         <span class="mg-mini-name">${esc(nameOf(e.from))}→${esc(nameOf(e.to))}</span>
         <span class="mg-mini-tag">${esc(e.label)}${pb.breaks.includes(e.id) ? ' · 被打破' : ''}</span>
         <span class="mg-mini-roll ${corrTone(r?.roll20)}">${r?.roll20 == null ? '—' : `${r.roll20 >= 0 ? '+' : ''}${r.roll20.toFixed(2)}`}</span>
@@ -410,7 +412,7 @@ export function alertBannerHTML(data, reality) {
   const A = data.universe.find((u) => u.id === alert.e.from);
   const B = data.universe.find((u) => u.id === alert.e.to);
   return `<button type="button" class="mg-alert" data-alert="${esc(alert.e.id)}">
-      <span class="mg-alert-ico">⚡</span>
+      <span class="mg-alert-ico">${iconStr('bolt', 13)}</span>
       <span class="mg-alert-text">观测与机制不同：<b>${esc(A?.name ?? alert.e.from)} ↔ ${esc(B?.name ?? alert.e.to)}</b>
         ${esc(alert.r.badge.replace('⚡ ', ''))}，近 20 期滚动相关 ${
           alert.r.roll20 == null ? '样本不足' : `${alert.r.roll20 >= 0 ? '+' : ''}${alert.r.roll20.toFixed(2)}`

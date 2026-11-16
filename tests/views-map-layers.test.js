@@ -69,7 +69,7 @@ describe('timeline-bar：24 格柱状带', () => {
       { activeIndex: 2, playing: true },
     );
     expect(html).toContain('tl-col on');
-    expect(html).toContain('■ 停止');
+    expect(html).toContain('停止回放');
     expect(html).toContain('回到实时');
     expect(html).toContain('data-index="2"');
   });

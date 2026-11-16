@@ -164,7 +164,7 @@ describe('六种页面状态都能渲染，没有白屏分支', () => {
       ...DATA,
       meta: { freshness: 'fresh', freshnessReasons: [], refreshStatus: 'idle', backgroundStale: ['oil'] },
     });
-    expect(htmlText).toContain('背景指标过期：oil');
+    expect(htmlText).toContain('背景指标过期：WTI 原油');
     expect(htmlText).toContain('数据状态：数据在正常更新周期内');
   });
 

@@ -107,49 +107,39 @@ export function renderShareCardSVG(model = {}, opts = {}) {
     const y = factsStartY + i * (compact ? 108 : 100);
     const lines = wrap(f, compact ? 30 : 46, 2);
     return `<g>
-      <circle cx="${pad + 10}" cy="${y - 8}" r="6" fill="#4c8dff" />
-      ${textLines(lines, { x: pad + 32, y, dy: 34, size: compact ? 26 : 28, fill: '#dbe5f1', marker: 'fact' })}
+      <rect x="${pad + 4}" y="${y - 12}" width="6" height="6" rx="1.5" fill="#5b9cf8" />
+      ${textLines(lines, { x: pad + 26, y, dy: 34, size: compact ? 26 : 28, fill: '#e6e8ec', marker: 'fact' })}
     </g>`;
   }).join('\n    ');
 
   const contraryBlock = contrary
     ? `<g>
-      <rect x="${pad - 16}" y="${H - (compact ? 250 : 190)}" width="${W - pad * 2 + 32}" height="${compact ? 92 : 80}" rx="12"
-            fill="#2a1c22" stroke="#7a3a44" stroke-width="1" />
-      <text x="${pad}" y="${H - (compact ? 220 : 162)}" font-size="${compact ? 22 : 20}" fill="#f0a3ae" font-weight="600">相反证据 / 待核查</text>
-      ${textLines(wrap(contrary, compact ? 34 : 60, 2), { x: pad, y: H - (compact ? 186 : 132), dy: 28, size: compact ? 21 : 20, fill: '#d6a9b0' })}
+      <rect x="${pad - 16}" y="${H - (compact ? 250 : 190)}" width="${W - pad * 2 + 32}" height="${compact ? 92 : 80}" rx="8"
+            fill="#14161b" stroke="#2c2428" stroke-width="1" />
+      <rect x="${pad - 16}" y="${H - (compact ? 250 : 190)}" width="3" height="${compact ? 92 : 80}" fill="#d49b38" />
+      <text x="${pad}" y="${H - (compact ? 220 : 162)}" font-size="${compact ? 22 : 20}" fill="#e2b45c" font-weight="600">相反证据 / 待核查</text>
+      ${textLines(wrap(contrary, compact ? 34 : 60, 2), { x: pad, y: H - (compact ? 186 : 132), dy: 28, size: compact ? 21 : 20, fill: '#c8cdd6' })}
     </g>`
     : '';
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img"
        aria-label="${xmlEsc(title)} 分享战报卡">
-  <defs>
-    <linearGradient id="tw-bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#0b1017" />
-      <stop offset="55%" stop-color="#131d2b" />
-      <stop offset="100%" stop-color="#1a2740" />
-    </linearGradient>
-    <linearGradient id="tw-accent" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#4c8dff" />
-      <stop offset="100%" stop-color="#7a5cff" />
-    </linearGradient>
-  </defs>
-  <rect width="${W}" height="${H}" fill="url(#tw-bg)" />
-  <rect x="0" y="0" width="${W}" height="8" fill="url(#tw-accent)" />
-  <rect x="${pad}" y="${compact ? 76 : 88}" width="${compact ? 4 : 5}" height="${compact ? 66 : 72}" rx="2" fill="#4c8dff" />
-  <text x="${pad + 24}" y="${compact ? 112 : 128}" font-size="${compact ? 20 : 22}" fill="#7f93ad" letter-spacing="3">TICKERWALL · 归因战报</text>
-  ${textLines(wrap(title, compact ? 22 : 34, 2), { x: pad + 24, y: compact ? 158 : 182, dy: compact ? 34 : 42, size: compact ? 40 : 52, fill: '#f2f6fc', weight: 700 })}
-  <text x="${pad}" y="${priceY}" font-size="${compact ? 20 : 22}" fill="#7f93ad">${xmlEsc(m.assetName || '标的')} · 最新价</text>
-  <text x="${pad}" y="${priceY + (compact ? 70 : 84)}" font-size="${compact ? 76 : 96}" fill="${priceColor}" font-weight="700">${xmlEsc(fmtPrice(m.price))}</text>
-  <text x="${pad + (compact ? 340 : 440)}" y="${priceY + (compact ? 70 : 84)}" font-size="${compact ? 44 : 56}" fill="${changeColor}" font-weight="700">${xmlEsc(fmtPct(changePct))}</text>
-  <line x1="${pad}" y1="${factsStartY - 56}" x2="${W - pad}" y2="${factsStartY - 56}" stroke="#26364c" stroke-width="1" />
-  <text x="${pad}" y="${factsStartY - 20}" font-size="${compact ? 20 : 22}" fill="#7f93ad" letter-spacing="2">核心归因 · 最多 3 条</text>
+  <rect width="${W}" height="${H}" fill="#0c0d10" />
+  <rect x="0" y="0" width="${W}" height="4" fill="#5b9cf8" />
+  <rect x="${pad}" y="${compact ? 76 : 88}" width="3" height="${compact ? 64 : 70}" rx="1.5" fill="#5b9cf8" />
+  <text x="${pad + 20}" y="${compact ? 112 : 128}" font-size="${compact ? 20 : 22}" fill="#878f9d">Tickerwall · 归因战报</text>
+  ${textLines(wrap(title, compact ? 22 : 34, 2), { x: pad + 20, y: compact ? 158 : 182, dy: compact ? 34 : 42, size: compact ? 40 : 52, fill: '#e6e8ec', weight: 600 })}
+  <text x="${pad}" y="${priceY}" font-size="${compact ? 20 : 22}" fill="#949ba8">${xmlEsc(m.assetName || '标的')} · 最新价</text>
+  <text x="${pad}" y="${priceY + (compact ? 70 : 84)}" font-size="${compact ? 76 : 96}" fill="${priceColor}" font-weight="600">${xmlEsc(fmtPrice(m.price))}</text>
+  <text x="${pad + (compact ? 340 : 440)}" y="${priceY + (compact ? 70 : 84)}" font-size="${compact ? 44 : 56}" fill="${changeColor}" font-weight="600">${xmlEsc(fmtPct(changePct))}</text>
+  <line x1="${pad}" y1="${factsStartY - 56}" x2="${W - pad}" y2="${factsStartY - 56}" stroke="#23262e" stroke-width="1" />
+  <text x="${pad}" y="${factsStartY - 20}" font-size="${compact ? 20 : 22}" fill="#949ba8">核心归因（最多 3 条）</text>
     ${factBlocks}
     ${contraryBlock}
-  <line x1="${pad}" y1="${H - 76}" x2="${W - pad}" y2="${H - 76}" stroke="#26364c" stroke-width="1" />
-  <text x="${pad}" y="${H - 44}" font-size="18" fill="#6f8299">${xmlEsc(stamp)}　·　快照校验 ID ${xmlEsc(snapshotId)}</text>
-  <text x="${W - pad}" y="${H - 44}" font-size="18" fill="#6f8299" text-anchor="end">${xmlEsc(BRAND_WATERMARK)}</text>
-  <text x="${W - pad}" y="${H - 20}" font-size="14" fill="#4f6178" text-anchor="end">归因是待检验假设，不构成投资建议</text>
+  <line x1="${pad}" y1="${H - 76}" x2="${W - pad}" y2="${H - 76}" stroke="#23262e" stroke-width="1" />
+  <text x="${pad}" y="${H - 44}" font-size="18" fill="#878f9d">${xmlEsc(stamp)}　·　快照校验 ID ${xmlEsc(snapshotId)}</text>
+  <text x="${W - pad}" y="${H - 44}" font-size="18" fill="#878f9d" text-anchor="end">${xmlEsc(BRAND_WATERMARK)}</text>
+  <text x="${W - pad}" y="${H - 20}" font-size="14" fill="#6d7482" text-anchor="end">归因是待检验假设，不构成投资建议</text>
 </svg>`;
 }
 

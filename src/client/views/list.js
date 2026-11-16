@@ -9,6 +9,7 @@ import { PLACEHOLDER, refs, store } from '../shared/store.js';
 import { emit } from '../shared/bus.js';
 import { getWorkspaceStore } from '../shared/workspace-store.js';
 import { readPinnedAssets, togglePinnedAsset, isAssetPinned } from '../shared/watchlist.js';
+import { iconHtml, iconStr } from '../shared/icons.js';
 import { mountWorkspaceBar } from './workspace-bar.js';
 
 /* ------------------------------ 时间基准 ------------------------------ */
@@ -22,7 +23,8 @@ function syncPinButtons() {
     const btn = ref.el.querySelector('[data-pin]');
     if (!btn) continue;
     const on = isAssetPinned(storage, id);
-    btn.textContent = on ? '★' : '☆';
+    const nextIcon = iconStr(on ? 'star-filled' : 'star', 14);
+    if (btn.innerHTML !== nextIcon) btn.innerHTML = nextIcon;
     btn.setAttribute('aria-pressed', on ? 'true' : 'false');
     ref.el.dataset.pinned = on ? '1' : '0';
   }
@@ -77,7 +79,7 @@ export function buildRow(item) {
   el.className = 'row skeleton';
   el.dataset.id = item.id;
   el.innerHTML = html`
-    <button type="button" class="pin-btn" data-pin aria-label="星标自选" aria-pressed="false" title="置顶到我的自选">☆</button>
+    <button type="button" class="pin-btn" data-pin aria-label="星标自选" aria-pressed="false" title="置顶到我的自选">${iconHtml('star', 14)}</button>
     <div class="id">
       <div class="name">
         <span data-f="name">${item.name}</span>

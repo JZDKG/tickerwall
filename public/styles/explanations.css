@@ -9,7 +9,8 @@
  * ================================================================== */
 
 .explain-card {
-  border-color: rgba(91, 156, 248, 0.28);
+  border-color: var(--line);
+  border-left: 2px solid var(--accent);
 }
 
 .explain-head {
@@ -717,9 +718,10 @@
 .tf-next {
   display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
   margin-top: 12px; padding: 10px 12px;
-  border-radius: 8px;
-  background: rgba(110, 168, 254, .08);
-  border: 1px solid rgba(110, 168, 254, .18);
+  border-radius: var(--radius-md, 8px);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent, #5b9cf8);
 }
 .tf-next-label { font-size: 12px; color: var(--accent, #6ea8fe); }
 .tf-next-title { font-size: 14px; color: var(--text, #e6e8eb); }
@@ -771,4 +773,147 @@
 @media (max-width: 640px) {
   .cmp-term { grid-template-columns: 1fr auto; }
   .cmp-term-contrib { grid-column: 1 / -1; }
+}
+
+/* ---------- 解释卡操作栏、版本差异对比与追问（UnSlop 补充统一样式） ---------- */
+.explain-layer {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.explain-refresh,
+.explain-share,
+.explain-diff-toggle {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm, 6px);
+  padding: 5px 10px;
+  transition: border-color var(--t-fast, 160ms) var(--ease-out, ease), background var(--t-fast, 160ms) var(--ease-out, ease), color var(--t-fast, 160ms) var(--ease-out, ease);
+}
+
+.explain-refresh:hover,
+.explain-share:hover,
+.explain-diff-toggle:hover {
+  border-color: var(--muted-2);
+  background: color-mix(in srgb, var(--panel-2) 86%, var(--text) 14%);
+}
+
+.explain-foot .explain-refresh {
+  margin-left: auto;
+}
+
+.explain-share-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.explain-aux {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: -4px 0 12px;
+}
+
+.explain-aux .explain-history {
+  margin: 0;
+  flex: 1 1 280px;
+}
+
+.explain-diff-slot {
+  flex: 1 0 100%;
+}
+
+.explain-diff-slot:empty {
+  display: none;
+}
+
+.dfd-panel {
+  margin-top: 8px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  font-size: 12.5px;
+}
+
+.dfd-panel p {
+  margin: 4px 0;
+}
+
+.dfd-group {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--divider);
+}
+
+.dfd-group h4 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.dfd-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 12px;
+  padding: 4px 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.dfd-name {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.dfd-change,
+.dfd-evidence,
+.dfd-foot,
+.dfd-empty {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.d-followups {
+  margin: 0 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fu-item {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md, 8px);
+  background: var(--panel);
+  padding: 8px 12px;
+}
+
+.fu-item summary {
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.fu-answer {
+  margin: 6px 0 2px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.fu-context {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--muted);
 }

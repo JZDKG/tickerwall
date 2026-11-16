@@ -15,6 +15,7 @@
  * ================================================================== */
 
 import { esc, html } from '../shared/format.js';
+import { iconStr } from '../shared/icons.js';
 import { watchBriefHTML } from './watch-brief.js';
 import { expectationsCardHTML } from './expectations.js';
 import { lifePathHTML } from './life-path.js';
@@ -82,7 +83,7 @@ export function homeBriefHTML(brief, ledger, lifePath = null, { open = false } =
    */
   return [
     `<details class="home-brief-accordion${open ? ' open' : ''}"${open ? ' open' : ''}>`,
-    `<summary class="hb-summary"><span class="hb-dot">💡</span><span class="hb-text">${esc(summary)}</span><span class="hb-more">展开</span></summary>`,
+    `<summary class="hb-summary"><span class="hb-dot" aria-hidden="true">${iconStr('bulb', 14)}</span><span class="hb-text">${esc(summary)}</span><span class="hb-more">展开</span></summary>`,
     `<div class="hb-body">${body}</div>`,
     '</details>',
   ].join('');

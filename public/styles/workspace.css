@@ -10,8 +10,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 18px;
-  padding: 10px 14px;
+  gap: 8px 16px;
+  padding: 8px 12px;
   margin-bottom: 12px;
   background: var(--panel);
   border: 1px solid var(--line);
@@ -36,22 +36,24 @@
   padding: 2px;
   background: var(--bg-elev);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-md);
 }
 
 /* 控制条按钮（data-ws-* 由 workspace-bar.js 生成，配好按下态） */
 .ws-seg button[data-ws-density],
 .ws-seg button[data-ws-anchor],
 .ws-seg button[data-ws-scheme],
-.ws-seg button[data-ws-theme] {
+.ws-seg button[data-ws-theme],
+.ws-seg button[data-ws-session] {
   padding: 4px 10px;
   color: var(--muted);
   background: transparent;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
+  transition: color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
 }
 
 .ws-seg button:hover {
@@ -76,19 +78,20 @@
   display: inline-flex;
   align-items: baseline;
   gap: 6px;
-  padding: 6px 10px;
+  padding: 5px 10px;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   font-size: 12px;
 }
 
 .synthetic-chip.is-dead {
-  opacity: 0.55;
+  opacity: 0.72;
 }
 
 .synthetic-chip b {
   font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
   color: var(--text);
 }
 
@@ -286,8 +289,7 @@ dialog.al-dialog {
 dialog.tw-share-dialog::backdrop,
 dialog.cp-dialog::backdrop,
 dialog.al-dialog::backdrop {
-  background: rgba(3, 7, 14, 0.68);
-  backdrop-filter: blur(2px);
+  background: rgba(3, 5, 9, 0.72);
 }
 
 .tw-share-dialog {
@@ -296,10 +298,10 @@ dialog.al-dialog::backdrop {
   max-height: 92vh;
   overflow: auto;
   padding: 14px;
-  background: var(--bg-elev, #0d1219);
-  border: 1px solid var(--line, #26364c);
-  border-radius: 14px;
-  box-shadow: 0 24px 70px rgb(0 0 0 / 60%);
+  background: var(--bg-elev, #121419);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: 0 24px 64px rgb(0 0 0 / 56%);
 }
 
 .tw-share-head {
@@ -455,7 +457,7 @@ dialog.al-dialog::backdrop {
 .al-rule-actions { display: inline-flex; gap: 6px; flex: none; }
 .al-rule.is-paused { opacity: .68; }
 .al-rule-main { flex: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
-.al-tag { font-size: 11px; padding: 1px 6px; border: 1px solid var(--line, #26364c); border-radius: 999px; }
+.al-tag { font-size: 11px; padding: 1px 6px; border: 1px solid var(--line); border-radius: var(--radius-sm, 6px); }
 .al-dim, .al-rule-meta, .al-event time { color: var(--muted, #9aa7b5); }
 .al-event-body { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .al-event-dot, .al-toast-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--up, #f5455c); }

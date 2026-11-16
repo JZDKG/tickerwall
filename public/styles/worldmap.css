@@ -133,10 +133,10 @@
   color: var(--text);
 }
 
-/* 有市场在交易：左边一条呼吸绿条，余光就能看出「这一刻有人在成交」 */
+/* 有市场在交易：左蓝点提示正在成交（不占用红绿涨跌语义） */
 .relay-chip.on {
-  border-color: rgba(14, 203, 129, 0.4);
-  background: var(--down-bg);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  background: var(--cold-bg);
 }
 
 .rc-name {
@@ -151,7 +151,7 @@
 }
 
 .relay-chip.on .rc-state {
-  color: var(--down);
+  color: var(--accent);
 }
 
 .rc-pct {
@@ -183,7 +183,7 @@
 
 .mc-risk {
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-sm, 6px);
   font-weight: 600;
 }
 
@@ -238,20 +238,19 @@
 .map-anchor.cal-beacon .cal-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 9px;
-  border: 1px solid rgba(245, 158, 11, 0.5);
-  border-radius: 999px;
-  background: rgba(24, 16, 4, 0.88);
-  color: #ffce7a;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid rgba(212, 155, 56, 0.5);
+  border-radius: var(--radius-sm, 6px);
+  background: #17130a;
+  color: #f4c87a;
   font: inherit;
   font-size: 10.5px;
   line-height: 1.35;
   white-space: nowrap;
   cursor: pointer;
   pointer-events: auto;
-  backdrop-filter: blur(6px);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4), 0 2px 10px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
   transform: translate(10px, -50%);
 }
 
@@ -292,11 +291,10 @@
   z-index: 6;
   width: 224px;
   padding: 9px 11px;
-  border: 1px solid rgba(245, 158, 11, 0.35);
-  border-radius: 9px;
-  background: rgba(10, 8, 4, 0.94);
-  backdrop-filter: blur(8px);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(212, 155, 56, 0.38);
+  border-radius: var(--radius-md, 8px);
+  background: #14120c;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   pointer-events: auto;
   font-size: 11px;
 }
@@ -368,14 +366,14 @@
   gap: 5px;
   padding: 3px 9px;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-sm, 6px);
   background: var(--panel);
   color: var(--muted);
   font: inherit;
   font-size: 11.5px;
   line-height: 1.4;
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+  transition: border-color var(--t-fast, 160ms) var(--ease-out, ease), background var(--t-fast, 160ms) var(--ease-out, ease), color var(--t-fast, 160ms) var(--ease-out, ease);
 }
 
 .map-pill:hover {
@@ -492,11 +490,11 @@
 .tl-play,
 .tl-live {
   margin-left: auto;
-  padding: 2px 9px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(196, 208, 224, 0.9);
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--panel-2);
+  color: var(--muted);
   font: inherit;
   font-size: 10.5px;
   cursor: pointer;
@@ -561,7 +559,8 @@
 
 .tl-col.on > i {
   opacity: 1;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.55), 0 0 10px currentColor;
+  outline: 1px solid rgba(255, 255, 255, 0.65);
+  outline-offset: -1px;
 }
 
 .tl-col.on::after {
@@ -606,14 +605,11 @@
   width: 100%;
   /* 宽度放开后 aspect-ratio 会把地图撑到 800px+ 高，1080p 屏一屏放不下。
      改成按可用高度定高：929px 视口下约 600px，全屏时吃满剩余空间 */
-  height: clamp(360px, calc(100vh - 430px), 860px);
-  border-radius: 14px;
+  height: clamp(360px, calc(100vh - 450px), 860px);
+  border-radius: var(--radius, 10px);
   overflow: hidden;
   border: 1px solid var(--line);
-  background:
-    radial-gradient(ellipse at 50% 0%, rgba(91, 156, 248, 0.1), transparent 62%),
-    radial-gradient(ellipse at 50% 100%, rgba(245, 69, 92, 0.07), transparent 60%),
-    #080a0e;
+  background: #0c0d10;
 }
 
 .map-canvas.dragging {
@@ -703,25 +699,24 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 1px 6px;
+  padding: 2px 6px;
   margin: 0 0 1px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 999px;
-  background: rgba(8, 12, 18, 0.72);
-  color: var(--text);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
+  background: #121419;
+  color: rgba(232, 238, 248, 0.94);
   font: inherit;
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 600;
   line-height: 1.25;
   cursor: pointer;
   pointer-events: auto;
-  backdrop-filter: blur(6px);
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: border-color var(--t-fast, 160ms) var(--ease-out, ease), background var(--t-fast, 160ms) var(--ease-out, ease);
 }
 
 .ma-head:hover {
   border-color: rgba(120, 176, 255, 0.55);
-  background: rgba(20, 32, 52, 0.9);
+  background: #1a202c;
 }
 
 .ma-dot {
@@ -729,7 +724,6 @@
   height: 5px;
   border-radius: 50%;
   background: #7e8899;
-  box-shadow: 0 0 5px currentColor;
 }
 
 .ma-dot.up { background: var(--up); color: var(--up); }
@@ -848,21 +842,17 @@
  * 所以读者不用在事件流里找「现在讲到哪」。
  * ------------------------------------------------------------------ */
 .map-broadcast {
-  position: absolute;
-  left: 10px;
-  right: 10px;
-  bottom: 10px;
-  z-index: 5;
+  position: static;
+  grid-column: 1 / -1;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto;
   grid-template-areas: "src title marks spark";
   align-items: center;
   gap: 10px;
-  padding: 7px 12px 9px;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 8px;
-  background: rgba(7, 11, 17, 0.82);
-  backdrop-filter: blur(8px);
+  padding: 8px 12px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md, 8px);
+  background: #121419;
   font-size: 11.5px;
   overflow: hidden;
   cursor: pointer;
@@ -870,7 +860,7 @@
 
 /* 高影响事件给一条左侧色条，余光就能看出重要度 */
 .map-broadcast[data-mode="locked"] {
-  border-color: rgba(120, 176, 255, 0.5);
+  border-color: rgba(91, 156, 248, 0.5);
 }
 
 .bc-src {
@@ -892,16 +882,10 @@
   height: 5px;
   border-radius: 50%;
   background: currentColor;
-  box-shadow: 0 0 6px currentColor;
 }
 
 .map-broadcast[data-mode="auto"] .bc-dot {
-  animation: bcPulse 1.6s ease-in-out infinite;
-}
-
-@keyframes bcPulse {
-  0%, 100% { opacity: 0.45; }
-  50% { opacity: 1; }
+  opacity: 0.9;
 }
 
 .bc-topic {
@@ -1089,24 +1073,24 @@
   position: absolute;
   width: 300px;
   padding: 9px 12px;
-  border-radius: 10px;
-  background: rgba(12, 16, 23, 0.94);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(8px);
+  border-radius: var(--radius-md, 8px);
+  background: #12151c;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.48);
   pointer-events: auto;
   cursor: pointer;
-  animation: bubbleIn 0.32s cubic-bezier(0.2, 1.2, 0.4, 1);
-  transition: opacity 0.35s ease, transform 0.35s ease;
+  animation: bubbleIn 220ms var(--ease-out, ease);
+  transition: opacity var(--t-med, 220ms) var(--ease-out, ease), transform var(--t-med, 220ms) var(--ease-out, ease);
 }
 
 .map-bubble.lv-high {
-  border-color: rgba(245, 69, 92, 0.55);
-  box-shadow: 0 10px 30px rgba(245, 69, 92, 0.18), 0 0 0 1px rgba(245, 69, 92, 0.2);
+  border-color: rgba(239, 75, 96, 0.45);
+  border-left: 2px solid var(--up);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.48);
 }
 
 .map-bubble.lv-mid {
-  border-color: rgba(224, 168, 60, 0.42);
+  border-color: rgba(212, 155, 56, 0.42);
 }
 
 .map-bubble.out {
@@ -1117,7 +1101,7 @@
 @keyframes bubbleIn {
   from {
     opacity: 0;
-    transform: translateY(-10px) scale(0.94);
+    transform: translateY(-8px) scale(0.97);
   }
   to {
     opacity: 1;
@@ -1129,7 +1113,7 @@
   display: flex;
   justify-content: space-between;
   font-size: 10px;
-  color: var(--muted-2);
+  color: rgba(140, 150, 168, 0.9);
   margin-bottom: 5px;
   font-family: var(--mono);
 }
@@ -1141,7 +1125,7 @@
 .bb-title {
   font-size: 12.5px;
   line-height: 1.45;
-  color: var(--text);
+  color: rgba(232, 238, 246, 0.95);
 }
 
 /* 右侧悬浮事件流 */
@@ -1150,15 +1134,11 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  /* 和 .map-canvas 同一条高度钳制。少了它，事件流内容会把 grid 行撑到
-     2500px+，.mf-list 的 overflow-y 永远不触发，变成整页滚动 —— 那样
-     「播报推进时把当前条滚进视野」就会带着页面一起跳。 */
-  max-height: clamp(360px, calc(100vh - 430px), 860px);
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.11);
-  background: rgba(8, 11, 16, 0.72);
-  backdrop-filter: blur(12px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  max-height: clamp(360px, calc(100vh - 450px), 860px);
+  border-radius: var(--radius, 10px);
+  border: 1px solid var(--line);
+  background: #111318;
+  box-shadow: none;
   overflow: hidden;
   z-index: 5;
 }
@@ -1361,35 +1341,21 @@
 
 .sun-core {
   fill: #ffd166;
-  stroke: rgba(255, 233, 168, 0.9);
+  stroke: rgba(255, 233, 168, 0.85);
   stroke-width: 0.8;
   vector-effect: non-scaling-stroke;
-  filter: drop-shadow(0 0 4px rgba(255, 209, 102, 0.85));
 }
 
 .sun-glow {
-  fill: rgba(255, 209, 102, 0.2);
-  transform-origin: 0 0;
-  animation: sunPulse 4.5s ease-in-out infinite;
-}
-
-@keyframes sunPulse {
-  0%, 100% { transform: scale(0.85); opacity: 0.5; }
-  50% { transform: scale(1.35); opacity: 1; }
+  fill: rgba(255, 209, 102, 0.14);
 }
 
 /* 晨昏圈：单独一条 LineString，只含昼夜分界本身，不含图幅边界的竖线 */
 .terminator {
   fill: none;
-  stroke: rgba(126, 176, 255, 0.42);
-  stroke-width: 1.2;
+  stroke: rgba(126, 176, 255, 0.45);
+  stroke-width: 1.1;
   vector-effect: non-scaling-stroke;
-  animation: termBreath 8s ease-in-out infinite;
-}
-
-@keyframes termBreath {
-  0%, 100% { stroke-opacity: 0.5; }
-  50% { stroke-opacity: 1; }
 }
 
 /* 国家底图：可悬停、可点击，是「地 - 事」联动的命中区。
@@ -1422,19 +1388,18 @@
 /* 顶栏里的「显示全部」：做成行内小按钮，不另起一行 */
 .map-region-clear {
   margin-left: 6px;
-  padding: 1px 8px;
-  border-radius: 999px;
-  border: 1px solid rgba(120, 176, 255, 0.5);
-  background: rgba(91, 156, 248, 0.14);
-  color: #a8c8ff;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid rgba(91, 156, 248, 0.45);
+  background: var(--cold-bg);
+  color: var(--accent);
   font: inherit;
   font-size: 11.5px;
   cursor: pointer;
 }
 
 .map-region-clear:hover {
-  background: rgba(91, 156, 248, 0.26);
-  color: #dce8ff;
+  background: rgba(91, 156, 248, 0.2);
 }
 
 /* 事件冲击弧线：从发生地连到受影响市场，光点沿弧流动 */
@@ -1485,12 +1450,11 @@
   z-index: 8;
   width: 246px;
   padding: 10px 12px;
-  border-radius: 11px;
-  background: rgba(9, 13, 19, 0.93);
-  border: 1px solid rgba(255, 255, 255, 0.13);
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.62);
-  backdrop-filter: blur(14px);
-  animation: ncIn 0.22s cubic-bezier(0.2, 1.15, 0.4, 1);
+  border-radius: var(--radius-md, 8px);
+  background: #12151b;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.52);
+  animation: ncIn 200ms var(--ease-out, ease);
 }
 
 @keyframes ncIn {
@@ -1703,6 +1667,7 @@
  * ------------------------------------------------------------------ */
 
 .bc-impact-wrap {
+  grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -1758,24 +1723,24 @@
   display: inline-flex;
   align-items: baseline;
   gap: 8px;
-  padding: 7px 12px;
-  background: var(--bg-elev);
-  border: 1px solid var(--line);
-  border-radius: 999px;
+  padding: 6px 10px;
+  background: #12151c;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-sm, 6px);
   font-size: 12px;
   z-index: 3;
   pointer-events: auto;
 }
 
 .map-btc-node .btc-hud-title {
-  color: var(--muted);
+  color: rgba(148, 155, 168, 0.9);
   font-size: 11px;
 }
 
 .map-btc-node .btc-hud-name {
-  color: var(--text);
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  color: rgba(230, 232, 236, 0.96);
+  font-weight: 600;
+  letter-spacing: 0;
 }
 
 .map-btc-node .btc-hud-price,

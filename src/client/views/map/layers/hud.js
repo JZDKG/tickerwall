@@ -12,6 +12,7 @@
  * ================================================================== */
 
 import { esc } from '../../../shared/format.js';
+import { iconStr } from '../../../shared/icons.js';
 import { upcomingCalendarAlerts, formatCountdown, beijingHm, easternHm, ALERT_ANCHOR } from '../logic/calendar.js';
 
 /** 三大盘面的成分（顺序即展示顺序） */
@@ -147,7 +148,7 @@ export function alertChipHtml(alert) {
   const title = ev?.title ?? '事件';
   // 标题常常一长串（「美国9月CPI同比」），只留前半句做标签
   const short = title.length > 14 ? `${title.slice(0, 14)}…` : title;
-  return `<span class="cal-bolt">⚡</span>`
+  return `<span class="cal-bolt">${iconStr('bolt', 12)}</span>`
     + `<span class="cal-name">${esc(short)}</span>`
     + `<span class="cal-when">${esc(beijingHm(releaseAt))}</span>`
     + `<span class="cal-left">${esc(formatCountdown(msLeft))}</span>`;

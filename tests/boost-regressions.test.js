@@ -52,7 +52,7 @@ describe('样式与主题完整性', () => {
     expect(tokensCss).not.toContain('html:has(dialog:modal)');
     expect(tokensCss).toContain('dialog:modal');
     expect(tokensCss).toContain('dialog::backdrop');
-    expect(tokensCss).toContain('--muted-2: #788597;');
+    expect(tokensCss).toContain('--muted-2: #878f9d;');
     expect(tokensCss).toContain('--cold:');
     expect(tokensCss).toContain('--surface-elev:');
     expect(tokensCss).toContain('--up: #991b1b;');

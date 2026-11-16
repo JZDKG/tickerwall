@@ -10,6 +10,7 @@
  * ================================================================== */
 
 import { esc } from '../../../shared/format.js';
+import { iconStr } from '../../../shared/icons.js';
 import { bucketEvents24h, normalizedHeights, LEVEL_COLOR } from '../logic/timeline.js';
 
 /** 'HH:MM'（北京） */
@@ -48,7 +49,7 @@ export function timelineBarHtml(data, state = {}) {
     + `<span class="tl-title">24 小时</span>`
     + `<span class="tl-note">${esc(coverNote)}</span>`
     + `<button type="button" class="tl-play${playing ? ' on' : ''}" data-play="1">`
-    + (playing ? '■ 停止' : '▶ 浓缩回放')
+    + (playing ? '停止回放' : `${iconStr('play-step', 11)} 浓缩回放`)
     + '</button>'
     + (active != null ? '<button type="button" class="tl-live" data-live="1">回到实时</button>' : '')
     + '</div>'

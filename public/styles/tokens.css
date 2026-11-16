@@ -11,29 +11,36 @@
 
 :root {
   color-scheme: dark;
-  --bg: #080b10;
+  --bg: #0c0d10;
+  --bg-elev: #121419;
+  --surface-elev: rgba(18, 20, 25, 0.96);
   --panel: rgba(255, 255, 255, 0.028);
-  --panel-2: rgba(255, 255, 255, 0.05);
-  --line: rgba(255, 255, 255, 0.075);
-  --divider: rgba(255, 255, 255, 0.05);
-  --text: #e8edf5;
-  --muted: #93a1b3;
-  --muted-2: #788597;
+  --panel-2: rgba(255, 255, 255, 0.052);
+  --line: rgba(255, 255, 255, 0.08);
+  --divider: rgba(255, 255, 255, 0.055);
+  --border: rgba(255, 255, 255, 0.08);
+  --text: #e6e8ec;
+  --muted: #949ba8;
+  --muted-2: #878f9d;
   --up: #f5455c;
   --down: #0ecb81;
-  --up-bg: rgba(245, 69, 92, 0.12);
-  --down-bg: rgba(14, 203, 129, 0.12);
+  --up-bg: rgba(245, 69, 92, 0.09);
+  --down-bg: rgba(14, 203, 129, 0.09);
   --cold: #5b9cf8;
-  --cold-bg: rgba(91, 156, 248, 0.12);
-  --accent: #60a5fa;
-  --flat: #8b97a8;
-  --warn: #d9a441;
-  --warn-bg: rgba(217, 164, 65, 0.12);
-  --focus-ring: #60a5fa;
-  --bg-elev: #0d1219;
-  --surface-elev: rgba(14, 19, 27, 0.94);
-  --border: rgba(255, 255, 255, 0.075);
-  --radius: 16px;
+  --cold-bg: rgba(91, 156, 248, 0.10);
+  --accent: #5b9cf8;
+  --flat: #8b94a3;
+  --warn: #d49b38;
+  --warn-bg: rgba(212, 155, 56, 0.10);
+  --focus-ring: #5b9cf8;
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius: 10px;
+  --radius-lg: 12px;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --t-fast: 160ms;
+  --t-med: 220ms;
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
 }
 
@@ -41,17 +48,17 @@
 :root[data-color-scheme="intl"] {
   --up: #0ecb81;
   --down: #f5455c;
-  --up-bg: rgba(14, 203, 129, 0.12);
-  --down-bg: rgba(245, 69, 92, 0.12);
+  --up-bg: rgba(14, 203, 129, 0.09);
+  --down-bg: rgba(245, 69, 92, 0.09);
 }
 
 /* 蓝涨橙跌（红绿色盲友好，亮度差也够） */
 :root[data-color-scheme="cb"] {
   --up: #3b82f6;
   --down: #f97316;
-  --up-bg: rgba(59, 130, 246, 0.14);
-  --down-bg: rgba(249, 115, 22, 0.14);
-  --flat: #94a3b8;
+  --up-bg: rgba(59, 130, 246, 0.12);
+  --down-bg: rgba(249, 115, 22, 0.12);
+  --flat: #8b94a3;
 }
 
 /* 纯黑防烧屏（OLED 屏：面板与边框压到最低对比） */
@@ -68,27 +75,27 @@
 /* 浅色研报模式（高对比纸张配色） */
 :root[data-theme="light"] {
   color-scheme: light;
-  --bg: #f5f7fa;
+  --bg: #f4f5f7;
   --bg-elev: #ffffff;
   --surface-elev: rgba(255, 255, 255, 0.96);
-  --border: #d8dee9;
-  --panel: rgba(16, 24, 40, 0.03);
-  --panel-2: rgba(16, 24, 40, 0.06);
-  --line: rgba(16, 24, 40, 0.12);
-  --divider: rgba(16, 24, 40, 0.08);
-  --text: #16202e;
-  --muted: #475569;
-  --muted-2: #526072;
+  --border: #dcdfe6;
+  --panel: rgba(16, 20, 28, 0.028);
+  --panel-2: rgba(16, 20, 28, 0.056);
+  --line: rgba(16, 20, 28, 0.11);
+  --divider: rgba(16, 20, 28, 0.075);
+  --text: #14181f;
+  --muted: #4a5462;
+  --muted-2: #525c6b;
   --up: #991b1b;
   --down: #065f46;
-  --up-bg: rgba(153, 27, 27, 0.10);
-  --down-bg: rgba(6, 95, 70, 0.10);
+  --up-bg: rgba(153, 27, 27, 0.08);
+  --down-bg: rgba(6, 95, 70, 0.08);
   --cold: #1e40af;
-  --cold-bg: rgba(30, 64, 175, 0.10);
+  --cold-bg: rgba(30, 64, 175, 0.08);
   --accent: #1e40af;
-  --flat: #526072;
+  --flat: #525c6b;
   --warn: #78350f;
-  --warn-bg: rgba(120, 53, 15, 0.10);
+  --warn-bg: rgba(120, 53, 15, 0.08);
   --focus-ring: #1e40af;
 }
 
@@ -118,26 +125,27 @@ body {
 
 body {
   min-height: 100vh;
-  background:
-    radial-gradient(1100px 620px at 12% -12%, rgba(64, 110, 190, 0.16), transparent 62%),
-    radial-gradient(900px 520px at 92% 4%, rgba(190, 96, 64, 0.1), transparent 58%),
-    var(--bg);
+  background: var(--bg);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
     "Segoe UI", Roboto, sans-serif;
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
   /* 1180 在 1920 屏上只用到 61%，横向空间白扔一半。
      改成随视口放大：1080p 约 1766px（92%），超宽屏收到 2200px 免得行长过头难读 */
-  padding: 22px clamp(14px, 2.4vw, 52px) 28px;
+  padding: 16px clamp(16px, 2.4vw, 48px) 28px;
   max-width: clamp(1180px, 94vw, 2200px);
   margin: 0 auto;
 }
 
 :root[data-theme="light"]:not([data-pip="1"]) body {
-  background:
-    radial-gradient(1100px 620px at 12% -12%, rgba(64, 110, 190, 0.06), transparent 62%),
-    radial-gradient(900px 520px at 92% 4%, rgba(190, 96, 64, 0.04), transparent 58%),
-    var(--bg);
+  background: var(--bg);
+}
+
+.ui-ico {
+  display: inline-block;
+  flex: none;
+  vertical-align: middle;
 }
 
 :focus-visible {

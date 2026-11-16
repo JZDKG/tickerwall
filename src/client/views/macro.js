@@ -580,7 +580,7 @@ export function macroTodayImpactHTML(data, quotes = store.quotes ?? []) {
       data-impact-pair="${edge.from}|${edge.to}" title="点击在下方的图谱和对比图中查看「${aSnap.name} ↔ ${bSnap.name}」">
       <div class="mic-top">
         <span class="mic-chain">${edge.label}</span>
-        <span class="mic-badge ${info.tone}">${info.badge}</span>
+        <span class="mic-badge ${info.tone}">${String(info.badge ?? '').replace(/^[⚡✓○]\s*/, '')}</span>
       </div>
       <div class="mic-pair">
         <span class="mic-leg">

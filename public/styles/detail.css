@@ -28,9 +28,9 @@
 .d-top {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   flex-wrap: wrap;
-  margin-bottom: 18px;
+  margin-bottom: 12px;
 }
 
 .back-btn {
@@ -38,46 +38,47 @@
   cursor: pointer;
   font: inherit;
   font-size: 12.5px;
+  font-weight: 500;
   color: var(--muted);
   background: var(--panel-2);
   border: 1px solid var(--line);
-  border-radius: 9px;
-  padding: 7px 13px;
-  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  border-radius: var(--radius-sm, 6px);
+  padding: 6px 12px;
+  transition: color var(--t-fast, 160ms) var(--ease-out, ease), border-color var(--t-fast, 160ms) var(--ease-out, ease), background var(--t-fast, 160ms) var(--ease-out, ease);
 }
 
 .back-btn:hover {
   color: var(--text);
-  border-color: rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.09);
+  border-color: var(--muted-2);
+  background: color-mix(in srgb, var(--panel-2) 86%, var(--text) 14%);
 }
 
 .d-id h2 {
   margin: 0;
-  font-size: 21px;
-  font-weight: 650;
-  letter-spacing: 0.3px;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .d-id p {
-  margin: 4px 0 0;
-  font-size: 12.5px;
+  margin: 2px 0 0;
+  font-size: 12px;
   color: var(--muted);
 }
 
 .d-hero {
   display: flex;
   align-items: baseline;
-  gap: 16px;
+  gap: 14px;
   flex-wrap: wrap;
-  padding: 4px 0 18px;
+  padding: 2px 0 12px;
 }
 
 .d-price {
   font-family: var(--mono);
-  font-size: 42px;
-  font-weight: 620;
-  letter-spacing: -1px;
+  font-size: 36px;
+  font-weight: 600;
+  letter-spacing: -0.8px;
   font-variant-numeric: tabular-nums;
   line-height: 1.05;
 }
@@ -219,8 +220,8 @@
   display: inline-flex;
   gap: 2px;
   padding: 2px;
-  border-radius: 8px;
-  background: var(--panel);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-elev);
   border: 1px solid var(--line);
 }
 
@@ -232,9 +233,9 @@
   color: var(--muted);
   background: transparent;
   border: 0;
-  border-radius: 6px;
-  padding: 5px 12px;
-  transition: background 0.15s ease, color 0.15s ease;
+  border-radius: var(--radius-sm, 6px);
+  padding: 5px 10px;
+  transition: background var(--t-fast, 160ms) var(--ease-out, ease), color var(--t-fast, 160ms) var(--ease-out, ease);
 }
 
 .seg button:hover {
@@ -290,7 +291,6 @@
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.09s linear;
-  backdrop-filter: blur(6px);
 }
 
 .chart-tip.on {

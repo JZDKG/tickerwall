@@ -94,7 +94,7 @@ export function eventItemHTML(ev) {
       <div class="ev-tags">
         ${ev.level === 'high' ? html`<span class="ev-badge high">重要</span>` : ev.level === 'mid' ? html`<span class="ev-badge mid">关注</span>` : ''}
         ${ev.llm ? html`<span class="ev-ai" title="已由 LLM 做语义判定">AI</span>` : ''}
-        ${isNew ? html`<span class="ev-new">NEW</span>` : ''}
+        ${isNew ? html`<span class="ev-new">新</span>` : ''}
         ${topicChips}
       </div>
       ${titleBlock}
@@ -378,7 +378,7 @@ export function renderEvents(opts = {}) {
       </div>
       <div class="event-list">
         ${items.length ? groupEventsByCluster(items, data.clusters).map(eventRowHTML) : html`<div class="chart-empty">${
-          st.watchOnly && !pinned.length ? '还没有星标标的：去首屏点 ☆ 添加自选' : '当前筛选下没有条目'
+          st.watchOnly && !pinned.length ? '还没有星标标的：去首屏点星标按钮添加自选' : '当前筛选下没有条目'
         }</div>`}
       </div>
     </section>

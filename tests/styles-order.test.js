@@ -131,7 +131,8 @@ describe('样式分片：层叠前提', () => {
     // 第 26 条（2026-11-13 / a11y）：workspace.css 的 @media (pointer: coarse) 触控目标尺寸兜底
     expect((all.match(/@media/g) ?? []).length).toBe(26);
     // @keyframes：拆分时 16 个，地图 v2 加到 20 个；移除定时循环红绿闪烁圆环
-    // （maBreath / cityHalo / rgPulse）后为 17 个。改这个数字时请确认是刻意增删动画。
-    expect((all.match(/@keyframes/g) ?? []).length).toBe(17);
+    // （maBreath / cityHalo / rgPulse）后为 17 个；去装饰化再移除 5 个无限循环
+    // 装饰动画（pulse / sourcePulse / bcPulse / sunPulse / termBreath）后为 12 个。
+    expect((all.match(/@keyframes/g) ?? []).length).toBe(12);
   });
 });

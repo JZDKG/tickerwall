@@ -31,6 +31,7 @@ import {
   currentSpotlightEvent, needsIdleTimer, STEP_MS,
 } from './map/logic/spotlight.js';
 import { TOPIC_FILTERS, filterMapEvents } from './map/logic/filters.js';
+import { iconHtml } from '../shared/icons.js';
 import { sparklinePath } from './map/logic/sparkline.js';
 import { mapEl } from '../shared/dom.js';
 import { dirOf, esc, fmtPrice, html, raw, safeHref } from '../shared/format.js';
@@ -660,11 +661,13 @@ function placeBroadcast() {
   if (!bar || !canvas || !body) return;
 
   if (window.innerWidth > 720) {
-    if (bar.parentElement !== canvas) canvas.appendChild(bar);
+    const afterFeed = feed?.nextElementSibling ?? null;
+    if (bar.parentElement !== body || bar.previousElementSibling !== feed) {
+      body.insertBefore(bar, afterFeed);
+    }
     return;
   }
-  // 窄屏插在画布与事件流之间 —— append 到 .map-body 末尾的话它会落到
-  // 事件流下面，整条被挤出首屏。
+  // 窄屏插在画布与事件流之间 —— 避免压住下方内容。
   if (bar.parentElement !== body || bar.nextElementSibling !== feed) {
     body.insertBefore(bar, feed ?? null);
   }
@@ -1011,7 +1014,7 @@ export function renderMap() {
         <button type="button" class="map-btn" id="map-zoom-in" title="放大">+</button>
         <button type="button" class="map-btn" id="map-reset" title="复位">复位</button>
         <button type="button" class="map-btn" data-action="toggle-autopilot" aria-pressed="${autopilot ? 'true' : 'false'}" title="一键锁定当前视角，不被 6 秒巡航打断">巡航导播 ${autopilot ? '暂停' : '开启'}</button>
-        <button type="button" class="map-btn" id="map-full" title="全屏">⛶ 全屏</button>
+        <button type="button" class="map-btn" id="map-full" title="全屏">${iconHtml('maximize', 13)} 全屏</button>
       </div>
     </div>
     <div class="map-relay">
@@ -1030,9 +1033,8 @@ export function renderMap() {
         <svg class="world-svg" viewBox="0 0 ${LOGICAL_WIDTH} ${LOGICAL_HEIGHT}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="全球市场地图">
           <defs>
             <radialGradient id="oceanGlow" cx="50%" cy="42%" r="62%">
-              <stop offset="0%" stop-color="#0d1a2c" />
-              <stop offset="58%" stop-color="#080d16" />
-              <stop offset="100%" stop-color="#05070b" />
+              <stop offset="0%" stop-color="#11141b" />
+              <stop offset="100%" stop-color="#0c0d10" />
             </radialGradient>
             <linearGradient id="terminatorStroke" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stop-color="#4a7fd4" stop-opacity="0.15" />
@@ -1061,7 +1063,6 @@ export function renderMap() {
         </svg>
         <div class="map-anchors lod-0" id="map-anchors" data-lod="lod-0">${raw(anchorsHtml)}${raw(beaconHtml)}</div>
         ${raw(btcHud)}
-        <div class="map-broadcast" id="map-broadcast"></div>
         <div class="map-bubbles" id="map-bubbles"></div>
       </div>
       <aside class="map-feed" id="map-feed">
@@ -1072,6 +1073,7 @@ export function renderMap() {
         </div>
         <div class="mf-list">${raw(feedRows)}</div>
       </aside>
+      <div class="map-broadcast" id="map-broadcast"></div>
       <div class="map-timeline" id="map-timeline"></div>
     </div>
   `.toString();

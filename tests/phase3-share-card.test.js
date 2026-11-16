@@ -67,9 +67,10 @@ describe('renderShareCardSVG：16:9 / 3:4', () => {
     expect(renderShareCardSVG(MODEL, { aspect: 'weird' })).toContain('viewBox="0 0 1600 900"');
   });
 
-  it('包含渐变背景、品牌水印、时间戳与快照校验 ID exp_*', () => {
+  it('采用哑光深色底板并包含品牌水印、时间戳与快照校验 ID exp_*', () => {
     const svg = renderShareCardSVG(MODEL);
-    expect(svg).toMatch(/<linearGradient/);
+    expect(svg).toContain('fill="#0c0d10"');
+    expect(svg).not.toMatch(/<linearGradient/);
     expect(svg).toContain('TickerWall · Explainable Cross-Asset Terminal');
     expect(svg).toContain('exp_20261111_ab12cd');
     expect(svg).toContain('2026-11-11');

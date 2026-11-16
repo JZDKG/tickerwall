@@ -13,12 +13,12 @@
  * 两者互斥使用：`high` 按等级，其余按主题。
  */
 export const TOPIC_FILTERS = [
-  { key: 'all', label: '全部', icon: '🌐' },
-  { key: 'high', label: '重要', icon: '🔥', level: 'high' },
-  { key: 'fed', label: '美联储 / 利率', icon: '🏦', topics: ['fed', 'inflation', 'jobs', 'rates'] },
-  { key: 'geo', label: '地缘 / 能源', icon: '⚔️', topics: ['geopolitics', 'energy'] },
-  { key: 'china', label: '中国政策', icon: '🇨🇳', topics: ['china'] },
-  { key: 'precious', label: '贵金属', icon: '🪙', topics: ['precious'] },
+  { key: 'all', label: '全部', icon: 'globe' },
+  { key: 'high', label: '重要', icon: 'flame', level: 'high' },
+  { key: 'fed', label: '美联储 / 利率', icon: 'landmark', topics: ['fed', 'inflation', 'jobs', 'rates'] },
+  { key: 'geo', label: '地缘 / 能源', icon: 'compass', topics: ['geopolitics', 'energy'] },
+  { key: 'china', label: '中国政策', icon: 'flag', topics: ['china'] },
+  { key: 'precious', label: '贵金属', icon: 'coins', topics: ['precious'] },
 ];
 
 export const FILTER_BY_KEY = new Map(TOPIC_FILTERS.map((f) => [f.key, f]));

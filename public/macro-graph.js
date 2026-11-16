@@ -1175,7 +1175,7 @@ function sandboxPanel(data, state) {
   };
 
   const conflictBlock = target && target[1].conflict
-    ? `<div class="mg-sect"><i class="dot warn"></i><h4>⚡ 多空交织拆解：${esc(nameOf(target[0]))}</h4>
+    ? `<div class="mg-sect"><i class="dot warn"></i><h4>多空交织拆解：${esc(nameOf(target[0]))}</h4>
         <ul class="mg-path-list">${target[1].paths
           .filter((p) => p.hop <= 2)
           .map((p) => {
@@ -1226,9 +1226,9 @@ function sandboxPanel(data, state) {
  * ------------------------------------------------------------------ */
 
 const MODES = [
-  ['compass', '🌐 全局罗盘'],
-  ['mindmap', '🌿 单点思维导图'],
-  ['sandbox', '⚡ 沙盘推演'],
+  ['compass', '全局罗盘'],
+  ['mindmap', '单点思维导图'],
+  ['sandbox', '沙盘推演'],
 ];
 
 const FOCUS_PILLS = [
@@ -1276,7 +1276,7 @@ export function macroGraphSectionHTML(data, state) {
     const A = data.universe.find((u) => u.id === alert.e.from);
     const B = data.universe.find((u) => u.id === alert.e.to);
     alerts.push(`<button type="button" class="mg-alert" data-alert="${esc(alert.e.id)}">
-      <span class="mg-alert-ico">⚡</span>
+      <span class="mg-alert-ico">!</span>
       <span class="mg-alert-text">实时背离：<b>${esc(A?.name ?? alert.e.from)} ↔ ${esc(B?.name ?? alert.e.to)}</b>
         ${esc(alert.r.badge.replace('⚡ ', ''))}，近 20 期滚动相关 ${alert.r.roll20 >= 0 ? '+' : ''}${alert.r.roll20.toFixed(2)}
         （理论 ${signChar(alert.e.sign)}），可能是「${esc(alert.e.divergence.split('：')[0])}」逻辑压过了「${esc(alert.e.label)}」</span>
@@ -1370,7 +1370,7 @@ function playbookPanel(pb, data, reality) {
       const r = reality.get(e.id);
       const tone = pb.breaks.includes(e.id) ? 'div' : r?.status === 'diverged' ? 'div' : e.sign > 0 ? 'pos' : 'neg';
       return `<li class="mg-mini" data-edge="${esc(e.id)}">
-        <span class="mg-mini-dir ${tone}">${pb.breaks.includes(e.id) ? '⚡' : signChar(e.sign) + '▶'}</span>
+        <span class="mg-mini-dir ${tone}">${pb.breaks.includes(e.id) ? '背离' : signChar(e.sign) + '▶'}</span>
         <span class="mg-mini-name">${esc(nameOf(e.from))}→${esc(nameOf(e.to))}</span>
         <span class="mg-mini-tag">${esc(e.label)}${pb.breaks.includes(e.id) ? ' · 被打破' : ''}</span>
         <span class="mg-mini-roll ${corrTone(r?.roll20)}">${r?.roll20 == null ? '—' : `${r.roll20 >= 0 ? '+' : ''}${r.roll20.toFixed(2)}`}</span>

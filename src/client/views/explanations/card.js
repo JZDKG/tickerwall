@@ -214,13 +214,34 @@ function RELATION_LABEL(code) {
 }
 
 /** 事实条：发生了什么（只写数字与日期，不写原因） */
+const DRIVER_LABEL = Object.freeze({
+  dfii10: '10Y实际利率',
+  t10yie: '10Y盈亏通胀',
+  us10y: '10Y美债利率',
+  dxy: '美元指数',
+  oil: 'WTI 原油',
+  brent: '布伦特原油',
+  vix: 'VIX 恐慌',
+  vxn: 'VXN 波动',
+  sp500: '标普 500',
+  nasdaq: '纳斯达克',
+  ndx100: '纳指 100',
+  'gold-intl': '国际金价',
+  'gold-cn': '沪金主力',
+  btc: '比特币',
+  silver: '白银',
+  usdcnh: '离岸人民币',
+  usdjpy: '美元/日元',
+  eurusd: '欧元/美元',
+});
+
 function factsHTML(facts) {
   const f = (facts ?? []).find((x) => x.code === 'TARGET_CHANGE');
   if (!f) return '';
   const others = (facts ?? []).filter((x) => x.code === 'DRIVER_CHANGE').slice(0, 6);
   // 显式标出「事实」这一层：只有数字与日期，不含原因判断（方案 §3.1）
   return `<div class="explain-facts">
-    <div class="explain-layer"><b>事实</b><span>发生了什么：只有数字与日期，不含原因</span></div>
+    <div class="explain-layer"><b>事实</b><span>数字与日期 · 不含原因</span></div>
     <div class="explain-fact-main">
       <b>${esc(fmtFactorChange(f.change))}</b>
       <span>${esc(f.label ?? '')}　${esc(f.window?.start ?? '')}${f.window?.end ? ` → ${esc(f.window.end)}` : ''}</span>
@@ -229,7 +250,7 @@ function factsHTML(facts) {
       ${others
         .map(
           (o) =>
-            `<li><span>${esc(o.instrumentId)}</span><b>${esc(fmtFactorChange(o.change))}</b></li>`,
+            `<li><span>${esc(DRIVER_LABEL[o.instrumentId] ?? o.label ?? o.instrumentId)}</span><b>${esc(fmtFactorChange(o.change))}</b></li>`,
         )
         .join('')}
     </ul>
@@ -248,7 +269,9 @@ function metaLine(meta, explanation) {
   // 背景指标过期：不影响结论判定，但必须能看见（不能假装都是最新的）
   const bg = (meta?.backgroundStale ?? []).filter(Boolean);
   const bgSpan = bg.length
-    ? `<span class="explain-bg-stale" title="这些指标只用于背景说明，没有给出方向判定">背景指标过期：${esc(bg.join('、'))}</span>`
+    ? `<span class="explain-bg-stale" title="这些指标只用于背景说明，没有给出方向判定">背景指标过期：${esc(
+        bg.map((id) => DRIVER_LABEL[id] ?? id).join('、'),
+      )}</span>`
     : '';
   return `<div class="explain-meta">
     ${freshSpan}

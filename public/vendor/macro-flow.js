@@ -352,9 +352,9 @@ var p = {
 	"copper",
 	"ndx100"
 ], v = [
-	["compass", "🌐 全局罗盘"],
-	["mindmap", "🌿 单点思维导图"],
-	["sandbox", "⚡ 沙盘推演"]
+	["compass", "全局罗盘"],
+	["mindmap", "单点思维导图"],
+	["sandbox", "沙盘推演"]
 ], y = [
 	{
 		id: "E01",
@@ -25676,9 +25676,9 @@ var Qk = class {
 		return e.className = "mgx-tools", e.innerHTML = Wk`
       <button type="button" class="mgx-tbtn" data-ctl="in" title="放大">+</button>
       <button type="button" class="mgx-tbtn" data-ctl="out" title="缩小">−</button>
-      <button type="button" class="mgx-tbtn wide" data-ctl="fit" title="适应画布">⊡ 适应</button>
-      <button type="button" class="mgx-tbtn wide" data-ctl="reset" title="清除手动拖拽，回到自动布局">↺ 复位</button>
-      <button type="button" class="mgx-tbtn wide" data-ctl="style" title="切换连线风格">⇄ <span class="mgx-style">${Xk[this.style]}</span></button>
+      <button type="button" class="mgx-tbtn wide" data-ctl="fit" title="适应画布">适应</button>
+      <button type="button" class="mgx-tbtn wide" data-ctl="reset" title="清除手动拖拽，回到自动布局">复位</button>
+      <button type="button" class="mgx-tbtn wide" data-ctl="style" title="切换连线风格"><span class="mgx-style">${Xk[this.style]}</span></button>
       <span class="mgx-zoom">100%</span>`.toString(), e.addEventListener("click", (e) => {
 			let t = e.target.closest("[data-ctl]");
 			if (!t) return;
@@ -26156,28 +26156,76 @@ var Qk = class {
 	dispose() {
 		this.ro?.disconnect(), this.ro = null, this.tools?.remove(), this.tools = null, this.graph?.dispose?.(), this.graph = null;
 	}
-}, $k = {
+}, $k = Object.freeze({
+	star: "<polygon points=\"12 2.5 14.9 8.4 21.4 9.3 16.7 13.9 17.8 20.4 12 17.3 6.2 20.4 7.3 13.9 2.6 9.3 9.1 8.4 12 2.5\"/>",
+	"star-filled": "<polygon points=\"12 2.5 14.9 8.4 21.4 9.3 16.7 13.9 17.8 20.4 12 17.3 6.2 20.4 7.3 13.9 2.6 9.3 9.1 8.4 12 2.5\" fill=\"currentColor\"/>",
+	bolt: "<path d=\"M13 2 4.5 13.5h6L9 22l9.5-11.5h-6L13 2z\"/>",
+	globe: "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M3.6 9h16.8M3.6 15h16.8\"/><ellipse cx=\"12\" cy=\"12\" rx=\"4\" ry=\"9\"/>",
+	flame: "<path d=\"M12 2.5c.3 3.4-4 5.4-4 9.2a4.5 4.5 0 0 0 9 0c0-2.3-1.2-4.2-2.2-5.5-.4 1.3-1.3 2.1-1.9 2.1-.2-1.8-.3-3.7-.9-5.8z\"/>",
+	landmark: "<path d=\"M3 10h18M5 10v8M9 10v8M15 10v8M19 10v8M3 18h18M12 3l9 5H3l9-5z\"/>",
+	compass: "<circle cx=\"12\" cy=\"12\" r=\"9\"/><polygon points=\"15.5 8.5 13.7 13.7 8.5 15.5 10.3 10.3 15.5 8.5\"/>",
+	flag: "<path d=\"M5 21V4m0 1h12l-2 4 2 4H5\"/>",
+	coins: "<ellipse cx=\"10\" cy=\"8\" rx=\"6\" ry=\"2.5\"/><path d=\"M4 8v4c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5V8M8 14.5V18c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5v-4c0-1.1-1.7-2-4-2.3\"/>",
+	network: "<circle cx=\"5\" cy=\"12\" r=\"2.2\"/><circle cx=\"12\" cy=\"6\" r=\"2.2\"/><circle cx=\"12\" cy=\"18\" r=\"2.2\"/><circle cx=\"19\" cy=\"12\" r=\"2.2\"/><path d=\"m7 10.8 3-3.4M7 13.2l3 3.4M14 7.4l3 3.4M14 16.6l3-3.4\"/>",
+	"play-step": "<polygon points=\"6 5 15 12 6 19 6 5\"/><path d=\"M18 5v14\"/>",
+	"arrow-right": "<path d=\"M5 12h14m-6-6 6 6-6 6\"/>",
+	"arrow-left": "<path d=\"M19 12H5m6-6-6 6 6 6\"/>",
+	maximize: "<path d=\"M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7\"/>",
+	bulb: "<path d=\"M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.8c.7.6 1 1.4 1.1 2.2h4.8c.1-.8.4-1.6 1.1-2.2A6 6 0 0 0 12 3z\"/>",
+	check: "<path d=\"m5 12.5 4.5 4.5L19 7\"/>",
+	circle: "<circle cx=\"12\" cy=\"12\" r=\"5\"/>",
+	alert: "<path d=\"M12 3.5 21 19.5H3L12 3.5zM12 10v4M12 16.8h.01\"/>",
+	search: "<circle cx=\"11\" cy=\"11\" r=\"6.5\"/><path d=\"m16 16 4.5 4.5\"/>"
+});
+function eA(e, t = 14, n = "") {
+	let r = $k[e];
+	if (!r) return "";
+	let i = Number.isFinite(t) && t > 0 ? Math.round(t) : 14;
+	return `<svg class="${n ? `ui-ico ${zk(n)}` : "ui-ico"}" width="${i}" height="${i}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${r}</svg>`;
+}
+Object.freeze({
+	dfii10: "10Y实际利率",
+	t10yie: "10Y盈亏通胀",
+	us10y: "10Y美债利率",
+	dxy: "美元指数",
+	oil: "WTI 原油",
+	brent: "布伦特原油",
+	vix: "VIX 恐慌",
+	vxn: "VXN 波动",
+	sp500: "标普 500",
+	nasdaq: "纳斯达克",
+	ndx100: "纳指 100",
+	"gold-intl": "国际金价",
+	"gold-cn": "沪金主力",
+	btc: "比特币",
+	silver: "白银",
+	usdcnh: "离岸人民币",
+	usdjpy: "美元/日元",
+	eurusd: "欧元/美元"
+});
+// src/client/shared/api.js
+var tA = {
 	network: "network",
 	timeout: "timeout",
 	http: "http",
 	parse: "parse",
 	aborted: "aborted",
 	business: "business"
-}, eA = class extends Error {
+}, nA = class extends Error {
 	constructor(e, t, { status: n = null, code: r = null, body: i = null, url: a = null, cause: o = null } = {}) {
 		super(t), this.name = "ApiError", this.kind = e, this.status = n, this.code = r, this.body = i, this.url = a, this.cause = o;
 	}
 	get retryable() {
-		return this.kind === $k.network || this.kind === $k.timeout || this.kind === $k.http && this.status >= 500;
+		return this.kind === tA.network || this.kind === tA.timeout || this.kind === tA.http && this.status >= 500;
 	}
 };
-function tA(e, t = null) {
+function rA(e, t = null) {
 	let n = String(e), r = /^[a-z][a-z0-9+.-]*:\/\//i.test(n), i = n.startsWith("/"), a = new URL(n, "http://local.invalid"), o = new URLSearchParams(a.search);
 	for (let [e, n] of Object.entries(t ?? {})) n != null && n !== "" && o.set(e, String(n));
 	let s = o.toString().replace(/\+/g, "%20");
 	return r ? `${a.origin}${a.pathname}${s ? `?${s}` : ""}` : `${i ? a.pathname : a.pathname.replace(/^\//, "")}${s ? `?${s}` : ""}`;
 }
-function nA({ base: e = "./", timeoutMs: t = 2e4, fetchImpl: n = null, now: r = () => Date.now() } = {}) {
+function iA({ base: e = "./", timeoutMs: t = 2e4, fetchImpl: n = null, now: r = () => Date.now() } = {}) {
 	let i = n ?? ((...e) => fetch(...e)), a = /* @__PURE__ */ new Map();
 	function o(e, t) {
 		let n = e.signal, r = null;
@@ -26187,7 +26235,7 @@ function nA({ base: e = "./", timeoutMs: t = 2e4, fetchImpl: n = null, now: r = 
 		};
 	}
 	async function s(n, { params: s = null, json: c = !0, timeoutMs: l, dedupe: u = !0 } = {}) {
-		let d = tA(n.startsWith("http") ? n : `${e}${n}`, s);
+		let d = rA(n.startsWith("http") ? n : `${e}${n}`, s);
 		if (u && a.has(d)) return a.get(d).promise;
 		let f = new AbortController(), { signal: p, clear: m } = o(f, l ?? t), h = r(), g = (async () => {
 			let e;
@@ -26199,17 +26247,17 @@ function nA({ base: e = "./", timeoutMs: t = 2e4, fetchImpl: n = null, now: r = 
 			} catch (e) {
 				if (m(), p.aborted) {
 					let n = f.signal.reason === "timeout";
-					throw new eA(n ? $k.timeout : $k.aborted, n ? `请求超时（${l ?? t}ms）` : "请求已取消", {
+					throw new nA(n ? tA.timeout : tA.aborted, n ? `请求超时（${l ?? t}ms）` : "请求已取消", {
 						url: d,
 						cause: e
 					});
 				}
-				throw new eA($k.network, `网络错误：${e?.message ?? e}`, {
+				throw new nA(tA.network, `网络错误：${e?.message ?? e}`, {
 					url: d,
 					cause: e
 				});
 			}
-			if (m(), !e.ok) throw new eA($k.http, `HTTP ${e.status}`, {
+			if (m(), !e.ok) throw new nA(tA.http, `HTTP ${e.status}`, {
 				status: e.status,
 				url: d
 			});
@@ -26222,13 +26270,13 @@ function nA({ base: e = "./", timeoutMs: t = 2e4, fetchImpl: n = null, now: r = 
 			try {
 				n = await e.json();
 			} catch (t) {
-				throw new eA($k.parse, "响应不是合法 JSON", {
+				throw new nA(tA.parse, "响应不是合法 JSON", {
 					status: e.status,
 					url: d,
 					cause: t
 				});
 			}
-			if (n && n.ok === !1) throw new eA($k.business, String(n.error ?? "接口返回失败"), {
+			if (n && n.ok === !1) throw new nA(tA.business, String(n.error ?? "接口返回失败"), {
 				status: e.status,
 				code: n.code ?? null,
 				body: n,
@@ -26253,7 +26301,7 @@ function nA({ base: e = "./", timeoutMs: t = 2e4, fetchImpl: n = null, now: r = 
 			a.clear();
 			return;
 		}
-		let n = tA(t.startsWith("http") ? t : `${e}${t}`), r = a.get(n);
+		let n = rA(t.startsWith("http") ? t : `${e}${t}`), r = a.get(n);
 		r && (r.controller.abort("cancel"), a.delete(n));
 	}
 	return {
@@ -26264,41 +26312,41 @@ function nA({ base: e = "./", timeoutMs: t = 2e4, fetchImpl: n = null, now: r = 
 		timeoutMs: t
 	};
 }
-nA();
+iA();
 // src/client/views/explanations/graph.js
-var rA = {
+var aA = {
 	E01: "M-GOLD-USD",
 	E05: "M-GOLD-NOMINAL-RATE",
 	E08: "M-GOLD-OIL-POLICY",
 	E15: "M-GOLD-RISK",
 	E02: "M-OIL-USD",
 	E09: "M-GOLD-OIL-POLICY"
-}, iA = {
+}, oA = {
 	consistent: "观测与机制一致",
 	mixed: "支持与反向证据并存",
 	not_supported: "当前证据不支持",
 	untested: "尚未确认"
 };
-function aA(e) {
+function sA(e) {
 	let t = /* @__PURE__ */ new Map();
 	for (let n of e?.hypotheses ?? []) t.set(n.mechanismId, {
 		mechanismId: n.mechanismId,
 		label: n.label,
 		status: n.status,
-		statusText: iA[n.status] ?? n.status,
+		statusText: oA[n.status] ?? n.status,
 		reasons: n.reasons ?? [],
 		plain: n.plain ?? null,
 		evidenceCount: (n.evidence ?? []).length
 	});
 	return t;
 }
-function oA(e, t, n = null) {
-	let r = rA[e];
+function cA(e, t, n = null) {
+	let r = aA[e];
 	if (!r) return {
 		available: !1,
 		note: "这条边不是方向性机制（计价换算 / 共同驱动），不做解释判定"
 	};
-	let i = aA(t).get(r);
+	let i = sA(t).get(r);
 	if (!i) return {
 		available: !1,
 		mechanismId: r,
@@ -26315,20 +26363,20 @@ function oA(e, t, n = null) {
 		note: c
 	};
 }
-function sA(e, { assetId: t, windowKey: n = "session" } = {}) {
+function lA(e, { assetId: t, windowKey: n = "session" } = {}) {
 	if (!e) return "<div class=\"mg-sect\"><i class=\"dot\"></i><h4>这次为什么动</h4>\n      <p class=\"mg-foot-note\">这份资产的解释还没生成（或本次取数失败）。图上只显示统计相关，不替代解释。</p></div>";
 	let r = (e.hypotheses ?? []).filter((e) => e.relationType === "mechanism").slice(0, 3);
 	return `<div class="mg-sect"><i class="dot"></i><h4>这次为什么动（与详情页同一份解释）</h4>
-    <p class="mg-sect-note">${cA(e.summary ?? "")}</p>
+    <p class="mg-sect-note">${uA(e.summary ?? "")}</p>
     <ul class="mg-mini-list">${r.map((e) => {
 		let t = e.status === "consistent" ? "pos" : e.status === "mixed" ? "warn" : "cold";
-		return `<li class="mg-mini"><span class="mg-mini-name">${cA(e.label ?? e.mechanismId)}</span>
-          <span class="mg-ex-status ${t}">${cA(iA[e.status] ?? e.status)}</span></li>`;
+		return `<li class="mg-mini"><span class="mg-mini-name">${uA(e.label ?? e.mechanismId)}</span>
+          <span class="mg-ex-status ${t}">${uA(oA[e.status] ?? e.status)}</span></li>`;
 	}).join("")}</ul>
-    <p class="mg-foot-note">窗口 ${cA(n)} · 版本 ${cA(e.id ?? "—")} ·
+    <p class="mg-foot-note">窗口 ${uA(n)} · 版本 ${uA(e.id ?? "—")} ·
       <a href="./#/d/${encodeURIComponent(t)}">在详情页看依据</a></p></div>`;
 }
-function cA(e) {
+function uA(e) {
 	return String(e ?? "").replace(/[&<>"']/g, (e) => ({
 		"&": "&amp;",
 		"<": "&lt;",
@@ -26338,24 +26386,24 @@ function cA(e) {
 	})[e]);
 }
 // src/client/views/macro/panels.js
-function lA(e) {
+function dA(e) {
 	return e == null ? "" : e > 0 ? "up" : e < 0 ? "down" : "";
 }
-var uA = {
+var fA = {
 	EVENT_EVIDENCE: "可核实的事件与发布时间",
 	SHOCK_TYPE_CLASSIFIED: "冲击类型已分类（供给/需求）",
 	DEMAND_EVIDENCE: "需求侧证据（库存、开工、订单）"
 };
-function dA(e, t) {
+function pA(e, t) {
 	return e === "rate" ? t > 0 ? "收益率上行压力" : "收益率下行压力" : t > 0 ? "可能偏强" : "可能偏弱";
 }
-function fA(e) {
+function mA(e) {
 	return `同期观测与历史相关（有效配对 ${e} 期）`;
 }
-function pA(e) {
+function hA(e) {
 	return e == null ? "dim" : `${e > 0 ? "up" : "cold"}${Math.abs(e) < .3 ? " faint" : ""}`;
 }
-function mA(e, t, n) {
+function gA(e, t, n) {
 	let r = e.universe.find((e) => e.id === t), i = e.universe.find((e) => e.id === n), a = ae(e.matrix, t, n), o = ie(e.recent?.changes?.[t], e.recent?.changes?.[n], 60), s = ie(e.recent?.changes?.[t], e.recent?.changes?.[n], 20), c = te(e.recent?.changes?.[t]), l = te(e.recent?.changes?.[n]), u = e.recent?.dates?.[e.recent.dates.length - 1] ?? null, d = (e, t, n = "") => `<div class="mg-kv ${n}"><span>${E(e)}</span><b>${t}</b></div>`;
 	return `<div class="mg-card-head">
       <span class="mg-addr">${E(i?.short ?? n)}</span>
@@ -26365,21 +26413,21 @@ function mA(e, t, n) {
     </div>
     <p class="mg-lead">这两个标的之间没有登记的因果边，下面只有实测数字。</p>
     <div class="mg-sect"><i class="dot"></i><h4>实测相关性</h4>
-      ${d(`${r?.short ?? t} 最新`, `<span class="${lA(c)}">${E(oe(c, r?.kind))}</span>`)}
-      ${d(`${i?.short ?? n} 最新`, `<span class="${lA(l)}">${E(oe(l, i?.kind))}</span>`)}
+      ${d(`${r?.short ?? t} 最新`, `<span class="${dA(c)}">${E(oe(c, r?.kind))}</span>`)}
+      ${d(`${i?.short ?? n} 最新`, `<span class="${dA(l)}">${E(oe(l, i?.kind))}</span>`)}
       ${d("当期比较日期", `${E(u ?? "—")}`)}
-      ${d("250 期相关系数", `<span class="${pA(a)}">${a == null ? "—" : (a >= 0 ? "+" : "") + a.toFixed(2)}</span>`)}
-      ${d("60 期滚动", `<span class="${pA(o)}">${o == null ? "—" : (o >= 0 ? "+" : "") + o.toFixed(2)}</span>`)}
-      ${d("20 期滚动", `<span class="${pA(s)}">${s == null ? "—" : (s >= 0 ? "+" : "") + s.toFixed(2)}</span>`)}
+      ${d("250 期相关系数", `<span class="${hA(a)}">${a == null ? "—" : (a >= 0 ? "+" : "") + a.toFixed(2)}</span>`)}
+      ${d("60 期滚动", `<span class="${hA(o)}">${o == null ? "—" : (o >= 0 ? "+" : "") + o.toFixed(2)}</span>`)}
+      ${d("20 期滚动", `<span class="${hA(s)}">${s == null ? "—" : (s >= 0 ? "+" : "") + s.toFixed(2)}</span>`)}
     </div>
     <div class="mg-sect"><i class="dot warn"></i><h4>为什么还会同涨同跌</h4>
       <p>没有直连不等于没有关系。两者常通过共同的上游被间接驱动 —— 例如美元流动性、美债利率、或同一个风险偏好开关。想知道链条，就把焦点切到它们各自的上游看一遍。</p>
     </div>
     <button type="button" class="mg-jump" data-jump="${E(t)}|${E(n)}">↓ 跳到下方滚动相关性</button>`;
 }
-function hA(e, t, n) {
+function _A(e, t, n) {
 	if (!n) return "";
-	let r = oA(e?.id, n, t);
+	let r = cA(e?.id, n, t);
 	if (!r.available) return `<div class="mg-sect"><i class="dot"></i><h4>解释状态</h4>
       <p class="mg-foot-note">${E(r.note ?? "这份解释里没有这条渠道")}</p></div>`;
 	let i = r.status === "consistent" ? "pos" : r.status === "mixed" ? "warn" : "cold";
@@ -26388,10 +26436,10 @@ function hA(e, t, n) {
     ${r.note ? `<p class="mg-foot-note">${E(r.note)}</p>` : ""}
   </div>`;
 }
-function gA(e, t, n, r) {
+function vA(e, t, n, r) {
 	if (!t) {
 		let [t, n] = r?.pair ?? [];
-		return t && n ? mA(e, t, n) : "<div class=\"mg-card-empty\">点画布上的任意一条连线，或点下方矩阵里的格子 —— 这里会显示这条传导关系的机理、实测验证与失效条件。</div>";
+		return t && n ? gA(e, t, n) : "<div class=\"mg-card-empty\">点画布上的任意一条连线，或点下方矩阵里的格子 —— 这里会显示这条传导关系的机理、实测验证与失效条件。</div>";
 	}
 	let i = n.get(t.id), a = e.universe.find((e) => e.id === t.from), o = e.universe.find((e) => e.id === t.to), s = i?.status === "diverged" ? "div" : t.sign > 0 ? "pos" : "neg", c = t.sign > 0 ? "+" : "−", l = (e, t, n = "") => `<div class="mg-kv ${n}"><span>${E(e)}</span><b>${t}</b></div>`, u = r?.explanation ?? null, d = f(t), p = x(t), m = p ? `<a class="mg-explain-link" data-edge-explain="${E(p.assetId)}" href="${E(p.href)}"
         title="${E(t.mechanismHint ?? "查看该资产的解释卡")}">→ 看 ${E(p.assetId)} 的解释卡</a>` : "", h = i?.unaligned ? `<div class="mg-kv warn"><span>当期比较日期</span><b>${E(i.asOf ?? "—")}（有一侧最新观测更晚，未参与比较）</b></div>` : i?.asOf ? `<div class="mg-kv"><span>当期比较日期</span><b>${E(i.asOf)}</b></div>` : "", g = i?.roll20 == null ? "—" : `${i.roll20 >= 0 ? "+" : ""}${i.roll20.toFixed(2)}`, _ = i?.roll60 == null ? "—" : `${i.roll60 >= 0 ? "+" : ""}${i.roll60.toFixed(2)}`, v = i?.longCorr == null ? "—" : `${i.longCorr >= 0 ? "+" : ""}${i.longCorr.toFixed(2)}`, y = i?.roll20 == null ? "" : Math.sign(i.roll20) === t.sign ? "<em class=\"ok\">逻辑吻合</em>" : i?.trendDiverged ? "<em class=\"warn\">正在背离</em>" : "<em class=\"dim\">反号偏弱</em>";
@@ -26399,7 +26447,7 @@ function gA(e, t, n, r) {
       <span class="mg-addr">${E(o?.short ?? t.to)}</span>
       <span class="mg-arrowsign ${s}">◄──[${c}]──</span>
       <span class="mg-addr">${E(a?.short ?? t.from)}</span>
-      <span class="mg-badge ${s}">${E(i?.badge ?? "")}</span>
+      <span class="mg-badge ${s}">${E(String(i?.badge ?? "").replace(/^[⚡✓○]\s*/, ""))}</span>
     </div>
     <p class="mg-lead"><b>${E(t.label)}</b>　${E(t.id)}　关系类型：${E(d.label)}　（${E(d.plain)}）</p>
 
@@ -26407,15 +26455,15 @@ function gA(e, t, n, r) {
       <p>${E(t.mechanism)}</p>
     </div>
 
-    ${hA(t, i, u)}
+    ${_A(t, i, u)}
     ${m}
-    <div class="mg-sect"><i class="dot"></i><h4>${E(fA(i?.n ?? 0))}</h4>
+    <div class="mg-sect"><i class="dot"></i><h4>${E(mA(i?.n ?? 0))}</h4>
       ${h}
-      ${l(`${a?.short ?? t.from} 本窗口`, `<span class="${lA(i?.lastA)}">${E(oe(i?.lastA, a?.kind))}</span>`)}
-      ${l(`${o?.short ?? t.to} 本窗口`, `<span class="${lA(i?.lastB)}">${E(oe(i?.lastB, o?.kind))}</span>`)}
-      ${l("250 期相关系数", `<span class="${pA(i?.longCorr)}">${v}</span>`)}
-      ${l("60 期滚动", `<span class="${pA(i?.roll60)}">${_}</span>`)}
-      ${l("20 期滚动", `<span class="${pA(i?.roll20)}">${g}</span> ${y}`)}
+      ${l(`${a?.short ?? t.from} 本窗口`, `<span class="${dA(i?.lastA)}">${E(oe(i?.lastA, a?.kind))}</span>`)}
+      ${l(`${o?.short ?? t.to} 本窗口`, `<span class="${dA(i?.lastB)}">${E(oe(i?.lastB, o?.kind))}</span>`)}
+      ${l("250 期相关系数", `<span class="${hA(i?.longCorr)}">${v}</span>`)}
+      ${l("60 期滚动", `<span class="${hA(i?.roll60)}">${_}</span>`)}
+      ${l("20 期滚动", `<span class="${hA(i?.roll20)}">${g}</span> ${y}`)}
       ${l("机制方向", `<span class="${t.sign > 0 ? "up" : "cold"}">${c} ${t.sign > 0 ? "同向联动" : "反向压制"}</span>`)}
       ${l("有效配对", `${i?.n ?? 0} 期`)}
     </div>
@@ -26426,41 +26474,41 @@ function gA(e, t, n, r) {
 
     <button type="button" class="mg-jump" data-jump="${E(t.from)}|${E(t.to)}">↓ 跳到下方滚动相关性</button>`;
 }
-function _A(e, t, n, r = null) {
+function yA(e, t, n, r = null) {
 	let i = y.filter((e) => e.to === t), a = y.filter((e) => e.from === t), o = e.universe.find((e) => e.id === t), s = (e, t) => {
 		let r = n.get(e.id), i = r?.status === "diverged" ? "div" : e.sign > 0 ? "pos" : "neg";
 		return `<li class="mg-mini" data-edge="${E(e.id)}">
       <span class="mg-mini-dir ${i}">${D(e.sign)}▶</span>
       <span class="mg-mini-name">${E(t)}</span>
       <span class="mg-mini-tag">${E(e.label)}</span>
-      <span class="mg-mini-roll ${pA(r?.roll20)}">${r?.roll20 == null ? "—" : `${r.roll20 >= 0 ? "+" : ""}${r.roll20.toFixed(2)}`}</span>
+      <span class="mg-mini-roll ${hA(r?.roll20)}">${r?.roll20 == null ? "—" : `${r.roll20 >= 0 ? "+" : ""}${r.roll20.toFixed(2)}`}</span>
     </li>`;
 	};
 	return `<div class="mg-card-head"><span class="mg-addr big">${E(o?.name ?? t)}</span>
       <span class="mg-badge ${o ? "pos" : "neg"}">焦点</span></div>
     <p class="mg-lead">上游 ${i.length} 条驱动 · 下游 ${a.length} 条传导。右侧数字是近 20 期实测相关。</p>
-    <div class="mg-sect"><i class="dot"></i><h4>⬅ 谁在驱动它</h4>
+    <div class="mg-sect"><i class="dot"></i><h4>谁在驱动它</h4>
       <ul class="mg-mini-list">${i.map((t) => s(t, e.universe.find((e) => e.id === t.from)?.short ?? t.from, "up")).join("") || "<li class=\"mg-mini empty\">无已登记上游</li>"}</ul>
     </div>
-    <div class="mg-sect"><i class="dot"></i><h4>它影响谁 ➡</h4>
+    <div class="mg-sect"><i class="dot"></i><h4>它影响谁</h4>
       <ul class="mg-mini-list">${a.map((t) => s(t, e.universe.find((e) => e.id === t.to)?.short ?? t.to, "down")).join("") || "<li class=\"mg-mini empty\">无已登记下游</li>"}</ul>
     </div>
-    ${sA(r, {
+    ${lA(r, {
 		assetId: t,
 		windowKey: "session"
 	})}
     <p class="mg-foot-note">点左侧/右侧任意卡片，焦点会带过渡切过去 —— 顺着因果链一路追查。</p>`;
 }
-function vA(e, t) {
+function bA(e, t) {
 	let n = t.shock;
 	if (!n) return "<div class=\"mg-card-empty\">选一个变量当震源，再点「模拟大涨 ↑」或「模拟大跌 ↓」。直接与间接渠道会逐层点亮；两条路径方向相反的标的会标成琥珀色「方向未定」。这里只展示路径结构，不推断幅度与时间。</div>";
-	let r = e.universe.find((e) => e.id === n.id), i = u(n.id, t.shockCondition ?? n.conditionKey ?? "unknown"), a = i.enabled ? new Set(i.enabled) : null, o = pe(n.id, n.dir, 2, { activeEdges: a }), s = c.find((e) => e.key === (i.conditionKey ?? "unknown")) ?? c[0], l = Object.entries(i.suppressed ?? {}), d = [...o.entries()].sort((e, t) => Number(t[1].conflict) - Number(e[1].conflict) || t[1].paths.length - e[1].paths.length)[0], f = (t) => e.universe.find((e) => e.id === t)?.short ?? t, p = (e) => e.trail.map((e) => `<span class="mg-chain-node">${E(f(e))}</span>`).join("<span class=\"mg-chain-sep\">→</span>"), m = d && d[1].conflict ? `<div class="mg-sect"><i class="dot warn"></i><h4>⚡ 相反渠道拆解：${E(f(d[0]))}</h4>
+	let r = e.universe.find((e) => e.id === n.id), i = u(n.id, t.shockCondition ?? n.conditionKey ?? "unknown"), a = i.enabled ? new Set(i.enabled) : null, o = pe(n.id, n.dir, 2, { activeEdges: a }), s = c.find((e) => e.key === (i.conditionKey ?? "unknown")) ?? c[0], l = Object.entries(i.suppressed ?? {}), d = [...o.entries()].sort((e, t) => Number(t[1].conflict) - Number(e[1].conflict) || t[1].paths.length - e[1].paths.length)[0], f = (t) => e.universe.find((e) => e.id === t)?.short ?? t, p = (e) => e.trail.map((e) => `<span class="mg-chain-node">${E(f(e))}</span>`).join("<span class=\"mg-chain-sep\">→</span>"), m = d && d[1].conflict ? `<div class="mg-sect"><i class="dot warn"></i><h4>相反渠道拆解：${E(f(d[0]))}</h4>
         <ul class="mg-path-list">${d[1].paths.filter((e) => e.hop <= 2).map((t) => {
 		let n = b.get(t.edges), r = t.dir > 0 ? "up" : "cold", i = e.universe.find((e) => e.id === d[0])?.kind;
 		return `<li class="mg-path">
               <span class="mg-path-hop">${t.hop === 1 ? "直接" : "间接"}</span>
               <span class="mg-path-chain">${p(t)}</span>
-              <span class="mg-path-sign ${r}">${n ? `${D(n.sign)} ${E(n.label)}` : ""} ⇒ ${dA(i, t.dir)}</span>
+              <span class="mg-path-sign ${r}">${n ? `${D(n.sign)} ${E(n.label)}` : ""} ⇒ ${pA(i, t.dir)}</span>
             </li>`;
 	}).join("")}</ul>
         <p class="mg-conclusion">同一个标的通过两条方向相反的渠道被影响。<b>这里只说明路径结构，不给幅度、概率或先后时间</b>；看到琥珀色说明「方向还没定」，而不是「一定涨/跌」。</p>
@@ -26478,7 +26526,7 @@ function vA(e, t) {
 		return `<li class="mg-mini"><span class="mg-mini-dir ${n.dirs.has(1) ? "pos" : "neg"}">${n.dirs.has(1) ? "+▶" : "−▶"}</span>
             <span class="mg-mini-name">${E(f(t))}</span>
             <span class="mg-mini-tag">${E(r?.label ?? "")}</span>
-            <span class="mg-mini-roll ${n.dirs.has(1) ? "up" : "cold"}">${dA(i, a)}</span></li>`;
+            <span class="mg-mini-roll ${n.dirs.has(1) ? "up" : "cold"}">${pA(i, a)}</span></li>`;
 	}).join("")}</ul>
     </div>`;
 	return `<div class="mg-card-head">
@@ -26489,19 +26537,19 @@ function vA(e, t) {
     <div class="mg-sect"><i class="dot"></i><h4>冲击条件：${E(s.label)}</h4>
       <p>${E(s.note)}</p>
       ${l.length ? `<ul class="mg-excl">${l.map(([e, t]) => `<li>${E(b.get(e)?.label ?? e)}：${E(t)}</li>`).join("")}</ul>` : ""}
-      ${(i.requires ?? []).length ? `<p class="mg-foot-note">这个条件需要先有证据：${E(i.requires.map((e) => uA[e] ?? e).join("、"))}。证据不足时上面只是结构预览。</p>` : ""}
+      ${(i.requires ?? []).length ? `<p class="mg-foot-note">这个条件需要先有证据：${E(i.requires.map((e) => fA[e] ?? e).join("、"))}。证据不足时上面只是结构预览。</p>` : ""}
     </div>
     ${h}
     ${m}`;
 }
-function yA(e, t, n) {
+function xA(e, t, n) {
 	let r = (e) => t.universe.find((t) => t.id === e)?.short ?? e, i = [...e.edges, ...e.breaks].map((e) => b.get(e)).filter(Boolean).map((t) => {
 		let i = n.get(t.id), a = e.breaks.includes(t.id) || i?.status === "diverged" ? "div" : t.sign > 0 ? "pos" : "neg";
 		return `<li class="mg-mini" data-edge="${E(t.id)}">
-        <span class="mg-mini-dir ${a}">${e.breaks.includes(t.id) ? "⚡" : D(t.sign) + "▶"}</span>
+        <span class="mg-mini-dir ${a}">${e.breaks.includes(t.id) ? eA("bolt", 11) : `${D(t.sign)}▶`}</span>
         <span class="mg-mini-name">${E(r(t.from))}→${E(r(t.to))}</span>
         <span class="mg-mini-tag">${E(t.label)}${e.breaks.includes(t.id) ? " · 被打破" : ""}</span>
-        <span class="mg-mini-roll ${pA(i?.roll20)}">${i?.roll20 == null ? "—" : `${i.roll20 >= 0 ? "+" : ""}${i.roll20.toFixed(2)}`}</span>
+        <span class="mg-mini-roll ${hA(i?.roll20)}">${i?.roll20 == null ? "—" : `${i.roll20 >= 0 ? "+" : ""}${i.roll20.toFixed(2)}`}</span>
       </li>`;
 	}).join("");
 	return `<div class="mg-card-head"><span class="mg-addr big">${E(e.name)}</span>
@@ -26512,18 +26560,18 @@ function yA(e, t, n) {
     </div>
     <p class="mg-conclusion">${E(e.note)}</p>`;
 }
-function bA(e) {
+function SA(e) {
 	return e === "compass" ? "四象限生态位 · 箭头＝机制假设的方向 · 胶囊＝4 字机理" : e === "mindmap" ? "上游机制 → 焦点 → 下游传导，零交叉" : "选震源 → 直接 / 间接渠道逐层点亮 → 自动拆解相反渠道";
 }
-function xA(e) {
+function CA(e) {
 	return [...e.values()].filter((e) => e.status === "diverged").length;
 }
-function SA(e, t) {
+function wA(e, t) {
 	let n = fe(y, t);
 	if (!n) return "";
 	let r = e.universe.find((e) => e.id === n.e.from), i = e.universe.find((e) => e.id === n.e.to);
 	return `<button type="button" class="mg-alert" data-alert="${E(n.e.id)}">
-      <span class="mg-alert-ico">⚡</span>
+      <span class="mg-alert-ico">${eA("bolt", 13)}</span>
       <span class="mg-alert-text">观测与机制不同：<b>${E(r?.name ?? n.e.from)} ↔ ${E(i?.name ?? n.e.to)}</b>
         ${E(n.r.badge.replace("⚡ ", ""))}，近 20 期滚动相关 ${n.r.roll20 == null ? "样本不足" : `${n.r.roll20 >= 0 ? "+" : ""}${n.r.roll20.toFixed(2)}`}
         （机制方向 ${D(n.e.sign)}）。另一种可能的机制是「${E(n.e.divergence.split("：")[0])}」；
@@ -26531,37 +26579,37 @@ function SA(e, t) {
       <span class="mg-alert-go">查看</span>
     </button>`;
 }
-function CA(e, t, n) {
+function TA(e, t, n) {
 	let r = t.graphMode ?? "compass", i = t.explanation ?? null;
 	if (r === "compass") {
 		let r = de(t.pair?.[0], t.pair?.[1]), i = t.playbook ? w.find((e) => e.id === t.playbook) : null;
-		return i ? yA(i, e, n) : gA(e, r, n, t);
+		return i ? xA(i, e, n) : vA(e, r, n, t);
 	}
-	return r === "mindmap" ? _A(e, t.graphFocus ?? "gold-intl", n, i) : vA(e, t);
+	return r === "mindmap" ? yA(e, t.graphFocus ?? "gold-intl", n, i) : bA(e, t);
 }
-var wA = 0;
-function TA(e, t, n, r) {
+var EA = 0;
+function DA(e, t, n, r) {
 	return `<span class="lg"><svg width="34" height="8" aria-hidden="true"><line x1="1" y1="4" x2="33" y2="4" stroke="${t}" stroke-width="2"${n ? ` stroke-dasharray="${n}"` : ""} marker-end="url(#${e})" /><defs><marker id="${e}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,1.4 L9,5 L0,8.6 Z" fill="${t}" /></marker></defs></svg>${r}</span>`;
 }
-function EA(e) {
-	let t = ++wA;
+function OA(e) {
+	let t = ++EA;
 	return `<div class="mg-legend">
-          ${TA(`lg-a-${t}`, r, "", "正向推升")}
-          ${TA(`lg-b-${t}`, i, "6 4", "负向压制")}
-          ${TA(`lg-c-${t}`, a, "2 4", "观测方向不同")}
+          ${DA(`lg-a-${t}`, r, "", "正向推升")}
+          ${DA(`lg-b-${t}`, i, "6 4", "负向压制")}
+          ${DA(`lg-c-${t}`, a, "2 4", "观测方向不同")}
           <span class="lg noarrow">⇄ 共同驱动 / 历史相关（无箭头＝不表达单向因果）</span>
-          <span class="lg note">箭头方向 = 机制假设的作用方向，不是已证实的因果　·　${bA(e)}</span>
+          <span class="lg note">箭头方向 = 机制假设的作用方向，不是已证实的因果　·　${SA(e)}</span>
         </div>`;
 }
-function DA(e) {
+function kA(e) {
 	let t = e.graphMode ?? "compass";
 	return `<div class="mg-head">
       <h3>金融传导图谱与宏观逻辑沙盘</h3>
       <div class="seg mg-modes">${v.map(([e, n]) => `<button type="button" class="mg-mode ${t === e ? "on" : ""}" data-mode="${E(e)}">${n}</button>`).join("")}</div>
     </div>`;
 }
-function OA(e, t, n) {
-	let r = t.graphMode ?? "compass", i = t.playbook ? w.find((e) => e.id === t.playbook) : null, a = n ? xA(n) : 0;
+function AA(e, t, n) {
+	let r = t.graphMode ?? "compass", i = t.playbook ? w.find((e) => e.id === t.playbook) : null, a = n ? CA(n) : 0;
 	return `<div class="mg-tools">
       ${r === "compass" ? `<div class="mg-playbooks">
         <button type="button" class="mg-pb ${i ? "" : "on"}" data-pb="">全部关系</button>
@@ -26572,7 +26620,7 @@ function OA(e, t, n) {
       </span>
     </div>`;
 }
-function kA(e, t) {
+function jA(e, t) {
 	let n = t.graphMode ?? "compass";
 	return n === "mindmap" ? `<div class="mg-focusbar">${g.map(([e, n]) => `<button type="button" class="mg-fpill ${(t.graphFocus ?? "gold-intl") === e ? "on" : ""}" data-focus="${E(e)}">${E(n)}</button>`).join("")}</div>` : n === "sandbox" ? `<div class="mg-shockbar">
             <span class="mg-shock-label">震源</span>
@@ -26587,32 +26635,32 @@ function kA(e, t) {
             <button type="button" class="mg-sclear" data-clear="1">清除</button>
           </div>` : "";
 }
-function AA(e, t, { legend: n = !0 } = {}) {
+function MA(e, t, { legend: n = !0 } = {}) {
 	let r = t.graphMode ?? "compass", i = ue(e);
 	return `<section class="d-block macro-graph-section">
-    ${DA(t)}
-    ${OA(e, t, i)}
-    ${SA(e, i)}
-    ${kA(e, t)}
+    ${kA(t)}
+    ${AA(e, t, i)}
+    ${wA(e, i)}
+    ${jA(e, t)}
     <div class="graph-stage">
-      <div class="graph-canvas"><div class="mg-x6" id="mg-x6"><div class="mg-x6-loading">正在初始化流程图画布…</div></div>${n ? EA(r) : ""}</div>
-      <aside class="graph-card">${CA(e, t, i)}</aside>
+      <div class="graph-canvas"><div class="mg-x6" id="mg-x6"><div class="mg-x6-loading">正在初始化流程图画布…</div></div>${n ? OA(r) : ""}</div>
+      <aside class="graph-card">${TA(e, t, i)}</aside>
     </div>
   </section>`;
 }
 // src/client/styles/macro-flow.css?inline
-var jA = ".mg-x6{border:1px solid var(--line);contain:paint;background:radial-gradient(760px 420px at 22% -6%,#406ebe1a,#0000 62%),radial-gradient(680px 380px at 88% 108%,#be604013,#0000 60%),#06090d9e;border-radius:14px;height:700px;position:relative;overflow:hidden}.mg-x6-graph{position:absolute;top:0;bottom:0;left:0;right:0}.mg-x6 foreignObject>body,.mg-x6 foreignObject>div,.mg-x6 foreignObject>body>div{background:0 0;margin:0;padding:0}.mg-x6 .x6-graph{background:0 0}.mg-x6-loading{color:var(--muted-2);letter-spacing:.4px;place-items:center;font-size:12px;display:grid;position:absolute;top:0;bottom:0;left:0;right:0}.mg-x6 .x6-node{overflow:visible}.mg-x6 .x6-node:focus{outline:none}.mg-x6 .x6-node:focus-visible{outline:none}.mgx-card{cursor:grab;-webkit-user-select:none;user-select:none;background-color:#0e141d;background-image:linear-gradient(#111823 0%,#0b1119 100%);border:1px solid #ffffff16;border-radius:12px;flex-direction:column;justify-content:center;gap:3px;padding:8px 11px;font-family:inherit;transition:border-color .16s,box-shadow .16s,opacity .16s,transform .16s;display:flex;overflow:hidden;box-shadow:inset 0 1px #ffffff0d,0 10px 24px -14px #000000e6}.mgx-card:active{cursor:grabbing}.mgx-card:before{content:\"\";opacity:.75;border-radius:2px;width:2px;position:absolute;top:12%;bottom:12%;left:0}.mgx-card.zone-anchor:before{background:#9c8bd8}.mgx-card.zone-commodity:before{background:#d8a25c}.mgx-card.zone-hedge:before{background:#6fb4d8}.mgx-card.zone-risk:before{background:#8b97a8}.mgx-card.zone-anchor{border-color:#9c8bd842}.mgx-card.zone-commodity{border-color:#d8a25c42}.mgx-card.zone-hedge{border-color:#6fb4d842}.mgx-card.is-focus,.mgx-card.is-pair{border-color:#f59e0b9e;box-shadow:0 0 0 1px #f59e0b3d,0 10px 26px -12px #f59e0b52}.mgx-card.is-hot,.mgx-card.is-spot{border-color:#e8edf580;transform:translateY(-1px);box-shadow:0 0 0 1px #e8edf529,0 14px 30px -14px #000000f2}.mgx-card.is-dim{opacity:.24}.mg-x6.mgx-spot .mgx-card.is-dim{opacity:.16}.mgx-head{justify-content:space-between;align-items:center;gap:6px;min-width:0;display:flex}.mgx-name{letter-spacing:.2px;color:var(--text);white-space:nowrap;text-overflow:ellipsis;font-size:12px;font-weight:600;overflow:hidden}.mgx-zone{color:var(--muted-2);white-space:nowrap;border:1px solid #ffffff13;border-radius:999px;flex:none;padding:2px 5px;font-size:9px;line-height:1}.mgx-chip{white-space:nowrap;border:1px solid #0000;border-radius:999px;flex:none;padding:2.5px 6px;font-size:9px;line-height:1}.mgx-chip.pos{color:#ff9fad;background:#241015;border-color:#f5455c99}.mgx-chip.src{color:#ffb3bd;background:#2a1116;border-color:#f5455cd9}.mgx-chip.cold{color:#a9c8ff;background:#0e1726;border-color:#5b9cf899}.mgx-chip.mix{color:#f8c063;background:#241a06;border-color:#f59e0bd9;animation:2.1s ease-in-out infinite mgx-chip-breathe}@keyframes mgx-chip-breathe{0%,to{box-shadow:0 0 #f59e0b00}50%{box-shadow:0 0 0 3px #f59e0b29}}.mgx-mid{justify-content:space-between;align-items:baseline;gap:8px;min-width:0;display:flex}.mgx-price{font-family:var(--mono);letter-spacing:-.2px;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;font-size:15px;font-weight:600}.mgx-price.up{color:var(--up)}.mgx-price.down{color:var(--down)}.mgx-chg{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--flat);white-space:nowrap;font-size:10.5px;font-style:normal}.mgx-chg.up{color:var(--up)}.mgx-chg.down{color:var(--down)}.mgx-sub{color:var(--muted-2);white-space:nowrap;border-top:1px dashed #ffffff12;align-items:baseline;gap:5px;padding-top:3px;font-size:9.5px;display:flex;overflow:hidden}.mgx-sub span{flex:none}.mgx-sub b{font-family:var(--mono);color:var(--muted);font-variant-numeric:tabular-nums;font-weight:500}.mgx-sub i{font-family:var(--mono);font-variant-numeric:tabular-nums;margin-left:auto;font-style:normal}.mgx-sub i.up{color:var(--up,#f5455ceb)}.mgx-sub i.down{color:var(--down,#0ecb81eb)}.mgx-card--lg{border-width:1.5px;padding:10px 13px}.mgx-card--lg .mgx-name{font-size:13.5px}.mgx-card--lg .mgx-price{font-size:17px}.mgx-card--lg .mgx-chg{font-size:11px}.mgx-bandlabel{letter-spacing:.7px;white-space:nowrap;color:var(--muted-2);background:#080b10eb;border:1px solid #ffffff0f;border-radius:999px;align-items:center;padding:0 9px;font-size:10px;display:flex}.mgx-bandlabel.anchor{color:#9c8bd8;border-color:#9c8bd840}.mgx-bandlabel.commodity{color:#d8a25c;border-color:#d8a25c40}.mgx-bandlabel.hedge{color:#6fb4d8;border-color:#6fb4d840}.mgx-bandlabel.risk{color:var(--muted)}.mgx-orphan{background:var(--warn-bg,#241a069e);color:var(--warn,#f8c063);border:1px dashed #f59e0b80;border-radius:12px;flex-direction:column;gap:5px;padding:10px 13px;font-size:10px;line-height:1.5;display:flex}.mgx-orphan b{font-size:11px}.mg-x6 .x6-port-body{transition:r .12s,stroke .12s}.mg-x6 .x6-node:hover .x6-port-body{stroke:#e8edf5bf}.mg-x6 .x6-edge{transition:opacity .16s}.mg-x6 .x6-edge[data-cell-id^=flow-] path{animation:1.6s linear infinite mgx-flow}@keyframes mgx-flow{to{stroke-dashoffset:-34px}}.mg-x6 .x6-edge:hover path:nth-child(2),.mg-x6 .x6-edge.edge-hover path:nth-child(2){stroke-width:inherit}.mgx-tools{z-index:20;border:1px solid var(--border,#ffffff14);background:var(--surface-elev,#090d13e0);-webkit-backdrop-filter:blur(10px);border-radius:11px;align-items:center;gap:5px;padding:5px;display:flex;position:absolute;bottom:12px;left:12px;box-shadow:0 10px 26px -16px #00000073}.mgx-tbtn{-webkit-appearance:none;appearance:none;border:1px solid var(--line,#ffffff12);background:var(--panel,#ffffff08);color:var(--muted);cursor:pointer;border-radius:8px;min-width:24px;height:24px;padding:0 7px;font-family:inherit;font-size:11px;line-height:1;transition:color .14s,border-color .14s,background .14s}.mgx-tbtn.wide{white-space:nowrap;padding:0 9px}.mgx-tbtn:hover{color:var(--text);border-color:var(--muted-2,#fff3);background:var(--panel-2,#ffffff12)}.mgx-tbtn:active{transform:translateY(.5px)}.mgx-zoom{font-family:var(--mono);color:var(--muted-2);font-variant-numeric:tabular-nums;text-align:right;min-width:34px;padding:0 4px 0 2px;font-size:10px}@media (max-width:1100px){.mg-x6{height:560px}}@media (max-width:760px){.mg-x6{height:460px}.mgx-tools .mgx-tbtn.wide{display:none}}@media (prefers-reduced-motion:reduce){.mg-x6 .x6-edge path{animation:none!important}.mgx-chip.mix{animation:none}.mgx-card{transition:none}}.mgx-pill-wrap{pointer-events:none;justify-content:center;align-items:center;display:flex}.mgx-pill{letter-spacing:.1px;white-space:nowrap;background:var(--bg-elev,#0b1017);pointer-events:auto;cursor:pointer;border:1px solid;border-radius:999px;justify-content:center;align-items:center;width:100%;height:100%;font-size:9.5px;line-height:1;transition:border-color .14s,background .14s;display:flex}.mg-x6 .mgx-pill.pos{color:#ff8d9c;border-color:#f5455c80}.mg-x6 .mgx-pill.neg{color:#8fbcf7;border-color:#5b9cf880}.mg-x6 .mgx-pill.div{color:#f8c063;border-style:dashed;border-color:#f59e0bb3}.mgx-pill.is-hot{background:var(--panel-2,#121a24);border-width:1.4px}.mgx-pill.pos.is-hot{border-color:#f5455cf2}.mgx-pill.neg.is-hot{border-color:#5b9cf8f2}.mgx-pill.div.is-hot{border-color:#f59e0b}.mgx-pill:hover{background:var(--panel-2,#16202c)}:root[data-theme=light] .mg-x6{border-color:var(--border,#d8dee9);background:radial-gradient(760px 420px at 22% -6%,#1d4ed80d,#0000 62%),radial-gradient(680px 380px at 88% 108%,#b453090b,#0000 60%),#fff}:root[data-theme=light] .mgx-card{border-color:var(--border,#d8dee9);background-color:#fff;background-image:linear-gradient(#fff 0%,#f8fafc 100%);box-shadow:0 4px 14px -8px #10182838}:root[data-theme=light] .mgx-card.is-focus,:root[data-theme=light] .mgx-card.is-pair{border-color:var(--accent,#1d4ed8);box-shadow:0 0 0 1px #1d4ed840,0 10px 24px -12px #10182840}:root[data-theme=light] .mgx-sub{border-top-color:var(--divider,#1018281a)}:root[data-theme=light] .mgx-bandlabel{background:var(--bg-elev,#fff);border-color:var(--border,#d8dee9)}:root[data-theme=light] .mgx-bandlabel.anchor{color:#6d28d9;border-color:#6d28d959}:root[data-theme=light] .mgx-bandlabel.commodity{color:#9a3412;border-color:#9a341259}:root[data-theme=light] .mgx-bandlabel.hedge{color:#0369a1;border-color:#0369a159}:root[data-theme=light] .mgx-chip.pos{color:#b91c1c;background:#fee2e2;border-color:#d61f3c73}:root[data-theme=light] .mgx-chip.src{color:#991b1b;background:#fecaca;border-color:#d61f3ca6}:root[data-theme=light] .mgx-chip.cold{color:#1d4ed8;background:#dbeafe;border-color:#1d4ed873}:root[data-theme=light] .mgx-chip.mix{color:#92400e;background:#fef3c7;border-color:#b453098c}:root[data-theme=light] .mg-x6 .mgx-pill.pos{color:#b91c1c;border-color:#d61f3c73}:root[data-theme=light] .mg-x6 .mgx-pill.neg{color:#1d4ed8;border-color:#1d4ed873}:root[data-theme=light] .mg-x6 .mgx-pill.div{color:#92400e;border-color:#b4530999}:root[data-theme=light] .mgx-pill.is-hot{background:#f1f5f9}", MA = ".macro-graph-section", NA = ".mg-x6", PA = !1;
-function FA() {
-	if (PA || typeof document > "u") return;
+var NA = ".mg-x6{border-radius:var(--radius,10px);border:1px solid var(--line);background:var(--bg-elev,#121419);contain:paint;height:700px;position:relative;overflow:hidden}.mg-x6-graph{position:absolute;top:0;bottom:0;left:0;right:0}.mg-x6 foreignObject>body,.mg-x6 foreignObject>div,.mg-x6 foreignObject>body>div{background:0 0;margin:0;padding:0}.mg-x6 .x6-graph{background:0 0}.mg-x6-loading{color:var(--muted-2);letter-spacing:0;place-items:center;font-size:12px;display:grid;position:absolute;top:0;bottom:0;left:0;right:0}.mg-x6 .x6-node{overflow:visible}.mg-x6 .x6-node:focus{outline:none}.mg-x6 .x6-node:focus-visible{outline:none}.mgx-card{border-radius:var(--radius-md,8px);box-shadow:none;cursor:grab;-webkit-user-select:none;user-select:none;transition:border-color var(--t-fast,.16s) var(--ease-out,ease), opacity var(--t-fast,.16s) var(--ease-out,ease), transform var(--t-fast,.16s) var(--ease-out,ease);background-color:#13151a;background-image:none;border:1px solid #ffffff17;flex-direction:column;justify-content:center;gap:3px;padding:8px 11px;font-family:inherit;display:flex;overflow:hidden}.mgx-card:active{cursor:grabbing}.mgx-card:before{content:\"\";opacity:.8;border-radius:2px;width:2px;position:absolute;top:12%;bottom:12%;left:0}.mgx-card.zone-anchor:before{background:#8797b0}.mgx-card.zone-commodity:before{background:#d49b38}.mgx-card.zone-hedge:before{background:#5b9cf8}.mgx-card.zone-risk:before{background:#8b94a3}.mgx-card.zone-anchor{border-color:#8797b040}.mgx-card.zone-commodity{border-color:#d49b383d}.mgx-card.zone-hedge{border-color:#5b9cf83d}.mgx-card.is-focus,.mgx-card.is-pair{border-color:var(--warn,#d49b38);box-shadow:none}.mgx-card.is-hot,.mgx-card.is-spot{box-shadow:none;border-color:#e6e8ec73;transform:translateY(-1px)}.mgx-card.is-dim{opacity:.24}.mg-x6.mgx-spot .mgx-card.is-dim{opacity:.16}.mgx-head{justify-content:space-between;align-items:center;gap:6px;min-width:0;display:flex}.mgx-name{letter-spacing:0;color:var(--text);white-space:nowrap;text-overflow:ellipsis;font-size:12px;font-weight:600;overflow:hidden}.mgx-zone{color:var(--muted-2);white-space:nowrap;border:1px solid #ffffff14;border-radius:4px;flex:none;padding:2px 5px;font-size:9px;line-height:1}.mgx-chip{white-space:nowrap;border:1px solid #0000;border-radius:4px;flex:none;padding:2.5px 6px;font-size:9px;line-height:1}.mgx-chip.pos{color:#ff9fad;background:#241015;border-color:#ef4b608c}.mgx-chip.src{color:#ffb3bd;background:#2a1116;border-color:#ef4b60cc}.mgx-chip.cold{color:#a9c8ff;background:#101826;border-color:#5b9cf88c}.mgx-chip.mix{color:#f3c168;background:#241a08;border-color:#d49b38cc}.mgx-mid{justify-content:space-between;align-items:baseline;gap:8px;min-width:0;display:flex}.mgx-price{font-family:var(--mono);letter-spacing:-.2px;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;font-size:15px;font-weight:600}.mgx-price.up{color:var(--up)}.mgx-price.down{color:var(--down)}.mgx-chg{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--flat);white-space:nowrap;font-size:10.5px;font-style:normal}.mgx-chg.up{color:var(--up)}.mgx-chg.down{color:var(--down)}.mgx-sub{color:var(--muted-2);white-space:nowrap;border-top:1px dashed #ffffff12;align-items:baseline;gap:5px;padding-top:3px;font-size:9.5px;display:flex;overflow:hidden}.mgx-sub span{flex:none}.mgx-sub b{font-family:var(--mono);color:var(--muted);font-variant-numeric:tabular-nums;font-weight:500}.mgx-sub i{font-family:var(--mono);font-variant-numeric:tabular-nums;margin-left:auto;font-style:normal}.mgx-sub i.up{color:var(--up,#f5455ceb)}.mgx-sub i.down{color:var(--down,#0ecb81eb)}.mgx-card--lg{border-width:1.5px;padding:10px 13px}.mgx-card--lg .mgx-name{font-size:13.5px}.mgx-card--lg .mgx-price{font-size:17px}.mgx-card--lg .mgx-chg{font-size:11px}.mgx-bandlabel{border-radius:var(--radius-xs,4px);letter-spacing:0;white-space:nowrap;color:var(--muted-2);background:#121419;border:1px solid #ffffff14;align-items:center;padding:0 8px;font-size:10px;display:flex}.mgx-bandlabel.anchor{color:#8797b0;border-color:#8797b040}.mgx-bandlabel.commodity{color:#d49b38;border-color:#d49b3840}.mgx-bandlabel.hedge{color:#5b9cf8;border-color:#5b9cf840}.mgx-bandlabel.risk{color:var(--muted)}.mgx-orphan{background:var(--warn-bg,#241a069e);color:var(--warn,#f8c063);border:1px dashed #f59e0b80;border-radius:12px;flex-direction:column;gap:5px;padding:10px 13px;font-size:10px;line-height:1.5;display:flex}.mgx-orphan b{font-size:11px}.mg-x6 .x6-port-body{transition:r .12s,stroke .12s}.mg-x6 .x6-node:hover .x6-port-body{stroke:#e8edf5bf}.mg-x6 .x6-edge{transition:opacity .16s}.mg-x6 .x6-edge[data-cell-id^=flow-] path{animation:1.6s linear infinite mgx-flow}@keyframes mgx-flow{to{stroke-dashoffset:-34px}}.mg-x6 .x6-edge:hover path:nth-child(2),.mg-x6 .x6-edge.edge-hover path:nth-child(2){stroke-width:inherit}.mgx-tools{z-index:20;border-radius:var(--radius-md,8px);border:1px solid var(--border);background:var(--bg-elev,#121419);box-shadow:none;align-items:center;gap:4px;padding:4px;display:flex;position:absolute;bottom:12px;left:12px}.mgx-tbtn{-webkit-appearance:none;appearance:none;border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:var(--radius-sm,6px);cursor:pointer;justify-content:center;align-items:center;min-width:24px;height:24px;padding:0 7px;font-family:inherit;font-size:11px;line-height:1;transition:color .14s,border-color .14s,background .14s;display:inline-flex}.mgx-tbtn.wide{white-space:nowrap;padding:0 9px}.mgx-tbtn:hover{color:var(--text);border-color:var(--muted-2,#fff3);background:var(--panel-2,#ffffff12)}.mgx-tbtn:active{transform:translateY(.5px)}.mgx-zoom{font-family:var(--mono);color:var(--muted-2);font-variant-numeric:tabular-nums;text-align:right;min-width:34px;padding:0 4px 0 2px;font-size:10px}@media (max-width:1100px){.mg-x6{height:560px}}@media (max-width:760px){.mg-x6{height:460px}.mgx-tools .mgx-tbtn.wide{display:none}}@media (prefers-reduced-motion:reduce){.mg-x6 .x6-edge path{animation:none!important}.mgx-chip.mix{animation:none}.mgx-card{transition:none}}.mgx-pill-wrap{pointer-events:none;justify-content:center;align-items:center;display:flex}.mgx-pill{letter-spacing:0;white-space:nowrap;background:var(--bg-elev,#121419);pointer-events:auto;cursor:pointer;width:100%;height:100%;transition:border-color var(--t-fast,.16s) var(--ease-out,ease), background var(--t-fast,.16s) var(--ease-out,ease);border:1px solid;border-radius:5px;justify-content:center;align-items:center;font-size:9.5px;line-height:1;display:flex}.mg-x6 .mgx-pill.pos{color:#ff8d9c;border-color:#ef4b607a}.mg-x6 .mgx-pill.neg{color:#8fbcf7;border-color:#5b9cf87a}.mg-x6 .mgx-pill.div{color:#e4b55d;border-style:dashed;border-color:#d49b38b3}.mgx-pill.is-hot{background:var(--panel-2);border-width:1.4px}.mgx-pill.pos.is-hot{border-color:#ef4b60eb}.mgx-pill.neg.is-hot{border-color:#5b9cf8eb}.mgx-pill.div.is-hot{border-color:#d49b38}.mgx-pill:hover{background:var(--panel-2)}:root[data-theme=light] .mg-x6{border-color:var(--border,#dcdfe6);background:#fff}:root[data-theme=light] .mgx-card{border-color:var(--border,#dcdfe6);box-shadow:none;background-color:#fff;background-image:none}:root[data-theme=light] .mgx-card.is-focus,:root[data-theme=light] .mgx-card.is-pair{border-color:var(--accent,#1e40af);box-shadow:none}:root[data-theme=light] .mgx-sub{border-top-color:var(--divider,#10141c14)}:root[data-theme=light] .mgx-bandlabel{background:var(--bg-elev,#fff);border-color:var(--border,#dcdfe6)}:root[data-theme=light] .mgx-bandlabel.anchor{color:#475569;border-color:#47556959}:root[data-theme=light] .mgx-bandlabel.commodity{color:#9a3412;border-color:#9a341259}:root[data-theme=light] .mgx-bandlabel.hedge{color:#0369a1;border-color:#0369a159}:root[data-theme=light] .mgx-chip.pos{color:#b91c1c;background:#fee2e2;border-color:#d61f3c73}:root[data-theme=light] .mgx-chip.src{color:#991b1b;background:#fecaca;border-color:#d61f3ca6}:root[data-theme=light] .mgx-chip.cold{color:#1d4ed8;background:#dbeafe;border-color:#1d4ed873}:root[data-theme=light] .mgx-chip.mix{color:#92400e;background:#fef3c7;border-color:#b453098c}:root[data-theme=light] .mg-x6 .mgx-pill.pos{color:#b91c1c;border-color:#d61f3c73}:root[data-theme=light] .mg-x6 .mgx-pill.neg{color:#1d4ed8;border-color:#1d4ed873}:root[data-theme=light] .mg-x6 .mgx-pill.div{color:#92400e;border-color:#b4530999}:root[data-theme=light] .mgx-pill.is-hot{background:#f1f5f9}", PA = ".macro-graph-section", FA = ".mg-x6", IA = !1;
+function LA() {
+	if (IA || typeof document > "u") return;
 	let e = document.createElement("style");
-	e.id = "macro-flow-css", e.textContent = jA, document.head.appendChild(e), PA = !0;
+	e.id = "macro-flow-css", e.textContent = NA, document.head.appendChild(e), IA = !0;
 }
-var IA = /* @__PURE__ */ new WeakMap();
-function LA(e, t, n) {
-	let r = e.querySelector(MA);
-	return r && r.querySelector(".mg-x6") || (HA(e), e.innerHTML = AA(t, n, { legend: !0 }), r = e.querySelector(MA)), r;
+var RA = /* @__PURE__ */ new WeakMap();
+function zA(e, t, n) {
+	let r = e.querySelector(PA);
+	return r && r.querySelector(".mg-x6") || (WA(e), e.innerHTML = MA(t, n, { legend: !0 }), r = e.querySelector(PA)), r;
 }
-function RA(e, t, n) {
+function BA(e, t, n) {
 	let r = e.querySelector(t);
 	if (!n) {
 		r?.remove();
@@ -26629,10 +26677,10 @@ function RA(e, t, n) {
 	let o = e.querySelector(".graph-stage");
 	o ? o.before(a) : e.appendChild(a);
 }
-function zA(e, t, n, r) {
-	RA(e, ".mg-head", DA(n)), RA(e, ".mg-tools", OA(t, n, r));
+function VA(e, t, n, r) {
+	BA(e, ".mg-head", kA(n)), BA(e, ".mg-tools", AA(t, n, r));
 	for (let t of e.querySelectorAll(".mg-alert")) t.remove();
-	let i = SA(t, r);
+	let i = wA(t, r);
 	if (i) {
 		let t = document.createElement("div");
 		t.innerHTML = i.trim();
@@ -26642,9 +26690,9 @@ function zA(e, t, n, r) {
 			t ? t.before(n) : e.appendChild(n);
 		}
 	}
-	RA(e, ".mg-focusbar", n.graphMode === "mindmap" ? kA(t, n) : ""), RA(e, ".mg-shockbar", n.graphMode === "sandbox" ? kA(t, n) : ""), RA(e, ".mg-legend", EA(n.graphMode ?? "compass")), RA(e, ".graph-card", `<aside class="graph-card">${CA(t, n, r)}</aside>`);
+	BA(e, ".mg-focusbar", n.graphMode === "mindmap" ? jA(t, n) : ""), BA(e, ".mg-shockbar", n.graphMode === "sandbox" ? jA(t, n) : ""), BA(e, ".mg-legend", OA(n.graphMode ?? "compass")), BA(e, ".graph-card", `<aside class="graph-card">${TA(t, n, r)}</aside>`);
 }
-function BA(e) {
+function HA(e) {
 	if (e.graphMode === "sandbox" && e.shock) {
 		let t = u(e.shock.id, e.shockCondition ?? "unknown"), n = pe(e.shock.id, e.shock.dir, 2, { activeEdges: t.enabled ? new Set(t.enabled) : null }), r = /* @__PURE__ */ new Set(), i = /* @__PURE__ */ new Set([e.shock.id]);
 		for (let [e, t] of n) {
@@ -26681,17 +26729,17 @@ function BA(e) {
 		active: null
 	};
 }
-function VA(e, t, n, r = {}) {
+function UA(e, t, n, r = {}) {
 	if (!e || !t) return;
-	FA();
-	let i = ue(t), a = LA(e, t, n), { prop: o, active: s } = BA(n), c = de(n.pair?.[0], n.pair?.[1]), l = /* @__PURE__ */ new Set();
+	LA();
+	let i = ue(t), a = zA(e, t, n), { prop: o, active: s } = HA(n), c = de(n.pair?.[0], n.pair?.[1]), l = /* @__PURE__ */ new Set();
 	c && l.add(c.id);
-	let u = IA.get(e), d = a.querySelector(NA);
+	let u = RA.get(e), d = a.querySelector(FA);
 	return !u && d && (d.innerHTML = "", u = new Qk(d, {
 		onEdge: (e) => r.onEdge?.(e),
 		onNode: (e) => r.onNode?.(e),
 		onNodeDbl: (e) => r.onNodeDbl?.(e)
-	}), IA.set(e, u), typeof window < "u" && (window.__mgxCanvas = u)), zA(a, t, n, i), u?.update({
+	}), RA.set(e, u), typeof window < "u" && (window.__mgxCanvas = u)), VA(a, t, n, i), u?.update({
 		data: t,
 		state: n,
 		reality: i,
@@ -26705,7 +26753,7 @@ function VA(e, t, n, r = {}) {
 		canvas: u
 	};
 }
-function HA(e) {
-	IA.get(e)?.dispose(), IA.delete(e);
+function WA(e) {
+	RA.get(e)?.dispose(), RA.delete(e);
 }
-export { NA as CANVAS, S as CORE_EDGES, v as MODES, MA as SECTION, BA as activeEdgeSets, IA as canvases, HA as destroyMacroFlow, LA as ensureSection, FA as injectStyle, VA as renderMacroFlow, PA as styleInjected, RA as swap, zA as syncChrome };
+export { FA as CANVAS, S as CORE_EDGES, v as MODES, PA as SECTION, HA as activeEdgeSets, RA as canvases, WA as destroyMacroFlow, zA as ensureSection, LA as injectStyle, UA as renderMacroFlow, IA as styleInjected, BA as swap, VA as syncChrome };
