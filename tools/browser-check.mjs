@@ -194,7 +194,8 @@ async function startMockLlmServer() {
       for (const piece of [
         '### 行情速览\n\n',
         '已读取看板实时行情，详情见 [国际金价](#/d/gold-intl)。\n\n',
-        '| 项目 | 说明 |\n| --- | --- |\n| 数据口径 | 看板本地快照 |\n',
+        '| 项目 | 说明 |\n| --- | --- |\n| 数据口径 | 看板本地快照 |\n\n',
+        '```chart\n{"type":"graph","title":"测试传导链路","nodes":[{"id":"n1","label":"美债收益率","tone":"warn"},{"id":"n2","label":"国际金价","tone":"accent"}],"edges":[{"from":"n1","to":"n2","label":"贴现压力"}]}\n```\n',
       ]) {
         sendChunk({ choices: [{ index: 0, delta: { content: piece } }] });
       }
@@ -1062,14 +1063,15 @@ async function main() {
         traceErrors: document.querySelectorAll('#ask-messages .ask-trace-item.is-error').length,
         hasH3: Boolean(answer?.querySelector('h3')),
         hasTable: Boolean(answer?.querySelector('table')),
+        hasChartSvg: Boolean(answer?.querySelector('svg.md-chart-svg')),
         linkHref: answer?.querySelector('a')?.getAttribute('href') ?? null,
         sessionCount: document.querySelectorAll('#ask-history-list .ask-history-item').length,
       };
     })()`);
     const as = askStreamRes.value ?? {};
     record(
-      as.traceCollapsedByDefault === true && as.traceSummary.includes('1') && (as.traceItems ?? 0) >= 1 && as.traceErrors === 0 && as.hasH3 && as.hasTable && as.linkHref === '#/d/gold-intl' && (as.sessionCount ?? 0) >= 1,
-      'SSE 流式提问、get_global_quotes 成功取数与轨迹折叠、安全 Markdown 与会话历史全部闭环',
+      as.traceCollapsedByDefault === true && as.traceSummary.includes('1') && (as.traceItems ?? 0) >= 1 && as.traceErrors === 0 && as.hasH3 && as.hasTable && as.hasChartSvg && as.linkHref === '#/d/gold-intl' && (as.sessionCount ?? 0) >= 1,
+      'SSE 流式提问、get_global_quotes 成功取数与轨迹折叠、安全 Markdown 与内嵌图表及会话历史全部闭环',
       JSON.stringify(as),
     );
 

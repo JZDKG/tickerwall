@@ -14,6 +14,7 @@
  * ================================================================== */
 
 import { html, safeHref } from './format.js';
+import { isChartFence, renderChartBlock } from './ask-charts.js';
 
 /** 站内链接只认这些路由，避免 `#/javascript:...` 这类伪路由混进来 */
 const SAFE_HASH_ROUTE = /^#\/(?:d\/[A-Za-z0-9._-]+|macro|events|map|watch|ask)$/;
@@ -195,13 +196,22 @@ export function markdownToSafeHtml(text) {
     }
 
     if (FENCE_RE.test(line)) {
+      const lang = line.trim().slice(3).trim().split(/\s+/)[0].toLowerCase();
       i += 1;
       const code = [];
       while (i < lines.length && !FENCE_RE.test(lines[i])) {
         code.push(lines[i]);
         i += 1;
       }
-      if (i < lines.length) i += 1;
+      const closed = i < lines.length;
+      if (closed) i += 1;
+      if (isChartFence(lang)) {
+        const chart = renderChartBlock(lang, code.join('\n'), { closed });
+        if (chart) {
+          blocks.push(chart);
+          continue;
+        }
+      }
       blocks.push(html`<pre class="md-code"><code>${code.join('\n')}</code></pre>`);
       continue;
     }

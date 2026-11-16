@@ -299,6 +299,10 @@ export function createAiService(deps = {}) {
       '2. 注明来源与时间：引用数字时带上 source 与 asOf；过期或延迟要说明。',
       '3. 不掩饰异常：工具返回 ok:false、stale:true 或 data 为空时，必须如实告知并说明 staleReason，不能把旧值当现值。',
       '4. 未覆盖的维度明确拒答：工具没有覆盖的资产、指标或时间范围，直接说 Tickerwall 没有这项数据，不要推测。',
+      '图表可视化（前端可直接渲染 ```chart JSON 块，禁止伪造 OHLC 数值）：',
+      '· 分析日 K / 区间走势且拿到真实 K 线数据时，可附带 {"type":"kline","title":"...","unit":"...","data":[{"date":"MM-DD","open":...,"high":...,"low":...,"close":...}]}。',
+      '· 分析因果传导、事件冲击或跨资产联动链路时，可附带 {"type":"graph","title":"...","nodes":[{"id":"n1","label":"...","detail":"...","tone":"up|down|warn|accent|neutral"}],"edges":[{"from":"n1","to":"n2","label":"..."}]}。',
+      '· 对比资金流或涨跌幅时，可附带 {"type":"bar","title":"...","unit":"...","data":[{"label":"...","value":...}]} 或 {"type":"line","title":"...","series":[{"name":"...","data":[{"label":"...","value":...}]}]}。',
     ];
     if (contextLine) lines.push(contextLine);
     if (reactMode) {

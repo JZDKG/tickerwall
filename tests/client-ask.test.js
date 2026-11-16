@@ -213,6 +213,227 @@ describe('markdownToSafeHtml：GFM 表格', () => {
   });
 });
 
+describe('markdownToSafeHtml：内嵌图表（K 线 / 关系图 / 条形图 / 折线图）', () => {
+  it('K 线 JSON 块渲染蜡烛柱、影线、MA5 与涨跌幅', () => {
+    const kline = JSON.stringify({
+      type: 'kline',
+      title: '国际金价近 6 日 K 线',
+      unit: '美元',
+      data: [
+        { date: '11-09', open: 4100, high: 4150, low: 4080, close: 4140 },
+        { date: '11-10', open: 4140, high: 4145, low: 4020, close: 4032 },
+        { date: '11-11', open: 4032, high: 4050, low: 3970, close: 3987 },
+        { date: '11-12', open: 3987, high: 4000, low: 3852, close: 3877 },
+        { date: '11-13', open: 3877, high: 3895, low: 3860, close: 3880 },
+        { date: '11-16', open: 3880, high: 3901, low: 3863, close: 3890 },
+      ],
+    });
+    const out = asText(markdownToSafeHtml(`\`\`\`chart\n${kline}\n\`\`\``));
+    expect(out).toContain('<figure class="md-chart md-chart-kline">');
+    expect(out).toContain('国际金价近 6 日 K 线');
+    expect(out).toContain('class="md-kline-wick is-up"');
+    expect(out).toContain('class="md-kline-body is-down"');
+    expect(out).toContain('class="md-kline-ma"');
+    expect(out).toContain('11-16');
+  });
+
+  it('关系传导图（JSON 与简化 Mermaid，含成环保护）均渲染为矢量 DAG', () => {
+    const graphJson = JSON.stringify({
+      type: 'graph',
+      title: '利率与金价传导链路',
+      nodes: [
+        { id: 'fed', label: '美联储鹰派', detail: '加息预期 95%', tone: 'warn' },
+        { id: 'us10y', label: '美债 10Y 上行', detail: '5.14%', tone: 'up' },
+        { id: 'gold', label: '国际金价承压', detail: '3876', tone: 'down' },
+      ],
+      edges: [
+        { from: 'fed', to: 'us10y', label: '推升实际利率' },
+        { from: 'us10y', to: 'gold', label: '机会成本上升' },
+        { from: 'gold', to: 'fed', label: '反向校验成环' },
+      ],
+    });
+    const out = asText(markdownToSafeHtml(`\`\`\`chart\n${graphJson}\n\`\`\``));
+    expect(out).toContain('<figure class="md-chart md-chart-graph">');
+    expect(out).toContain('tone-warn');
+    expect(out).toContain('推升实际利率');
+    expect(out).toContain('marker-end="url(#md-arrow-');
+
+    const mermaid = '```mermaid\ngraph LR\n  A[央行购金] -->|储备需求| B[现货买盘] --> C[金价支撑]\n```';
+    const mOut = asText(markdownToSafeHtml(mermaid));
+    expect(mOut).toContain('<figure class="md-chart md-chart-graph">');
+    expect(mOut).toContain('央行购金');
+    expect(mOut).toContain('储备需求');
+    expect(mOut).toContain('金价支撑');
+  });
+
+  it('柱状图与折线图渲染正常', () => {
+    const bar = JSON.stringify({
+      type: 'bar',
+      title: '资金流向净额',
+      unit: '亿元',
+      data: [
+        { label: '大单', value: 3.14 },
+        { label: '超大单', value: -1.08 },
+        { label: '占比参考', value: 0.4567, tone: 'accent' },
+        { label: '零净额', value: 0 },
+      ],
+    });
+    const line = JSON.stringify({
+      type: 'line',
+      title: '净值趋势',
+      series: [
+        { name: '黄金', data: [{ label: 'T-2', value: 100 }, { label: 'T-1', value: 102 }, { label: 'T', value: 104 }] },
+        { name: '美元', data: [{ label: 'T-2', value: 100 }, { label: 'T-1', value: 99 }, { label: 'T', value: 98 }] },
+      ],
+    });
+    const out = asText(markdownToSafeHtml(`\`\`\`chart\n${bar}\n\`\`\`\n\n\`\`\`chart\n${line}\n\`\`\``));
+    expect(out).toContain('<figure class="md-chart md-chart-bar">');
+    expect(out).toContain('md-bar-fill is-up');
+    expect(out).toContain('md-bar-fill is-down');
+    expect(out).toContain('md-bar-fill is-accent');
+    expect(out).toContain('+3.14 亿元');
+    expect(out).toContain('0.4567 亿元');
+    expect(out).toContain('<figure class="md-chart md-chart-line">');
+    expect(out).toContain('md-line-path series-0');
+    expect(out).toContain('md-line-path series-1');
+  });
+
+  it('K 线、关系图、条形图与折线图的字段推断与边界分支完整', () => {
+    // 1. 缺省 type 时自动推断：kline（2 根、flat span、open=0、无 MA5、中文超长标题截断）
+    const kShort = JSON.stringify({
+      data: [
+        { date: '11-15', open: 0, high: 1200, low: 1200, close: 1200 },
+        { date: '11-16', open: 1200, high: 1200, low: 1200, close: 1200 },
+        null,
+        { date: 'bad', open: 10, high: 5, low: 8, close: 9 },
+      ],
+    });
+    const kOut = asText(markdownToSafeHtml(`\`\`\`kline\n${kShort}\n\`\`\``));
+    expect(kOut).toContain('<figure class="md-chart md-chart-kline">');
+    expect(kOut).toContain('0.00%');
+    expect(kOut).not.toContain('MA5');
+
+    // kline fence 省略 type 与 kline 数据
+    const kInfer = asText(markdownToSafeHtml(`\`\`\`chart\n${JSON.stringify({
+      data: [
+        { date: 'D1', open: 2.5, high: 3.0, low: 2.4, close: 2.8 },
+        { date: 'D2', open: 2.8, high: 2.9, low: 2.1, close: 2.2 },
+      ],
+    })}\n\`\`\``));
+    expect(kInfer).toContain('<figure class="md-chart md-chart-kline">');
+    expect(kInfer).toContain('-12.00%');
+
+    // 2. Mermaid：RL 反向、注释/subgraph 跳过、分号多句、圆角/菱形标签、标签延迟覆盖、虚线/粗箭头与不完整回退
+    const rlMermaid = [
+      '```mermaid',
+      'flowchart RL',
+      '%% 注释应跳过',
+      'subgraph macro',
+      '  S[独立节点标签]; A --> B;',
+      '  A(超长多字节节点名称超出宽度限制需要被优雅截断显示) -.->|虚线标签| C{菱形标签};',
+      '  B ==>|粗箭头超过十二列被裁剪| D; A -- 传导机制标签超过十二列被裁 --> B; B --> B',
+      'end',
+      '```',
+    ].join('\n');
+    const mOut = asText(markdownToSafeHtml(rlMermaid));
+    expect(mOut).toContain('<figure class="md-chart md-chart-graph">');
+    expect(mOut).toContain('…');
+    expect(mOut).toContain('虚线标签');
+
+    const badMermaid = asText(markdownToSafeHtml('```mermaid\ngraph LR\n  OnlyOne[单节点]\n```'));
+    expect(badMermaid).toContain('<pre class="md-code">');
+
+    // 3. graph 自动补全未在 nodes 声明的 from/to 端点、4 列深链布局、无 title 无 detail 分支
+    const gOut = asText(markdownToSafeHtml(`\`\`\`graph\n${JSON.stringify({
+      nodes: [null, { id: 'n2', label: '节点二', tone: 'UNKNOWN' }],
+      edges: [
+        null,
+        { from: '', to: 'n2' },
+        { from: 'n1', to: 'n2', label: '短边' },
+        { from: 'n2', to: 'n3' },
+        { from: 'n3', to: 'n4' },
+      ],
+    })}\n\`\`\``));
+    expect(gOut).toContain('<figure class="md-chart md-chart-graph">');
+    expect(gOut).toContain('n1');
+    expect(gOut).toContain('n4');
+    expect(gOut).not.toContain('<figcaption');
+
+    // 4. bar 无单位 & 数据不足回退
+    const bNoUnit = asText(markdownToSafeHtml(`\`\`\`chart\n${JSON.stringify({
+      data: [null, { label: '单条', value: 5 }, { label: '', value: 9 }],
+    })}\n\`\`\``));
+    expect(bNoUnit).toContain('<figure class="md-chart md-chart-bar">');
+    expect(bNoUnit).not.toContain('单位：');
+    expect(asText(markdownToSafeHtml('```chart\n{"type":"bar","data":[]}\n```'))).toContain('<pre class="md-code">');
+
+    // 5. line 单序列 spec.data + ≥6 点平直线 + 带单位 + 缺失 label/非数值过滤
+    const lFlat = asText(markdownToSafeHtml(`\`\`\`chart\n${JSON.stringify({
+      type: 'line',
+      unit: '%',
+      data: [
+        null,
+        { date: '1', value: 5 },
+        { date: '2', value: 5 },
+        { value: 'bad' },
+        { value: 5 },
+        { date: '3', value: 5 },
+        { date: '4', value: 5 },
+        { date: '5', value: 5 },
+        { date: '6', value: 5 },
+      ],
+    })}\n\`\`\``));
+    expect(lFlat).toContain('<figure class="md-chart md-chart-line">');
+    expect(lFlat).toContain('单位：%');
+    expect(lFlat).toContain('>3</text>');
+
+    const lInferred = asText(markdownToSafeHtml(`\`\`\`chart\n${JSON.stringify({
+      series: [null, { data: [{ label: 'a', value: 1 }, { label: 'b', value: 2 }] }],
+    })}\n\`\`\``));
+    expect(lInferred).toContain('<figure class="md-chart md-chart-line">');
+
+    // 6. 空块、空对象、数组/原始 JSON、未知 type、纯文本图谱点数与缺失字段全部优雅回退
+    for (const rawCase of [
+      '```chart\n\n```',
+      '```chart\n{}\n```',
+      '```chart\n[1,2,3]\n```',
+      '```chart\n{"type":"pie","data":[1,2]}\n```',
+      '```chart\n{"type":"kline","data":[{"date":"1","open":1,"high":2,"low":1,"close":2}]}\n```',
+      '```chart\n{"type":"bar"}\n```',
+      '```chart\n{"type":"bar","data":[{"value":3}]}\n```',
+      '```chart\n{"type":"line"}\n```',
+      '```chart\n{"type":"line","data":[{"label":"1","value":1}]}\n```',
+      '```chart\n{"type":"graph","nodes":[{"id":"a"}],"edges":[]}\n```',
+      '```chart\n{"type":"graph","nodes":[],"edges":[{"from":"x"}]}\n```',
+    ]) {
+      expect(asText(markdownToSafeHtml(rawCase))).toContain('<pre class="md-code">');
+    }
+  });
+
+  it('流式未闭合图表块显示占位提示，非法 JSON 回退为代码块且图表文案完整转义', () => {
+    const pending = asText(markdownToSafeHtml('```chart\n{"type":"kline"'));
+    expect(pending).toContain('正在绘制图表…');
+    expect(pending).not.toContain('<svg');
+
+    const invalid = asText(markdownToSafeHtml('```chart\n{not valid json}\n```'));
+    expect(invalid).toContain('<pre class="md-code"><code>{not valid json}</code></pre>');
+
+    const xssGraph = JSON.stringify({
+      type: 'graph',
+      title: '<script>alert(1)</script>',
+      nodes: [
+        { id: 'a', label: '<img src=x onerror=alert(1)>' },
+        { id: 'b', label: '正常节点' },
+      ],
+      edges: [{ from: 'a', to: 'b', label: '<b>边</b>' }],
+    });
+    const xssOut = asText(markdownToSafeHtml(`\`\`\`chart\n${xssGraph}\n\`\`\``));
+    expect(xssOut).not.toContain('<script>');
+    expect(xssOut).not.toContain('<img');
+    expect(xssOut).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+  });
+});
+
 /* ------------------------------------------------------------------ *
  * ask-models.js —— 模型配置弹窗
  * ------------------------------------------------------------------ */
