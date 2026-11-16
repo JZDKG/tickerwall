@@ -903,7 +903,7 @@ describe('mountAsk：工作区、流式渲染与生命周期', () => {
     expect($('#ask-model-select').disabled).toBe(false);
   });
 
-  it('历史会话可展开、恢复与一键删除', async () => {
+  it('历史会话常驻左侧，可恢复与一键删除', async () => {
     const session = {
       id: 's1', title: '黄金分析', updatedAt: Date.now(),
       messages: [
@@ -915,7 +915,7 @@ describe('mountAsk：工作区、流式渲染与生命周期', () => {
     askView.mountAsk('', { api, document, window, quotes });
     await waitFor(() => $('#ask-model-select option[value="m1"]'));
 
-    $('#ask-history-btn').click();
+    expect($('#ask-history-btn')).toBeNull();
     expect($('#ask-history').hidden).toBe(false);
     $('#ask-history [data-session-id="s1"]').click();
     await waitFor(() => $('#ask-messages').textContent.includes('黄金怎么看？'));
@@ -1026,7 +1026,7 @@ describe('mountAsk：工作区、流式渲染与生命周期', () => {
     await waitFor(() => $('.ask-error')?.textContent.includes('网络断了'));
   });
 
-  it('历史会话加载失败可重试，空列表与收起都正常', async () => {
+  it('历史会话常驻且加载失败可重试，空列表显示正常', async () => {
     const { api } = fakeAskApi({ models: [MODEL], sessions: [] });
     const originalGet = api.get;
     let fail = true;
@@ -1036,18 +1036,13 @@ describe('mountAsk：工作区、流式渲染与生命周期', () => {
     };
     askView.mountAsk('', { api, document, window, quotes });
     await waitFor(() => $('#ask-model-select option[value="m1"]'));
-    $('#ask-history-btn').click();
-    expect($('.ask-body').classList.contains('is-history-open')).toBe(true);
+    expect($('#ask-history').hidden).toBe(false);
     await waitFor(() => $('#ask-history [data-history-act="retry"]'));
 
     fail = false;
     $('#ask-history [data-history-act="retry"]').click();
     await waitFor(() => $('#ask-history-list')?.textContent.includes('暂无历史会话'));
-
-    $('#ask-history [data-history-act="close"]').click();
-    expect($('#ask-history').hidden).toBe(true);
-    expect($('.ask-body').classList.contains('is-history-open')).toBe(false);
-    expect($('#ask-history-btn').getAttribute('aria-expanded')).toBe('false');
+    expect($('#ask-history').hidden).toBe(false);
   });
 
   it('恢复会话时过滤非对话角色、补默认字段并同步模型', async () => {
@@ -1066,7 +1061,6 @@ describe('mountAsk：工作区、流式渲染与生命周期', () => {
     });
     askView.mountAsk('', { api, document, window, quotes });
     await waitFor(() => $('#ask-model-select option[value="m1"]'));
-    $('#ask-history-btn').click();
     await waitFor(() => $('#ask-history [data-session-id="s1"]'));
     expect($('#ask-history').textContent).toContain('未命名会话');
     $('#ask-history [data-session-id="s1"]').click();
@@ -1093,7 +1087,6 @@ describe('mountAsk：工作区、流式渲染与生命周期', () => {
     };
     askView.mountAsk('', { api, document, window, quotes });
     await waitFor(() => $('#ask-model-select option[value="m1"]'));
-    $('#ask-history-btn').click();
     await waitFor(() => $('#ask-history [data-session-id="s1"]'));
     $('#ask-history [data-session-id="s1"]').click();
     await waitFor(() => $('#ask-history').textContent.includes('会话加载失败'));
@@ -1115,7 +1108,6 @@ describe('mountAsk：工作区、流式渲染与生命周期', () => {
     });
     askView.mountAsk('', { api, document, window, quotes });
     await waitFor(() => $('#ask-model-select option[value="m1"]'));
-    $('#ask-history-btn').click();
     await waitFor(() => $('#ask-history [data-session-id="s1"]'));
     $('#ask-history [data-session-id="s1"]').click();
     await waitFor(() => $('#ask-messages').textContent.includes('你好'));
@@ -1124,7 +1116,7 @@ describe('mountAsk：工作区、流式渲染与生命周期', () => {
     expect(calls.post.at(-1).body).toEqual({ action: 'delete', id: 's1' });
   });
 
-  it('新对话清空当前会话与消息，并收起历史侧栏', async () => {
+  it('新对话清空当前会话与消息，并取消历史侧栏高亮', async () => {
     const { api } = fakeAskApi({
       models: [MODEL],
       sessions: [{ id: 's1', title: '黄金分析' }],
@@ -1132,14 +1124,15 @@ describe('mountAsk：工作区、流式渲染与生命周期', () => {
     });
     askView.mountAsk('', { api, document, window, quotes });
     await waitFor(() => $('#ask-model-select option[value="m1"]'));
-    $('#ask-history-btn').click();
     await waitFor(() => $('#ask-history [data-session-id="s1"]'));
     $('#ask-history [data-session-id="s1"]').click();
     await waitFor(() => $('#ask-messages').textContent.includes('旧问题'));
+    expect($('.ask-history-item.is-active')).not.toBeNull();
     $('#ask-new-btn').click();
     expect($('#ask-messages').textContent).not.toContain('旧问题');
     expect($$('#ask-messages [data-starter]').length).toBeGreaterThanOrEqual(4);
-    expect($('#ask-history').hidden).toBe(true);
+    expect($('.ask-history-item.is-active')).toBeNull();
+    expect($('#ask-history').hidden).toBe(false);
   });
 
   it('模型配置保存后 onChanged 会重新拉取模型列表', async () => {
@@ -1245,7 +1238,6 @@ describe('mountAsk：工作区、流式渲染与生命周期', () => {
     });
     askView.mountAsk('', { api, document, window, quotes });
     await waitFor(() => $('#ask-model-select option[value="m1"]'));
-    $('#ask-history-btn').click();
     await waitFor(() => $('#ask-history [data-session-id="gone"]'));
     $('#ask-history [data-session-id="gone"]').click();
     await waitFor(() => $('#ask-history').textContent.includes('会话加载失败'));

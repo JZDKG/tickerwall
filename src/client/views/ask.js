@@ -267,15 +267,13 @@ export function mountAsk(arg = '', {
         <button type="button" class="ask-btn" id="ask-models-btn">模型配置</button>
       </div>
       <div class="ask-toolbar-group ask-toolbar-right">
-        <button type="button" class="ask-btn" id="ask-history-btn" aria-expanded="false" aria-controls="ask-history">历史会话</button>
         <button type="button" class="ask-btn" id="ask-new-btn">新对话</button>
       </div>
     </header>
     <div class="ask-body">
-      <aside id="ask-history" class="ask-history" hidden aria-label="历史会话">
+      <aside id="ask-history" class="ask-history" aria-label="历史会话">
         <div class="ask-history-head">
           <span>历史会话</span>
-          <button type="button" class="ask-icon-btn" data-history-act="close" aria-label="收起历史会话">${iconHtml('close', 14)}</button>
         </div>
         <ul class="ask-history-list" id="ask-history-list"></ul>
       </aside>
@@ -293,7 +291,6 @@ export function mountAsk(arg = '', {
   const refs = {
     select: askEl.querySelector('#ask-model-select'),
     modelsBtn: askEl.querySelector('#ask-models-btn'),
-    historyBtn: askEl.querySelector('#ask-history-btn'),
     newBtn: askEl.querySelector('#ask-new-btn'),
     body: askEl.querySelector('.ask-body'),
     history: askEl.querySelector('#ask-history'),
@@ -581,13 +578,6 @@ export function mountAsk(arg = '', {
     if (state.controller && !state.controller.signal.aborted) state.controller.abort();
   };
 
-  const toggleHistory = (force) => {
-    const open = typeof force === 'boolean' ? force : refs.history.hidden;
-    refs.history.hidden = !open;
-    refs.body.classList.toggle('is-history-open', open);
-    refs.historyBtn?.setAttribute('aria-expanded', open ? 'true' : 'false');
-  };
-
   const openConfig = () => {
     if (state.configClose) state.configClose();
     state.configClose = openModelsDialog({
@@ -604,7 +594,7 @@ export function mountAsk(arg = '', {
     state.messages = [];
     refs.input.value = '';
     renderMessages();
-    toggleHistory(false);
+    renderSessions();
     refs.input.focus();
   };
 
@@ -682,7 +672,7 @@ export function mountAsk(arg = '', {
           modelLabel: m.modelLabel ?? '',
         }));
       renderMessages();
-      toggleHistory(false);
+      renderSessions();
     } catch (err) {
       if (state.disposed) return;
       state.sessionsError = err?.message || '会话加载失败';
@@ -730,7 +720,6 @@ export function mountAsk(arg = '', {
   });
 
   on(refs.modelsBtn, 'click', openConfig);
-  on(refs.historyBtn, 'click', () => toggleHistory());
   on(refs.newBtn, 'click', newConversation);
   on(refs.send, 'click', () => {
     if (state.streaming) stopStreaming();
@@ -751,11 +740,6 @@ export function mountAsk(arg = '', {
   });
 
   on(refs.history, 'click', (event) => {
-    const close = event.target?.closest?.('[data-history-act="close"]');
-    if (close) {
-      toggleHistory(false);
-      return;
-    }
     const retry = event.target?.closest?.('[data-history-act="retry"]');
     if (retry) {
       loadSessions();

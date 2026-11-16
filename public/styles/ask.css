@@ -159,15 +159,11 @@
 
 .ask-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: 240px minmax(0, 1fr);
   gap: 16px;
   margin-top: 12px;
   flex: 1;
   min-height: 0;
-}
-
-.ask-body.is-history-open {
-  grid-template-columns: 240px minmax(0, 1fr);
 }
 
 .ask-history {
@@ -180,10 +176,6 @@
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
-}
-
-.ask-history[hidden] {
-  display: none;
 }
 
 .ask-history-head {
@@ -1028,15 +1020,9 @@ dialog.ask-models-dialog::backdrop {
   }
 
   .ask-history {
-    position: fixed;
-    top: auto;
-    right: 12px;
-    bottom: 160px;
-    left: 12px;
-    z-index: 20;
-    max-height: 52vh;
-    background: var(--bg-elev);
-    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+    position: static;
+    max-height: 160px;
+    margin-bottom: 12px;
   }
 
   .ask-field-row {

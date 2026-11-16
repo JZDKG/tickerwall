@@ -1047,7 +1047,6 @@ async function main() {
       () => cdp.evaluate(`Boolean(document.querySelector('#ask-messages .ask-msg.is-assistant:not(.is-streaming) .ask-answer table') && document.querySelectorAll('#ask-messages .ask-trace-item:not(.is-error)').length >= 1)`),
       { timeoutMs: 15000 },
     );
-    await cdp.evaluate(`document.getElementById('ask-history-btn')?.click()`);
     await waitForCondition(
       () => cdp.evaluate(`Boolean(document.querySelector('#ask-history:not([hidden]) .ask-history-item'))`),
       { timeoutMs: 5000 },
