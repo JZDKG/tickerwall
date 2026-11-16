@@ -27,6 +27,7 @@ export const COMMAND_VIEWS = Object.freeze([
   { id: 'view:macro', label: '跨资产关联分析', hint: '#/macro · 今日联动 + 传导图谱', hash: '#/macro', keywords: '关联 分析 宏观 传导 macro graph' },
   { id: 'view:events', label: '事件中心', hint: '#/events · 发布与冲击', hash: '#/events', keywords: '事件 新闻 日历 events' },
   { id: 'view:watch', label: '今天重点', hint: '#/watch · 我的自选 + 今日焦点简报', hash: '#/watch', keywords: '关注 自选 重点 watch brief' },
+  { id: 'view:ask', label: 'AI 问财', hint: '#/ask · 用自然语言问行情与事件', hash: '#/ask', keywords: 'AI 问财 问答 智能 分析 ask' },
 ]);
 
 /** 工作台快捷动作：patch 交给 workspace.setState；panel 由 mount 的 handler 打开 */

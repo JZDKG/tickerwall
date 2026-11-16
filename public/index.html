@@ -38,6 +38,7 @@
   <link rel="stylesheet" href="./styles/recap.css" />
   <link rel="stylesheet" href="./styles/macro-graph.css" />
   <link rel="stylesheet" href="./styles/explanations.css" />
+  <link rel="stylesheet" href="./styles/ask.css" />
   <!-- 任务导航（.tasks/.task-group/.task-label）的样式在这里，别漏 -->
   <link rel="stylesheet" href="./app.css" />
 </head>
@@ -63,6 +64,7 @@
         <span class="task-label">我的关注</span>
         <a class="nav-link" data-nav-hash="#/watch" href="#/watch">今天重点</a>
       </div>
+      <a class="nav-link" data-nav-hash="#/ask" href="#/ask">AI 问财</a>
       <button id="briefing-btn" type="button" class="nav-link btn-link" title="A股收盘后，隔夜各资产走了多少">隔夜复盘</button>
       <!-- 状态簇打包成一个 flex 项：窄屏换行时整组落到同一行，而不是拆散 -->
       <span class="tasks-status">
@@ -100,6 +102,8 @@
   <section id="events" class="events" hidden aria-live="polite"></section>
 
   <section id="map" class="map" hidden aria-live="polite"></section>
+
+  <section id="ask" class="ask-view" hidden aria-live="polite"></section>
 
   <footer class="foot">
     <span>数据源：新浪财经 · 东方财富 · Binance · Coinbase · gold-api</span>

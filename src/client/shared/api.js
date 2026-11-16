@@ -155,6 +155,103 @@ export function createApi({ base = './', timeoutMs = 20_000, fetchImpl = null, n
     return promise;
   }
 
+  /** 非 2xx → 尽量读出后端的 error 文案，读不到就回退到状态码 */
+  async function httpError(res, url) {
+    let body = null;
+    try {
+      body = await res.json();
+    } catch {
+      body = null;
+    }
+    const message = body && typeof body.error === 'string' && body.error ? body.error : `HTTP ${res.status}`;
+    return new ApiError(ApiErrorKind.http, message, {
+      status: res.status,
+      code: body?.code ?? null,
+      body,
+      url,
+    });
+  }
+
+  /**
+   * 一次 POST（JSON）。POST 是写操作，**不做并发合并** ——
+   * 两次提交必须是两次请求，否则第二次会被第一次的 Promise 冒名顶替。
+   */
+  async function post(path, body = null, { json = true, timeoutMs: perRequest } = {}) {
+    const url = buildUrl(path.startsWith('http') ? path : `${base}${path}`);
+    const controller = new AbortController();
+    const { signal, clear } = makeSignal(controller, perRequest ?? timeoutMs);
+    const startedAt = now();
+
+    let res;
+    try {
+      res = await doFetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body ?? {}),
+        signal,
+        cache: 'no-store',
+      });
+    } catch (err) {
+      clear();
+      if (signal.aborted) {
+        // post 没有外部 signal，唯一的中止来源是自己设的超时。
+        throw new ApiError(
+          ApiErrorKind.timeout,
+          `请求超时（${perRequest ?? timeoutMs}ms）`,
+          { url, cause: err },
+        );
+      }
+      throw new ApiError(ApiErrorKind.network, `网络错误：${err?.message ?? err}`, { url, cause: err });
+    }
+    clear();
+
+    if (!res.ok) throw await httpError(res, url);
+    if (!json) return { data: await res.text(), status: res.status, fetchedAt: startedAt };
+
+    let data;
+    try {
+      data = await res.json();
+    } catch (err) {
+      throw new ApiError(ApiErrorKind.parse, '响应不是合法 JSON', { status: res.status, url, cause: err });
+    }
+    if (data && data.ok === false) {
+      throw new ApiError(ApiErrorKind.business, String(data.error ?? '接口返回失败'), {
+        status: res.status,
+        code: data.code ?? null,
+        body: data,
+        url,
+      });
+    }
+    return { data, status: res.status, fetchedAt: startedAt };
+  }
+
+  /**
+   * 流式 POST：返回原始 Response，body 交给调用方逐帧读取（SSE）。
+   *
+   * 与 post 的区别只有两点：不解析 body；把**外部** AbortSignal 原样传下去，
+   * 这样「停止生成」能在读流时立即断掉连接，而不是等下一帧。
+   */
+  async function postStream(path, body = null, { signal: externalSignal = null } = {}) {
+    const url = buildUrl(path.startsWith('http') ? path : `${base}${path}`);
+    let res;
+    try {
+      res = await doFetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body ?? {}),
+        cache: 'no-store',
+        ...(externalSignal ? { signal: externalSignal } : {}),
+      });
+    } catch (err) {
+      if (externalSignal?.aborted) {
+        throw new ApiError(ApiErrorKind.aborted, '请求已取消', { url, cause: err });
+      }
+      throw new ApiError(ApiErrorKind.network, `网络错误：${err?.message ?? err}`, { url, cause: err });
+    }
+    if (!res.ok) throw await httpError(res, url);
+    return res;
+  }
+
   /** 取消：不传 url 时取消全部（视图卸载时用） */
   function cancel(url = null) {
     if (url == null) {
@@ -170,7 +267,7 @@ export function createApi({ base = './', timeoutMs = 20_000, fetchImpl = null, n
     }
   }
 
-  return { get, cancel, inflightSize: () => inflight.size, base, timeoutMs };
+  return { get, post, postStream, cancel, inflightSize: () => inflight.size, base, timeoutMs };
 }
 
 /**

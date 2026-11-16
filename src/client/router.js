@@ -13,7 +13,8 @@
  * 这里保持（不做「同路由跳过」优化），否则返回列表再点同一标的不会刷新。
  * ================================================================== */
 
-import { detailEl, eventsEl, listEl, macroEl, mapEl, watchEl } from './shared/dom.js';
+import { askEl, detailEl, eventsEl, listEl, macroEl, mapEl, watchEl } from './shared/dom.js';
+import { mountAsk, unmountAsk } from './views/ask.js';
 import { mountDetail, unmountDetail } from './views/detail.js';
 import { mountEvents, unmountEvents } from './views/events.js';
 import { mountMacro, unmountMacro } from './views/macro.js';
@@ -64,6 +65,19 @@ const watchView = {
   },
 };
 
+/** AI 问财工作区（#/ask）：arg 为 query 串，预填/上下文由视图自己解析。 */
+const askView = {
+  el: askEl,
+  mount(arg = '') {
+    if (askEl) askEl.hidden = false;
+    mountAsk(arg);
+  },
+  unmount() {
+    unmountAsk();
+    if (askEl) askEl.hidden = true;
+  },
+};
+
 const detailView = { el: detailEl, mount: mountDetail, unmount: unmountDetail };
 const mapView = { el: mapEl, mount: mountMap, unmount: unmountMap };
 const eventsView = { el: eventsEl, mount: mountEvents, unmount: unmountEvents };
@@ -86,7 +100,13 @@ let mounted = null;
 function resolve(hash) {
   // hash 内可能带 ?embed=1 / ?foo=1：视图名只看 '?' 之前的部分，
   // 否则 #/d/gold-intl?embed=1 会被当成 id="gold-intl?embed=1" 的未知标的。
-  const h = String(hash ?? '').split('?')[0];
+  const rawHash = String(hash ?? '');
+  const h = rawHash.split('?')[0];
+  // 问财的 query（?asset=&q=）是视图参数的一部分，不能像别处一样丢掉
+  if (h === '#/ask') {
+    const qIndex = rawHash.indexOf('?');
+    return { name: 'ask', view: askView, arg: qIndex >= 0 ? rawHash.slice(qIndex + 1) : '' };
+  }
   if (h.startsWith('#/map')) return { name: 'map', view: mapView };
   if (h.startsWith('#/events')) return { name: 'events', view: eventsView };
   // 「我的关注」是独立任务：参与幂等键（watch ≠ list），切回首页会重新挂载
@@ -97,7 +117,7 @@ function resolve(hash) {
   return { name: 'list', view: listView };
 }
 
-const ALL = { list: listView, watch: watchView, detail: detailView, map: mapView, events: eventsView, macro: macroView };
+const ALL = { list: listView, watch: watchView, detail: detailView, map: mapView, events: eventsView, macro: macroView, ask: askView };
 
 /**
  * P3-T3：嵌入挂件模式。
@@ -148,13 +168,21 @@ window.addEventListener('hashchange', route);
 applyEmbedFromLocation();
 
 document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  // 弹窗自己处理 Esc（关闭弹窗而不是把整页踢回首页）
+  if (document.querySelector('dialog[open]')) return;
+  // 输入控件里的 Esc 属于控件自身（清空/取消补全），不当作「退出视图」
+  const target = e.target;
+  const tag = String(target?.tagName ?? '').toUpperCase();
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return;
   const overlayOpen =
     !detailEl.hidden
     || !macroEl.hidden
     || !eventsEl.hidden
     || !mapEl.hidden
-    || Boolean(watchEl && !watchEl.hidden);
-  if (e.key === 'Escape' && overlayOpen) location.hash = '';
+    || Boolean(watchEl && !watchEl.hidden)
+    || Boolean(askEl && !askEl.hidden);
+  if (overlayOpen) location.hash = '';
 });
 
 /** 供测试观察：当前挂载的视图名 */

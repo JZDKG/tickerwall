@@ -26295,7 +26295,91 @@ function iA({ base: e = "./", timeoutMs: t = 2e4, fetchImpl: n = null, now: r = 
 			controller: f
 		}), g;
 	}
-	function c(t = null) {
+	async function c(e, t) {
+		let n = null;
+		try {
+			n = await e.json();
+		} catch {
+			n = null;
+		}
+		let r = n && typeof n.error == "string" && n.error ? n.error : `HTTP ${e.status}`;
+		return new nA(tA.http, r, {
+			status: e.status,
+			code: n?.code ?? null,
+			body: n,
+			url: t
+		});
+	}
+	async function l(n, a = null, { json: s = !0, timeoutMs: l } = {}) {
+		let u = rA(n.startsWith("http") ? n : `${e}${n}`), { signal: d, clear: f } = o(new AbortController(), l ?? t), p = r(), m;
+		try {
+			m = await i(u, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(a ?? {}),
+				signal: d,
+				cache: "no-store"
+			});
+		} catch (e) {
+			throw f(), d.aborted ? new nA(tA.timeout, `请求超时（${l ?? t}ms）`, {
+				url: u,
+				cause: e
+			}) : new nA(tA.network, `网络错误：${e?.message ?? e}`, {
+				url: u,
+				cause: e
+			});
+		}
+		if (f(), !m.ok) throw await c(m, u);
+		if (!s) return {
+			data: await m.text(),
+			status: m.status,
+			fetchedAt: p
+		};
+		let h;
+		try {
+			h = await m.json();
+		} catch (e) {
+			throw new nA(tA.parse, "响应不是合法 JSON", {
+				status: m.status,
+				url: u,
+				cause: e
+			});
+		}
+		if (h && h.ok === !1) throw new nA(tA.business, String(h.error ?? "接口返回失败"), {
+			status: m.status,
+			code: h.code ?? null,
+			body: h,
+			url: u
+		});
+		return {
+			data: h,
+			status: m.status,
+			fetchedAt: p
+		};
+	}
+	async function u(t, n = null, { signal: r = null } = {}) {
+		let a = rA(t.startsWith("http") ? t : `${e}${t}`), o;
+		try {
+			o = await i(a, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(n ?? {}),
+				cache: "no-store",
+				...r ? { signal: r } : {}
+			});
+		} catch (e) {
+			throw r?.aborted ? new nA(tA.aborted, "请求已取消", {
+				url: a,
+				cause: e
+			}) : new nA(tA.network, `网络错误：${e?.message ?? e}`, {
+				url: a,
+				cause: e
+			});
+		}
+		if (!o.ok) throw await c(o, a);
+		return o;
+	}
+	function d(t = null) {
 		if (t == null) {
 			for (let { controller: e } of a.values()) e.abort("cancel");
 			a.clear();
@@ -26306,7 +26390,9 @@ function iA({ base: e = "./", timeoutMs: t = 2e4, fetchImpl: n = null, now: r = 
 	}
 	return {
 		get: s,
-		cancel: c,
+		post: l,
+		postStream: u,
+		cancel: d,
 		inflightSize: () => a.size,
 		base: e,
 		timeoutMs: t

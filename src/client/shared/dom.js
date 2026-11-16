@@ -18,3 +18,5 @@ export const mapEl = document.getElementById('map');
 export const watchEl = document.getElementById('watch');
 /** 首页异动解读容器（收起态置于行情下方，不遮挡行情首屏） */
 export const questionsEl = document.getElementById('questions');
+/** AI 问财工作区 */
+export const askEl = document.getElementById('ask');

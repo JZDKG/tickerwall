@@ -60,7 +60,8 @@ export function activeTaskOf(hash = '') {
 
 /** 当前 hash 是否落在某个链接上（用于高亮子项） */
 export function isLinkActive(hash, linkHash) {
-  const h = String(hash ?? '');
+  // 查询串属于视图参数（#/ask?asset=…），高亮只看路径部分
+  const h = String(hash ?? '').split('?')[0];
   if (linkHash === '') return h === '' || h === '#';
   return h === linkHash || h.startsWith(`${linkHash}/`);
 }

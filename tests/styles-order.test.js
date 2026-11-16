@@ -37,12 +37,14 @@ const EXPECTED = [
   'styles/macro-graph.css',
   // 2026-10-28：解释卡需要自己的分片（方案 §3.2 的三层阅读）
   'styles/explanations.css',
+  // 2026-11-16：AI 问财工作区与模型配置弹窗
+  'styles/ask.css',
 ];
 
 const read = (rel) => readFileSync(`${ROOT}public/${rel}`, 'utf8');
 
 describe('样式分片：文件与顺序', () => {
-  it('index.html 正好按契约顺序挂了 13 个分片', () => {
+  it('index.html 正好按契约顺序挂了 14 个分片', () => {
     expect(linkOrder).toEqual(EXPECTED);
   });
 
@@ -110,7 +112,7 @@ describe('样式分片：层叠前提', () => {
     expect(seen.size).toBeGreaterThan(10);
   });
 
-  it('拆分前后规则数守恒：13 个文件里没有丢失 @media / @keyframes', () => {
+  it('拆分前后规则数守恒：14 个文件里没有丢失 @media / @keyframes', () => {
     const all = EXPECTED.map(read).join('\n');
     // @media 拆分时 13 个。地图 v2 加了第 14 条（播报台在 ≤720px 让位给
     // 标题）、第 15 条（宏观胶囊在窄屏换行）和第 16 条（时间轴格子在窄屏
@@ -129,7 +131,8 @@ describe('样式分片：层叠前提', () => {
     // 第 24 条（2026-11-11 / P4-T1）：workspace.css 的命令面板 / 预警中心窄屏排版
     // 第 25 条（2026-11-13 / a11y）：tokens.css 的 @media (forced-colors: active) 键盘焦点高对比
     // 第 26 条（2026-11-13 / a11y）：workspace.css 的 @media (pointer: coarse) 触控目标尺寸兜底
-    expect((all.match(/@media/g) ?? []).length).toBe(26);
+    // 第 27–29 条（2026-11-16 / AI 问财）：ask.css 的窄屏浮层、390px 与 reduced-motion
+    expect((all.match(/@media/g) ?? []).length).toBe(29);
     // @keyframes：拆分时 16 个，地图 v2 加到 20 个；移除定时循环红绿闪烁圆环
     // （maBreath / cityHalo / rgPulse）后为 17 个；去装饰化再移除 5 个无限循环
     // 装饰动画（pulse / sourcePulse / bcPulse / sunPulse / termBreath）后为 12 个。

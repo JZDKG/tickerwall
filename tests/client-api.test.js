@@ -249,3 +249,234 @@ describe('默认参数与兜底', () => {
     expect(buildUrl('api/x?keep=1', { a: 2 })).toBe('api/x?keep=1&a=2');
   });
 });
+
+/* ================================================================== *
+ * POST / 流式 POST：AI 问财写入与 SSE 必须复用同一套错误分类
+ * ================================================================== */
+describe('POST：写操作', () => {
+  it('发送 JSON body，带 Content-Type，并返回解析后的数据', async () => {
+    const calls = [];
+    const api = createApi({
+      fetchImpl: async (url, init) => {
+        calls.push({ url, init });
+        return jsonResponse({ ok: true, saved: 1 });
+      },
+    });
+    const r = await api.post('api/ai/models', { name: '主模型' });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe('api/ai/models');
+    expect(calls[0].init.method).toBe('POST');
+    expect(calls[0].init.headers['Content-Type']).toBe('application/json');
+    expect(JSON.parse(calls[0].init.body)).toEqual({ name: '主模型' });
+    expect(r.data.saved).toBe(1);
+    expect(r.status).toBe(200);
+  });
+
+  it('非 2xx 时读 JSON 里的 error 文案，并带状态码', async () => {
+    const api = createApi({
+      fetchImpl: async () => ({
+        ok: false,
+        status: 400,
+        json: async () => ({ ok: false, error: 'baseUrl 与 model 不能为空' }),
+        text: async () => '',
+      }),
+    });
+    const err = await api.post('api/ai/models', {}).catch((e) => e);
+    expect(err.kind).toBe(ApiErrorKind.http);
+    expect(err.status).toBe(400);
+    expect(err.message).toBe('baseUrl 与 model 不能为空');
+    expect(err.retryable).toBe(false);
+  });
+
+  it('非 2xx 且响应不是 JSON 时回退到 HTTP 状态文案', async () => {
+    const api = createApi({
+      fetchImpl: async () => ({
+        ok: false,
+        status: 502,
+        json: async () => { throw new SyntaxError('bad'); },
+        text: async () => '',
+      }),
+    });
+    const err = await api.post('api/ai/ask', {}).catch((e) => e);
+    expect(err.kind).toBe(ApiErrorKind.http);
+    expect(err.message).toBe('HTTP 502');
+    expect(err.retryable).toBe(true);
+  });
+
+  it('200 但 body.ok=false → business（AI 服务未启用等）', async () => {
+    const api = createApi({ fetchImpl: async () => jsonResponse({ ok: false, error: 'AI 服务未启用', code: 'AI_DISABLED' }) });
+    const err = await api.post('api/ai/ask', {}).catch((e) => e);
+    expect(err.kind).toBe(ApiErrorKind.business);
+    expect(err.code).toBe('AI_DISABLED');
+    expect(err.message).toBe('AI 服务未启用');
+  });
+
+  it('网络错误与超时沿用同一分类', async () => {
+    const net = createApi({ fetchImpl: async () => { throw new TypeError('down'); } });
+    expect((await net.post('api/x', {}).catch((e) => e)).kind).toBe(ApiErrorKind.network);
+    const plain = createApi({ fetchImpl: async () => { throw 'boom'; } });
+    expect((await plain.get('api/x').catch((e) => e)).message).toBe('网络错误：boom');
+    const slow = createApi({
+      fetchImpl: (url, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('x')))),
+      timeoutMs: 5,
+    });
+    expect((await slow.post('api/x', {}).catch((e) => e)).kind).toBe(ApiErrorKind.timeout);
+  });
+
+  it('POST 不做并发合并（两次提交必须是两次请求）', async () => {
+    let calls = 0;
+    const api = createApi({
+      fetchImpl: async () => {
+        calls += 1;
+        return jsonResponse({ ok: true, n: calls });
+      },
+    });
+    await Promise.all([api.post('api/ai/ask', { q: 1 }), api.post('api/ai/ask', { q: 1 })]);
+    expect(calls).toBe(2);
+  });
+
+  it('json:false 时返回文本', async () => {
+    const api = createApi({ fetchImpl: async () => ({ ok: true, status: 200, text: async () => 'pong' }) });
+    const r = await api.post('api/x', {}, { json: false });
+    expect(r.data).toBe('pong');
+  });
+
+  it('业务失败但没有 error/code 时给出兜底文案与 null 业务码', async () => {
+    const api = createApi({ fetchImpl: async () => jsonResponse({ ok: false }) });
+    const err = await api.post('api/ai/ask', {}).catch((e) => e);
+    expect(err.kind).toBe(ApiErrorKind.business);
+    expect(err.message).toBe('接口返回失败');
+    expect(err.code).toBeNull();
+  });
+
+  it('非 2xx 的 JSON 没有 error 字段时回退到 HTTP 状态文案', async () => {
+    const api = createApi({
+      fetchImpl: async () => ({
+        ok: false,
+        status: 409,
+        json: async () => ({ ok: false }),
+        text: async () => '',
+      }),
+    });
+    const err = await api.post('api/ai/models', {}).catch((e) => e);
+    expect(err.message).toBe('HTTP 409');
+    expect(err.code).toBeNull();
+  });
+
+  it('省略 body 时发送空 JSON 对象', async () => {
+    const bodies = [];
+    const api = createApi({
+      fetchImpl: async (url, init) => {
+        bodies.push(init.body);
+        return jsonResponse({ ok: true });
+      },
+    });
+    await api.post('api/x');
+    expect(bodies).toEqual(['{}']);
+  });
+
+  it('绝对 URL 原样使用，不拼 base', async () => {
+    const urls = [];
+    const api = createApi({
+      base: 'https://base.test/api/',
+      fetchImpl: async (url) => {
+        urls.push(url);
+        return jsonResponse({ ok: true });
+      },
+    });
+    await api.get('https://other.test/x?y=1');
+    await api.post('https://other.test/y');
+    await api.postStream('https://other.test/z');
+    expect(urls).toEqual(['https://other.test/x?y=1', 'https://other.test/y', 'https://other.test/z']);
+  });
+
+  it('抛出字符串错误时使用原始值作为网络错误文案', async () => {
+    const api = createApi({ fetchImpl: async () => { throw 'plain'; } });
+    const err = await api.post('api/x', {}).catch((e) => e);
+    expect(err.kind).toBe(ApiErrorKind.network);
+    expect(err.message).toBe('网络错误：plain');
+  });
+
+  it('200 但响应不是合法 JSON → parse', async () => {
+    const api = createApi({
+      fetchImpl: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => { throw new SyntaxError('bad'); },
+        text: async () => '',
+      }),
+    });
+    const err = await api.post('api/ai/models', {}).catch((e) => e);
+    expect(err.kind).toBe(ApiErrorKind.parse);
+    expect(err.message).toBe('响应不是合法 JSON');
+  });
+});
+
+describe('postStream：SSE 原始响应', () => {
+  it('返回原始 Response，不消费 body（SSE 要自己逐帧读）', async () => {
+    const body = { getReader: () => ({}) };
+    const calls = [];
+    const api = createApi({
+      fetchImpl: async (url, init) => {
+        calls.push({ url, init });
+        return { ok: true, status: 200, body };
+      },
+    });
+    const r = await api.postStream('api/ai/ask', { question: '你好' });
+    expect(r.body).toBe(body);
+    expect(calls[0].init.method).toBe('POST');
+    expect(JSON.parse(calls[0].init.body)).toEqual({ question: '你好' });
+  });
+
+  it('外部 signal 取消时 → aborted（不是 network）', async () => {
+    const api = createApi({
+      fetchImpl: (url, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted')))),
+    });
+    const controller = new AbortController();
+    const pending = api.postStream('api/ai/ask', {}, { signal: controller.signal }).catch((e) => e);
+    controller.abort();
+    const err = await pending;
+    expect(err.kind).toBe(ApiErrorKind.aborted);
+  });
+
+  it('非 2xx 时解析后端 error 文案并抛 http', async () => {
+    const api = createApi({
+      fetchImpl: async () => ({
+        ok: false,
+        status: 503,
+        json: async () => ({ ok: false, error: 'AI 服务未启用' }),
+        text: async () => '',
+      }),
+    });
+    const err = await api.postStream('api/ai/ask', {}).catch((e) => e);
+    expect(err.kind).toBe(ApiErrorKind.http);
+    expect(err.status).toBe(503);
+    expect(err.message).toBe('AI 服务未启用');
+  });
+
+  it('没有外部 signal 时的网络错误 → network', async () => {
+    const api = createApi({ fetchImpl: async () => { throw new TypeError('Failed to fetch'); } });
+    const err = await api.postStream('api/ai/ask', {}).catch((e) => e);
+    expect(err.kind).toBe(ApiErrorKind.network);
+  });
+
+  it('省略 body 时发送空 JSON 对象', async () => {
+    let sent = null;
+    const api = createApi({
+      fetchImpl: async (url, init) => {
+        sent = init.body;
+        return { ok: true, status: 200, body: null };
+      },
+    });
+    await api.postStream('api/ai/ask');
+    expect(sent).toBe('{}');
+  });
+
+  it('传入未取消的 signal 时仍按 network 报错，抛字符串也能兜底', async () => {
+    const api = createApi({ fetchImpl: async () => { throw 'down'; } });
+    const controller = new AbortController();
+    const err = await api.postStream('api/ai/ask', {}, { signal: controller.signal }).catch((e) => e);
+    expect(err.kind).toBe(ApiErrorKind.network);
+    expect(err.message).toBe('网络错误：down');
+  });
+});

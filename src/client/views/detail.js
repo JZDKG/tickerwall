@@ -1010,6 +1010,7 @@ export function renderDetail(data) {
         <h2>${data.name}</h2>
         <p>${data.sub} · ${data.unit}</p>
       </div>
+      <a class="d-ask-link" href="#/ask?asset=${encodeURIComponent(data.id)}&amp;q=${encodeURIComponent(`帮我分析${data.name}今天的走势、关键指标和可能原因`)}">用 AI 问财追问</a>
     </div>
 
     <div class="d-hero">

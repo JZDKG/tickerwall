@@ -134,7 +134,9 @@ html[data-view]:not([data-view="list"]) :is(#questions, #ws-bar, #synthetics-str
   display: none;
 }
 .task-group .nav-link.is-active,
-.task-group .nav-link[aria-current="page"] {
+.task-group .nav-link[aria-current="page"],
+.tasks > .nav-link.is-active,
+.tasks > .nav-link[aria-current="page"] {
   color: var(--text, #e6e8ec);
   text-decoration: none;
   background: transparent;

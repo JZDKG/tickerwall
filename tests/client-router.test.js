@@ -23,6 +23,7 @@ document.body.innerHTML = `
   <section id="events"></section>
   <section id="macro"></section>
   <section id="watch"></section>
+  <section id="ask"></section>
 `;
 
 // 视图生命周期都换成可观测的假实现：router 只该负责「谁上谁下」
@@ -47,6 +48,10 @@ vi.mock('../src/client/views/watch.js', () => ({
   mountWatch: () => calls.push(['mount', 'watch']),
   unmountWatch: () => calls.push(['unmount', 'watch']),
 }));
+vi.mock('../src/client/views/ask.js', () => ({
+  mountAsk: (arg) => calls.push(['mount', 'ask', arg]),
+  unmountAsk: () => calls.push(['unmount', 'ask']),
+}));
 
 const { route, currentView, resetMountedForTests } = await import('../src/client/router.js');
 const els = {
@@ -56,6 +61,7 @@ const els = {
   events: document.getElementById('events'),
   macro: document.getElementById('macro'),
   watch: document.getElementById('watch'),
+  ask: document.getElementById('ask'),
 };
 
 const go = (hash) => {
@@ -114,6 +120,18 @@ describe('路由解析', () => {
     go('#/map?region=us');
     expect(currentView()).toBe('map');
   });
+
+  it('#/ask 把 query 串原样传给视图（预填与上下文要用）', () => {
+    go('#/ask?asset=gold-intl&q=abc');
+    expect(currentView()).toBe('ask');
+    expect(calls).toContainEqual(['mount', 'ask', 'asset=gold-intl&q=abc']);
+  });
+
+  it('#/ask 无 query 时 arg 为空串', () => {
+    go('#/ask');
+    expect(currentView()).toBe('ask');
+    expect(calls).toContainEqual(['mount', 'ask', '']);
+  });
 });
 
 describe('生命周期契约', () => {
@@ -122,7 +140,7 @@ describe('生命周期契约', () => {
     calls.length = 0;
     go('#/events');
     const unmounted = calls.filter((c) => c[0] === 'unmount').map((c) => c[1]).sort();
-    expect(unmounted).toEqual(['detail', 'macro', 'map', 'watch']);
+    expect(unmounted).toEqual(['ask', 'detail', 'macro', 'map', 'watch']);
     expect(calls).toContainEqual(['mount', 'events']);
   });
 
@@ -182,6 +200,43 @@ describe('键盘', () => {
     go('#/map');
     document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'a', bubbles: true }));
     expect(currentView()).toBe('map');
+  });
+
+  it('问财视图打开时 Esc 也回到列表', () => {
+    go('#/ask');
+    els.ask.hidden = false;
+    location.hash = '#/ask';
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(location.hash).toBe('');
+  });
+
+  it('输入控件聚焦时 Esc 不把页面踢回首页', () => {
+    go('#/map');
+    els.map.hidden = false;
+    location.hash = '#/map';
+    const input = document.createElement('input');
+    document.body.append(input);
+    try {
+      input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      expect(location.hash).toBe('#/map');
+    } finally {
+      input.remove();
+    }
+  });
+
+  it('原生 dialog 打开时 Esc 交给弹窗自己处理', () => {
+    go('#/map');
+    els.map.hidden = false;
+    location.hash = '#/map';
+    const dialog = document.createElement('dialog');
+    dialog.setAttribute('open', '');
+    document.body.append(dialog);
+    try {
+      document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      expect(location.hash).toBe('#/map');
+    } finally {
+      dialog.remove();
+    }
   });
 });
 
