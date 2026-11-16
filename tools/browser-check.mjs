@@ -20,6 +20,7 @@
  * ================================================================== */
 
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
 import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -120,6 +121,107 @@ const record = (ok, name, detail = '') => {
   console.log(`${ok ? '✓' : '✗'} ${name}${detail ? ` — ${detail}` : ''}`);
 };
 
+/**
+ * 本地一次性 OpenAI 兼容假网关（只绑 127.0.0.1，不连外网）：
+ * 用来验证 Chrome → server.mjs → ai.service → 工具取数 → SSE 流式输出整条链路。
+ */
+async function startMockLlmServer() {
+  const calls = [];
+  const readBody = (req) =>
+    new Promise((resolve, reject) => {
+      let raw = '';
+      req.on('data', (chunk) => {
+        raw += chunk;
+      });
+      req.on('end', () => {
+        try {
+          resolve(raw ? JSON.parse(raw) : {});
+        } catch (err) {
+          reject(err);
+        }
+      });
+      req.on('error', reject);
+    });
+
+  const server = createServer(async (req, res) => {
+    try {
+      const body = await readBody(req);
+      calls.push({ url: req.url, stream: Boolean(body.stream), messages: body.messages?.length ?? 0 });
+
+      if (!body.stream) {
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(
+          JSON.stringify({
+            id: 'mock-test',
+            choices: [{ index: 0, message: { role: 'assistant', content: 'pong' }, finish_reason: 'stop' }],
+          }),
+        );
+        return;
+      }
+
+      const hasTool = Array.isArray(body.messages) && body.messages.some((m) => m.role === 'tool');
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      });
+
+      const sendChunk = (payload) => res.write(`data: ${JSON.stringify(payload)}\n\n`);
+      if (!hasTool) {
+        sendChunk({
+          choices: [
+            {
+              index: 0,
+              delta: {
+                role: 'assistant',
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: 'call_browser_1',
+                    type: 'function',
+                    function: { name: 'get_quotes', arguments: '{}' },
+                  },
+                ],
+              },
+            },
+          ],
+        });
+        sendChunk({ choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] });
+        res.end('data: [DONE]\n\n');
+        return;
+      }
+
+      for (const piece of [
+        '### 行情速览\n\n',
+        '已读取看板实时行情，详情见 [国际金价](#/d/gold-intl)。\n\n',
+        '| 项目 | 说明 |\n| --- | --- |\n| 数据口径 | 看板本地快照 |\n',
+      ]) {
+        sendChunk({ choices: [{ index: 0, delta: { content: piece } }] });
+      }
+      sendChunk({
+        choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 120, completion_tokens: 48, total_tokens: 168 },
+      });
+      res.end('data: [DONE]\n\n');
+    } catch (err) {
+      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: { message: String(err?.message ?? err) } }));
+    }
+  });
+
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  return {
+    port: typeof address === 'object' && address ? address.port : 0,
+    calls,
+    close: () =>
+      new Promise((resolve) => {
+        server.closeAllConnections?.();
+        server.close(() => resolve());
+      }),
+  };
+}
+
 async function main() {
   const chrome = findChrome();
   if (!chrome) {
@@ -134,6 +236,7 @@ async function main() {
   const base = `http://127.0.0.1:${port}`;
   let server = null;
   let browser = null;
+  let mockLlm = null;
 
   /**
    * 收尾：先等进程真的退出，再删目录。
@@ -171,12 +274,13 @@ async function main() {
     if (KEEP) return;
     browser?.kill('SIGKILL');
     server?.kill('SIGKILL');
-    await Promise.all([waitExit(browser), waitExit(server)]);
+    await Promise.all([waitExit(browser), waitExit(server), mockLlm?.close?.()]);
     removeDir(dataDir);
     removeDir(profile);
   };
 
   try {
+    mockLlm = await startMockLlmServer();
     server = spawn(process.execPath, ['server.mjs'], {
       env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', DISABLE_BACKGROUND: '1', KANBAN_DATA_DIR: dataDir },
       stdio: 'ignore',
@@ -856,6 +960,237 @@ async function main() {
       && shareDeferred.value?.hiddenWhileOpen === true && shareDeferred.value?.modalGone === true && shareDeferred.value?.shownAfterClose === true,
       '命令面板/预警面板/分享卡在按钮关闭、选命令、原生Esc后同步卸载并补发延迟告警横幅',
       `cp=${cpDeferred.value?.shownAfterClose} al=${alDeferred.value?.shownAfterClose} cmd=${cmdSelectDeferred.value?.shownAfterClose} esc=${escDeferred.value?.shownAfterClose ? 'true' : JSON.stringify(escDeferred.value)} share=${shareDeferred.value?.shownAfterClose}`,
+    );
+
+    /* ---------------- AI 问财（#/ask）端到端闭环与布局对比度 ---------------- */
+    await cdp.evaluate(`document.querySelector('a[data-nav-hash="#/ask"]')?.click()`);
+    await waitForCondition(
+      () => cdp.evaluate(`Boolean(document.querySelector('#ask:not([hidden]) #ask-empty [data-ask-act="configure"]'))`),
+      { timeoutMs: 10000 },
+    );
+    const askEmpty = await cdp.evaluate(`(() => ({
+      activeNav: document.querySelector('a[data-nav-hash="#/ask"]')?.getAttribute('aria-current') ?? null,
+      selectDisabled: Boolean(document.getElementById('ask-model-select')?.disabled),
+      hasConfigure: Boolean(document.querySelector('#ask-empty [data-ask-act="configure"]')),
+    }))()`);
+    record(
+      askEmpty.value?.activeNav === 'page' && askEmpty.value?.selectDisabled && askEmpty.value?.hasConfigure,
+      '顶栏进入 #/ask 高亮正确，未配模型时显示引导配置按钮',
+      JSON.stringify(askEmpty.value),
+    );
+
+    // 模型弹窗：原生 <dialog> 打开 → Esc 关闭归还焦点 → backdrop 轻触关闭 → 重开测连接与保存
+    await cdp.evaluate(`(() => { const b = document.querySelector('#ask-empty [data-ask-act="configure"]'); b?.focus(); b?.click(); })()`);
+    await waitForCondition(() => cdp.evaluate(`Boolean(document.querySelector('dialog.ask-models-dialog[open] [name="name"]'))`), { timeoutMs: 5000 });
+    const askDlgOpen = await cdp.evaluate(`(() => {
+      const dlg = document.querySelector('dialog.ask-models-dialog');
+      const r = dlg?.getBoundingClientRect();
+      return {
+        isModal: dlg?.matches(':modal') ?? false,
+        outX: r && r.left > 8 ? Math.floor(r.left / 2) : 6,
+        outY: r && r.top > 8 ? Math.floor(r.top / 2) : 6,
+      };
+    })()`);
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+    await waitForCondition(() => cdp.evaluate(`!document.querySelector('dialog.ask-models-dialog')`), { timeoutMs: 3000 });
+    const askEscGone = await cdp.evaluate(`({ gone: !document.querySelector('dialog.ask-models-dialog'), act: document.activeElement?.getAttribute?.('data-ask-act') ?? '' })`);
+
+    await cdp.evaluate(`(() => { const b = document.getElementById('ask-models-btn'); b?.focus(); b?.click(); })()`);
+    await waitForCondition(() => cdp.evaluate(`Boolean(document.querySelector('dialog.ask-models-dialog[open] [name="name"]'))`), { timeoutMs: 5000 });
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: askDlgOpen.value?.outX ?? 6, y: askDlgOpen.value?.outY ?? 6, button: 'left', clickCount: 1 });
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: askDlgOpen.value?.outX ?? 6, y: askDlgOpen.value?.outY ?? 6, button: 'left', clickCount: 1 });
+    await waitForCondition(() => cdp.evaluate(`!document.querySelector('dialog.ask-models-dialog')`), { timeoutMs: 3000 });
+    const askBackdropGone = await cdp.evaluate(`({ gone: !document.querySelector('dialog.ask-models-dialog'), activeId: document.activeElement?.id ?? '' })`);
+
+    record(
+      askDlgOpen.value?.isModal === true && askEscGone.value?.gone && askEscGone.value?.act === 'configure' && askBackdropGone.value?.gone && askBackdropGone.value?.activeId === 'ask-models-btn',
+      '模型配置弹窗原生模态、Esc 与 backdrop 轻触关闭并归还焦点',
+      `escFocus=${askEscGone.value?.act} backdropFocus=${askBackdropGone.value?.activeId}`,
+    );
+
+    // 填写本地假网关模型 → 点测试连接 → 保存并关闭弹窗
+    await cdp.evaluate(`document.getElementById('ask-models-btn')?.click()`);
+    await waitForCondition(() => cdp.evaluate(`Boolean(document.querySelector('dialog.ask-models-dialog [name="name"]'))`), { timeoutMs: 5000 });
+    await cdp.evaluate(`(() => {
+      const dlg = document.querySelector('dialog.ask-models-dialog');
+      const setVal = (name, val) => { const el = dlg.querySelector('[name="' + name + '"]'); if (el) el.value = val; };
+      setVal('name', '本地测试模型');
+      setVal('baseUrl', ${JSON.stringify(`http://127.0.0.1:${mockLlm.port}/v1`)});
+      setVal('model', 'mock-gpt');
+      setVal('apiKey', 'sk-browser-test-1234');
+      dlg.querySelector('[data-form-act="test"]')?.click();
+    })()`);
+    await waitForCondition(
+      () => cdp.evaluate(`Boolean(document.querySelector('dialog.ask-models-dialog .ask-test-result.is-ok'))`),
+      { timeoutMs: 8000 },
+    );
+    const askTestText = await cdp.evaluate(`document.querySelector('dialog.ask-models-dialog .ask-test-result.is-ok')?.textContent ?? ''`);
+
+    await cdp.evaluate(`document.querySelector('dialog.ask-models-dialog [data-model-form] [type="submit"]')?.click()`);
+    await waitForCondition(
+      () => cdp.evaluate(`Boolean(document.querySelector('dialog.ask-models-dialog .ask-model-item')) && !document.getElementById('ask-model-select')?.disabled`),
+      { timeoutMs: 8000 },
+    );
+    await cdp.evaluate(`document.querySelector('dialog.ask-models-dialog [data-dialog-act="close"]')?.click()`);
+    await waitForCondition(() => cdp.evaluate(`!document.querySelector('dialog.ask-models-dialog')`), { timeoutMs: 3000 });
+    record(
+      String(askTestText.value ?? '').includes('连接成功'),
+      '模型弹窗测试连接（经服务端代理）与保存生效',
+      String(askTestText.value ?? '').trim(),
+    );
+
+    // 点击推荐问题卡触发真实 SSE：tool_calls(get_quotes) → 工具轨迹折叠 → 安全 Markdown + 表格 + 站内链接 → 会话落库
+    await waitForCondition(() => cdp.evaluate(`Boolean(document.querySelector('#ask-empty .ask-chip'))`), { timeoutMs: 5000 });
+    await cdp.evaluate(`document.querySelector('#ask-empty .ask-chip')?.click()`);
+    await waitForCondition(
+      () => cdp.evaluate(`Boolean(document.querySelector('#ask-messages .ask-msg.is-assistant:not(.is-streaming) .ask-answer table') && document.querySelectorAll('#ask-messages .ask-trace-item').length >= 1)`),
+      { timeoutMs: 15000 },
+    );
+    await cdp.evaluate(`document.getElementById('ask-history-btn')?.click()`);
+    await waitForCondition(
+      () => cdp.evaluate(`Boolean(document.querySelector('#ask-history:not([hidden]) .ask-history-item'))`),
+      { timeoutMs: 5000 },
+    );
+    const askStreamRes = await cdp.evaluate(`(() => {
+      const trace = document.querySelector('#ask-messages details.ask-trace');
+      const summaryText = trace?.querySelector('summary')?.textContent ?? '';
+      const answer = document.querySelector('#ask-messages .ask-answer');
+      return {
+        traceCollapsedByDefault: trace ? !trace.open : null,
+        traceSummary: summaryText.trim(),
+        traceItems: document.querySelectorAll('#ask-messages .ask-trace-item').length,
+        hasH3: Boolean(answer?.querySelector('h3')),
+        hasTable: Boolean(answer?.querySelector('table')),
+        linkHref: answer?.querySelector('a')?.getAttribute('href') ?? null,
+        sessionCount: document.querySelectorAll('#ask-history-list .ask-history-item').length,
+      };
+    })()`);
+    const as = askStreamRes.value ?? {};
+    record(
+      as.traceCollapsedByDefault === true && as.traceSummary.includes('1') && (as.traceItems ?? 0) >= 1 && as.hasH3 && as.hasTable && as.linkHref === '#/d/gold-intl' && (as.sessionCount ?? 0) >= 1,
+      'SSE 流式提问、get_quotes 取数轨迹默认折叠、安全 Markdown 与会话历史全部闭环',
+      JSON.stringify(as),
+    );
+
+    // 深/浅色主题真实渲染对比度 >= 4.5:1（#ask + 模型弹窗打开态一并测）
+    const askContrast = await cdp.evaluate(`(() => {
+      const parseRgba = (str) => {
+        const m = String(str ?? '').match(/rgba?\\(\\s*([\\d.]+)\\s*,\\s*([\\d.]+)\\s*,\\s*([\\d.]+)(?:\\s*,\\s*([\\d.]+))?\\s*\\)/i);
+        return m ? [Number(m[1]), Number(m[2]), Number(m[3]), m[4] === undefined ? 1 : Number(m[4])] : null;
+      };
+      const blendOver = (fg, bg) => {
+        const a = fg[3];
+        return [fg[0] * a + bg[0] * (1 - a), fg[1] * a + bg[1] * (1 - a), fg[2] * a + bg[2] * (1 - a)];
+      };
+      const lum = ([r, g, b]) => {
+        const f = (c) => { const s = c / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; };
+        return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+      };
+      const cr = (fg, bg) => {
+        const l1 = lum(fg); const l2 = lum(bg);
+        return Number(((Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05)).toFixed(2));
+      };
+      const effectiveBg = (el, fallback) => {
+        const layers = [];
+        for (let cur = el; cur && cur.nodeType === 1; cur = cur.parentElement) {
+          const bg = parseRgba(getComputedStyle(cur).backgroundColor);
+          if (bg && bg[3] > 0) layers.push(bg);
+        }
+        let base = fallback;
+        for (let i = layers.length - 1; i >= 0; i -= 1) base = blendOver(layers[i], base);
+        return base;
+      };
+      const prevTheme = document.documentElement.getAttribute('data-theme');
+      const trace = document.querySelector('#ask-messages details.ask-trace');
+      if (trace) trace.open = true;
+      const results = [];
+      for (const theme of ['dark', 'light']) {
+        document.documentElement.setAttribute('data-theme', theme);
+        const fallback = theme === 'light' ? [244, 245, 247] : [12, 13, 16];
+        for (const sel of ['#ask-send', '#ask-models-btn', '.ask-trace > summary', '.ask-answer p', '.ask-answer th', '.ask-answer a', '.ask-history-time']) {
+          const el = document.querySelector('#ask ' + sel);
+          if (!el) continue;
+          const fg = parseRgba(getComputedStyle(el).color);
+          const bg = effectiveBg(el, fallback);
+          if (fg) results.push({ theme, sel, cr: cr(fg, bg) });
+        }
+      }
+      if (prevTheme) document.documentElement.setAttribute('data-theme', prevTheme);
+      else document.documentElement.removeAttribute('data-theme');
+      if (trace) trace.open = false;
+      const minCr = results.reduce((m, r) => Math.min(m, r.cr), Infinity);
+      return { count: results.length, minCr, worst: results.find((r) => r.cr === minCr) ?? null };
+    })()`);
+    record(
+      (askContrast.value?.count ?? 0) >= 12 && (askContrast.value?.minCr ?? 0) >= 4.5,
+      'AI 问财深/浅色主题按钮、正文、表格与次级文案对比度满足 AA (>=4.5)',
+      `n=${askContrast.value?.count} min=${askContrast.value?.minCr} worst=${askContrast.value?.worst?.theme}:${askContrast.value?.worst?.sel}`,
+    );
+
+    // 1920 / 1280 / 390 三档视口无横向溢出（390px 再额外打开历史与模型弹窗验证）
+    const viewports = [
+      { width: 1920, height: 1080, mobile: false },
+      { width: 1280, height: 800, mobile: false },
+      { width: 390, height: 844, mobile: true },
+    ];
+    const vpResults = [];
+    for (const vp of viewports) {
+      await cdp.send('Emulation.setDeviceMetricsOverride', { ...vp, deviceScaleFactor: 1 });
+      const r = await cdp.evaluate(`(() => ({
+        scrollWidth: document.documentElement.scrollWidth,
+        innerWidth: window.innerWidth,
+      }))()`);
+      vpResults.push({ ...vp, ...r.value, ok: (r.value?.scrollWidth ?? 9999) <= (r.value?.innerWidth ?? 0) });
+    }
+    await cdp.evaluate(`document.getElementById('ask-models-btn')?.click()`);
+    await waitForCondition(() => cdp.evaluate(`Boolean(document.querySelector('dialog.ask-models-dialog[open]'))`), { timeoutMs: 3000 });
+    const mobileDlgOverflow = await cdp.evaluate(`(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      innerWidth: window.innerWidth,
+      dlgWidth: Math.round(document.querySelector('dialog.ask-models-dialog')?.getBoundingClientRect().width ?? 0),
+    }))()`);
+    await cdp.evaluate(`document.querySelector('dialog.ask-models-dialog [data-dialog-act="close"]')?.click()`);
+    await waitForCondition(() => cdp.evaluate(`!document.querySelector('dialog.ask-models-dialog')`), { timeoutMs: 3000 });
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 800, deviceScaleFactor: 1, mobile: false });
+    const vpAllOk = vpResults.every((v) => v.ok)
+      && (mobileDlgOverflow.value?.scrollWidth ?? 9999) <= (mobileDlgOverflow.value?.innerWidth ?? 0)
+      && (mobileDlgOverflow.value?.dlgWidth ?? 9999) <= 390;
+    record(
+      vpAllOk,
+      'AI 问财在 1920 / 1280 / 390（含手机端历史与模型弹窗）均无横向溢出',
+      `${vpResults.map((v) => `${v.width}:${v.scrollWidth}/${v.innerWidth}`).join(' ')} dlg@${mobileDlgOverflow.value?.dlgWidth}`,
+    );
+
+    // 详情页追问直达 + ⌘K 命令面板直达
+    await cdp.send('Page.navigate', { url: `${base}/#/d/gold-intl` });
+    await waitForCondition(() => cdp.evaluate(`Boolean(document.querySelector('#detail:not([hidden]) .d-ask-link'))`), { timeoutMs: 10000 });
+    await cdp.evaluate(`document.querySelector('#detail .d-ask-link')?.click()`);
+    await waitForCondition(
+      () => cdp.evaluate(`Boolean(document.querySelector('#ask:not([hidden]) #ask-input') && document.getElementById('ask-input').value.includes('走势'))`),
+      { timeoutMs: 5000 },
+    );
+    const detailJumpOk = await cdp.evaluate(`({ hash: location.hash, val: document.getElementById('ask-input')?.value ?? '' })`);
+
+    await cdp.send('Page.navigate', { url: `${base}/` });
+    await waitForCondition(
+      () => cdp.evaluate(`document.readyState === 'complete' && Boolean(document.querySelector('#rows .row') && document.getElementById('cmd-palette-btn'))`),
+      { timeoutMs: 15000 },
+    );
+    await cdp.evaluate(`document.getElementById('cmd-palette-btn')?.click()`);
+    await waitForCondition(() => cdp.evaluate(`Boolean(document.getElementById('cmd-palette-modal')?.open && document.getElementById('cmd-palette-input'))`), { timeoutMs: 3000 });
+    await cdp.evaluate(`(() => {
+      const inp = document.getElementById('cmd-palette-input');
+      inp.value = 'AI 问财';
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      document.querySelector('#cmd-palette-modal [data-cmd-index="0"]')?.click();
+    })()`);
+    await waitForCondition(() => cdp.evaluate(`Boolean(document.querySelector('#ask:not([hidden])'))`), { timeoutMs: 5000 });
+    const cmdJumpHash = await cdp.evaluate(`location.hash`);
+    record(
+      String(detailJumpOk.value?.hash ?? '').startsWith('#/ask?asset=gold-intl') && cmdJumpHash.value === '#/ask',
+      '详情页「用 AI 问财追问」预填上下文与命令面板直达 #/ask 正常',
+      `detail=${String(detailJumpOk.value?.hash ?? '').slice(0, 28)} cmd=${cmdJumpHash.value}`,
     );
 
     record(cdp.exceptions.length === 0, '整轮无未捕获异常', `${cdp.exceptions.length} 个`);

@@ -502,7 +502,10 @@ export function openModelsDialog({
   closeDialog = openModalDialog(dialog, {
     doc: targetDoc,
     opener: targetDoc.activeElement,
-    onClose: () => { disposed = true; },
+    onClose: () => {
+      disposed = true;
+      dialog.remove();
+    },
   });
   load();
 

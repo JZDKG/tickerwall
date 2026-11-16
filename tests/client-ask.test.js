@@ -364,6 +364,18 @@ describe('openModelsDialog：动作与局部反馈', () => {
     expect(document.querySelector('dialog.ask-models-dialog')).toBeNull();
   });
 
+  it('Esc 或轻触取消引发原生 close 事件时也会从 DOM 摘除弹窗，避免残留死节点', async () => {
+    const { api } = makeFakeApi([MODEL_A]);
+    openDialog(api);
+    await flush();
+    dialog = document.querySelector('dialog.ask-models-dialog');
+    expect(dialog).toBeTruthy();
+
+    dialog.dispatchEvent(new Event('close'));
+    await flush();
+    expect(document.querySelector('dialog.ask-models-dialog')).toBeNull();
+  });
+
   it('测试连接可直接用未保存草稿，成功延迟显示在弹窗内', async () => {
     const { api, calls } = makeFakeApi([]);
     openDialog(api);
