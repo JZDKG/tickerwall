@@ -40,6 +40,10 @@
   flex-wrap: wrap;
 }
 
+.macro-ask-link {
+  margin-left: 0;
+}
+
 .risk-badge {
   padding: 4px 11px;
   border-radius: 8px;

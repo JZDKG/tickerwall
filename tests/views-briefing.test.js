@@ -29,6 +29,7 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  window.location.hash = '';
 });
 
 describe('面板渲染', () => {
@@ -77,6 +78,73 @@ describe('面板渲染', () => {
     });
     await briefing.openBriefing({ force: true });
     expect(panel().textContent).toContain('今日开盘以来');
+  });
+});
+
+describe('问财直达', () => {
+  const overnightPayload = (items) => ({
+    ok: true,
+    status: 'overnight',
+    cutLabel: '15:00',
+    baselineAt: '2026-10-27T07:00:00.000Z',
+    latestAt: '2026-10-28T01:00:00.000Z',
+    items,
+  });
+
+  it('briefingAskHref：取前 3 项摘要生成问题；空列表退化为通用隔夜询问', () => {
+    const items = [
+      { id: 'sp500', name: '标普500', to: 5738.2, movePct: 0.83 },
+      { id: 'gold-intl', name: '国际金价', to: 4123.4, movePct: -1.12 },
+      { id: 'oil', name: '国际原油', to: 71.2, movePct: 2.4 },
+      { id: 'dxy', name: '美元指数', to: 104.2, movePct: 0.1 },
+    ];
+    const q = decodeURIComponent(briefing.briefingAskHref({ items }).split('q=')[1]);
+    expect(q).toContain('隔夜');
+    expect(q).toContain('标普500 +0.83%');
+    expect(q).toContain('国际金价 -1.12%');
+    expect(q).toContain('国际原油 +2.40%');
+    expect(q).not.toContain('美元指数'); // 只取前 3 项
+
+    const empty = decodeURIComponent(briefing.briefingAskHref({ items: [] }).split('q=')[1]);
+    expect(empty).toContain('隔夜');
+    expect(empty).toContain('外盘');
+    expect(decodeURIComponent(briefing.briefingAskHref(undefined).split('q=')[1])).not.toContain('undefined');
+  });
+
+  it('面板底部 .briefing-actions 并列分享卡与问财链接', async () => {
+    globalThis.fetch = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => overnightPayload([{ id: 'sp500', name: '标普500', to: 5738.2, movePct: 0.83 }]),
+    });
+    await briefing.openBriefing({ force: true });
+    const actions = panel().querySelector('.briefing-actions');
+    expect(actions).toBeTruthy();
+    expect(actions.querySelector('.briefing-share')).toBeTruthy();
+    const ask = actions.querySelector('.briefing-ask');
+    expect(ask).toBeTruthy();
+    expect(ask.getAttribute('href').startsWith('#/ask?q=')).toBe(true);
+    expect(decodeURIComponent(ask.getAttribute('href'))).toContain('标普500 +0.83%');
+  });
+
+  it('点问财链接：收起面板并带着问题跳到 #/ask', async () => {
+    globalThis.fetch = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => overnightPayload([{ id: 'sp500', name: '标普500', to: 5738.2, movePct: 0.83 }]),
+    });
+    await briefing.openBriefing({ force: true });
+    const ask = panel().querySelector('.briefing-ask');
+    const href = ask.getAttribute('href');
+    // jsdom 对不在文档里的节点不做锚点默认导航：dispatch 验证收起逻辑，
+    // 未被 preventDefault（defaultPrevented=false）保证真实浏览器仍会导航到 href
+    const ev = new window.MouseEvent('click', { bubbles: true, cancelable: true });
+    ask.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(false);
+    expect(panel()).toBeNull();
+    expect(briefing.briefingOpen).toBe(false);
+    expect(href.startsWith('#/ask?q=')).toBe(true);
+    expect(decodeURIComponent(href)).toContain('标普500');
   });
 });
 

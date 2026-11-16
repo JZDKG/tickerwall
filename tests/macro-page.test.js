@@ -300,6 +300,51 @@ describe('联动', () => {
     expect(f.calls.length).toBe(before);
   });
 
+  it('macroAskHref：按选中对生成问财链接，带风险环境措辞与可详情标的的 asset 参数', () => {
+    const data = macroData();
+    const href = m.macroAskHref(data, ['gold-intl', 'dxy']);
+    const q = decodeURIComponent(href.split('?')[1].split('&').find((p) => p.startsWith('q=')).slice(2));
+    expect(q).toBe('结合当前Risk-On环境与相关性数据，分析国际金价与美元指数的最新联动与背离原因');
+    expect(href.startsWith('#/ask?q=')).toBe(true);
+    expect(href).toContain(`asset=${encodeURIComponent('gold-intl')}`);
+
+    // 无风险标签时省略环境从句；universe 查不到的 id 回退为 id 本身
+    const noRa = m.macroAskHref({ universe: data.universe }, ['copper', 'us10y']);
+    expect(decodeURIComponent(noRa)).toContain('结合相关性数据，分析copper与美债10Y收益率的最新联动与背离原因');
+    // 非可详情标的（不在 PLACEHOLDER）不带 asset 参数
+    expect(noRa).not.toContain('asset=');
+
+    // 无选中对：概括性宏观联动问题
+    const generic = decodeURIComponent(m.macroAskHref(data, null));
+    expect(generic).toContain('宏观');
+    expect(generic).not.toContain('undefined');
+    // data 缺失也不产出 undefined
+    expect(decodeURIComponent(m.macroAskHref(undefined, ['a', 'b']))).not.toContain('undefined');
+  });
+
+  it('渲染后 .macro-status 里有问财直达链接，换对后 href 跟着选中组合走', async () => {
+    await loaded();
+    const link = document.getElementById('macro-ask-link');
+    expect(link).not.toBeNull();
+    expect(link.closest('.macro-status')).not.toBeNull();
+    const initial = link.getAttribute('href');
+    expect(decodeURIComponent(initial)).not.toContain('undefined');
+
+    m.selectPair('gold-intl', 'us10y');
+    const updated = link.getAttribute('href');
+    expect(updated).not.toBe(initial);
+    expect(decodeURIComponent(updated)).toContain('国际金价与美债10Y收益率');
+    expect(updated).toContain('asset=gold-intl');
+
+    // 点联动卡片换对，同样刷新链接
+    const card = document.querySelector('.macro-impact-card[data-impact-pair]');
+    card.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    const [ca, cb] = card.dataset.impactPair.split('|');
+    const afterCard = link.getAttribute('href');
+    expect(m.macroState.pair).toEqual([ca, cb]);
+    expect(afterCard).toBe(m.macroAskHref(m.macroState.data, [ca, cb]));
+  });
+
   it('选「同一个标的」被拒绝（配不出一对相关）', async () => {
     await loaded();
     const before = [...m.macroState.pair];

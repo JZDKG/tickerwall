@@ -9,7 +9,7 @@
  * ================================================================== */
 
 import { macroEl } from '../shared/dom.js';
-import { store } from '../shared/store.js';
+import { PLACEHOLDER, store } from '../shared/store.js';
 import { api } from '../shared/api.js';
 import { clockText, dirOf, esc, html, raw } from '../shared/format.js';
 import {
@@ -608,6 +608,30 @@ export function macroTodayImpactHTML(data, quotes = store.quotes ?? []) {
   </section>`;
 }
 
+/**
+ * 任务直达：把当前选中对（或整体宏观联动）带进 AI 问财。
+ * universe 里查不到的 id 回退为 id 本身，绝不让 undefined 进问题文本；
+ * pair[0] 是可详情标的（PLACEHOLDER 23 个）时附带 asset 参数，问财侧才有行情上下文。
+ */
+export function macroAskHref(data = macroState?.data, pair = macroState?.pair) {
+  const nameOf = (id) => {
+    const hit = (data?.universe ?? []).find((u) => u.id === id);
+    return hit?.name || hit?.short || id;
+  };
+  const raLabel = data?.riskAppetite?.label ?? '';
+  let question;
+  if (pair?.[0] && pair?.[1]) {
+    question = `结合${raLabel ? `当前${raLabel}环境与` : ''}相关性数据，分析${nameOf(pair[0])}与${nameOf(pair[1])}的最新联动与背离原因`;
+  } else {
+    question = `结合${raLabel ? `当前${raLabel}环境与` : ''}相关性数据，解读当前全球宏观资产联动格局与主要背离`;
+  }
+  let href = `#/ask?q=${encodeURIComponent(question)}`;
+  if (pair?.[0] && PLACEHOLDER.some((p) => p.id === pair[0])) {
+    href += `&asset=${encodeURIComponent(pair[0])}`;
+  }
+  return href;
+}
+
 /** 仅刷新「选中对」相关的几处 UI，不重建整页 */
 export function syncPairUI() {
   const data = macroState?.data;
@@ -635,6 +659,10 @@ export function syncPairUI() {
     const match = Boolean(a && b) && ((ca === a && cb === b) || (ca === b && cb === a));
     card.classList.toggle('is-selected', match);
   });
+
+  // 问财直达链接跟着选中对走：点矩阵格 / 联动卡片后跳过去就是最新组合
+  const askLink = document.getElementById('macro-ask-link');
+  if (askLink) askLink.setAttribute('href', macroAskHref(data, macroState.pair));
 
   refreshGraph();
 }
@@ -900,6 +928,7 @@ export function renderMacro() {
                </details>`
             : ''
         }
+        <a class="d-ask-link macro-ask-link" id="macro-ask-link" href="${macroAskHref(data, macroState.pair)}">用 AI 问财分析联动</a>
       </div>
     </div>
 

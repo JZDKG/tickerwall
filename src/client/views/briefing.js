@@ -42,6 +42,20 @@ export function briefingRows(items) {
   return html`<div class="briefing-list">${rows}</div>`;
 }
 
+/**
+ * 任务直达：把隔夜变动最大的前 3 项带进 AI 问财。
+ * 没有样本时退化为通用隔夜询问，不产出 undefined。
+ */
+export function briefingAskHref(data) {
+  const items = (data?.items ?? []).slice(0, 3);
+  const question = items.length
+    ? `结合关联行情与近期事件，解读隔夜波动：${items
+        .map((it) => `${it.name} ${it.movePct >= 0 ? '+' : ''}${it.movePct.toFixed(2)}%`)
+        .join('、')}`
+    : '结合关联行情与近期事件，解读隔夜波动与外盘影响';
+  return `#/ask?q=${encodeURIComponent(question)}`;
+}
+
 /** 隔夜复盘的取数（同一份 api 客户端 + 查询缓存，视图只消费快照） */
 let briefingCache = null;
 function briefingQuery({ force = false } = {}) {
@@ -72,6 +86,8 @@ export async function openBriefing({ force = false } = {}) {
   panel.tabIndex = -1;
   panel.addEventListener('click', (e) => {
     if (e.target?.closest?.('.briefing-close')) closeBriefing();
+    // 问财直达：跳转 #/ask 前收起浮层，避免面板浮在问财页上（不 preventDefault，保留导航）
+    else if (e.target?.closest?.('.briefing-ask')) closeBriefing();
   });
   panel.innerHTML = html`<div class="briefing-head"><div><h3>隔夜复盘</h3><p class="briefing-sub">载入中…</p></div><button type="button" class="briefing-close" aria-label="关闭">×</button></div>`.toString();
   document.body.appendChild(panel);
@@ -121,7 +137,10 @@ export async function openBriefing({ force = false } = {}) {
       </div>
       ${briefingRows(data.items ?? [])}
       <p class="briefing-foot">按变动幅度排序 · 数据来自本机快照</p>
-      <button type="button" class="briefing-share" data-action="share-card">生成分享卡</button>`.toString();
+      <div class="briefing-actions">
+        <button type="button" class="briefing-share" data-action="share-card">生成分享卡</button>
+        <a class="briefing-ask" href="${briefingAskHref(data)}">用 AI 解读隔夜波动</a>
+      </div>`.toString();
   } catch (err) {
     if (briefingOpen) {
       panel.innerHTML = html`<div class="briefing-head"><h3>隔夜复盘</h3><button type="button" class="briefing-close" aria-label="关闭">×</button></div>

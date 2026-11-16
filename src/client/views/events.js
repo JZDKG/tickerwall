@@ -88,6 +88,11 @@ export function eventItemHTML(ev) {
     : html`<h4 class="ev-title">${ev.title}</h4>`;
   // 原来是 join('') 后判空：只要有一个符号命中就显示分隔符
   const symsExist = symChips.some((x) => x !== '');
+  // 任务直达：把当前快讯带进 AI 问财。问题取中文译题（无译文取原题），
+  // 截 80 字防止超长快讯把 URL 撑爆；不依赖 ev.url，无原文的聚合条目也可追问。
+  const askHeadline = (zhText || ev.title).slice(0, 80);
+  const askHref = `#/ask?q=${encodeURIComponent(`结合关联行情与近期事件，解读快讯影响：${askHeadline}`)}`;
+  const askLink = html`<a class="ev-ask-link" href="${askHref}">问AI</a>`;
   return html`<article class="event lv-${ev.level}${isNew ? ' is-new' : ''}" data-id="${ev.id}">
     <div class="ev-time">${ev.time.slice(11, 16)}<em>${ev.time.slice(5, 10)}</em></div>
     <div class="ev-main">
@@ -99,7 +104,7 @@ export function eventItemHTML(ev) {
       </div>
       ${titleBlock}
       ${ev.body && ev.body !== ev.title ? html`<p class="ev-body">${ev.body}</p>` : ''}
-      <div class="ev-meta">${oneHand}${langChip}<span class="ev-pub"${channelNote ? html` title="经 ${channelNote} 采集"` : ''}>${byline}</span>${symsExist ? html`<span class="ev-sep">·</span>${symChips}` : ''}${revisionChipHTML(ev)}${link}</div>
+      <div class="ev-meta">${oneHand}${langChip}<span class="ev-pub"${channelNote ? html` title="经 ${channelNote} 采集"` : ''}>${byline}</span>${symsExist ? html`<span class="ev-sep">·</span>${symChips}` : ''}${revisionChipHTML(ev)}${link}${askLink}</div>
     </div>
   </article>`;
 }

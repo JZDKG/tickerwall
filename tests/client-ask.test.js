@@ -1156,6 +1156,227 @@ describe('mountAsk：工作区、流式渲染与生命周期', () => {
     expect(calls.post[0]).toMatchObject({ path: 'api/ai/sessions', body: { action: 'delete', id: 's1' } });
   });
 
+  it('历史会话 >=4 条才显示筛选框；筛选只重绘列表且输入不丢焦点', async () => {
+    const four = [
+      { id: 's1', title: '黄金分析', updatedAt: Date.now() },
+      { id: 's2', title: '原油走势', updatedAt: Date.now() },
+      { id: 's3', title: '美债利率', updatedAt: Date.now() },
+      { id: 's4', title: 'GOLD outlook', updatedAt: Date.now() },
+    ];
+    const { api } = fakeAskApi({ models: [MODEL], sessions: four });
+    askView.mountAsk('', { api, document, window, quotes });
+    const search = await waitFor(() => ($('#ask-history-search')?.hidden === false ? $('#ask-history-search') : null));
+    const filter = $('#ask-history-filter');
+    expect(filter).toBeTruthy();
+    expect(filter.type).toBe('search');
+    expect(search.contains(filter)).toBe(true);
+
+    filter.focus();
+    filter.value = '黄金';
+    filter.dispatchEvent(new Event('input', { bubbles: true }));
+    const titles = () => [...document.querySelectorAll('#ask-history-list .ask-history-title')].map((n) => n.textContent);
+    expect(titles()).toEqual(['黄金分析']);
+    // 只重绘 ul：input 节点未被替换，焦点仍在
+    expect(document.activeElement).toBe(filter);
+    expect($('#ask-history-filter')).toBe(filter);
+
+    // 大小写不敏感
+    filter.value = 'gold';
+    filter.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(titles()).toEqual(['GOLD outlook']);
+
+    // 无匹配提示带上筛选词
+    filter.value = '不存在的关键字';
+    filter.dispatchEvent(new Event('input', { bubbles: true }));
+    expect($('#ask-history-list').textContent).toContain('没有匹配「不存在的关键字」的会话');
+
+    // 清空筛选恢复全量
+    filter.value = '';
+    filter.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(titles()).toHaveLength(4);
+
+    // 新对话不清筛选，也不影响开新会话
+    filter.value = '黄金';
+    filter.dispatchEvent(new Event('input', { bubbles: true }));
+    $('#ask-new-btn').click();
+    expect($('#ask-history-filter').value).toBe('黄金');
+    expect(titles()).toEqual(['黄金分析']);
+  });
+
+  it('历史会话 <4 条且无筛选词时隐藏筛选框；删到 <4 但筛选词非空仍显示', async () => {
+    const four = [
+      { id: 's1', title: '黄金分析', updatedAt: Date.now() },
+      { id: 's2', title: '原油走势', updatedAt: Date.now() },
+      { id: 's3', title: '美债利率', updatedAt: Date.now() },
+      { id: 's4', title: '汇率观察', updatedAt: Date.now() },
+    ];
+    const { api, calls } = fakeAskApi({ models: [MODEL], sessions: four });
+    askView.mountAsk('', { api, document, window, quotes });
+    await waitFor(() => $('#ask-history-search')?.hidden === false);
+    const filter = $('#ask-history-filter');
+
+    // 先删两条 → 只剩 2 条且无筛选词：隐藏
+    $('#ask-history [data-session-delete="s2"]').click();
+    await waitFor(() => calls.post.length === 1);
+    $('#ask-history [data-session-delete="s3"]').click();
+    await waitFor(() => calls.post.length === 2);
+    expect($('#ask-history-search').hidden).toBe(true);
+
+    // 筛选词非空时即使 <4 条也保持可见（OR 条件）
+    filter.value = '黄金';
+    filter.dispatchEvent(new Event('input', { bubbles: true }));
+    expect($('#ask-history-search').hidden).toBe(false);
+
+    // 清空筛选词 → <4 条立即隐藏
+    filter.value = '';
+    filter.dispatchEvent(new Event('input', { bubbles: true }));
+    expect($('#ask-history-search').hidden).toBe(true);
+  });
+
+  it('少于 4 条会话时新用户看不到筛选框', async () => {
+    const { api } = fakeAskApi({ models: [MODEL], sessions: [{ id: 's1', title: '黄金分析', updatedAt: Date.now() }] });
+    askView.mountAsk('', { api, document, window, quotes });
+    await waitFor(() => $('#ask-history-list .ask-history-item'));
+    expect($('#ask-history-search')).toBeTruthy();
+    expect($('#ask-history-search').hidden).toBe(true);
+  });
+
+  it('输入框按 scrollHeight 自动增高并夹在 56..140px；无高度环境安全降级', async () => {
+    const { api, calls } = fakeAskApi({ models: [MODEL] });
+    askView.mountAsk('', { api, document, window, quotes });
+    await waitFor(() => $('#ask-model-select option[value="m1"]'));
+    const input = $('#ask-input');
+
+    // jsdom scrollHeight 恒 0：清掉内联高度，不抛错
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(input.style.height).toBe('');
+
+    // 模拟真实浏览器高度：低于下限取 56，超上限取 140
+    const setScroll = (h) => Object.defineProperty(input, 'scrollHeight', { configurable: true, get: () => h });
+    setScroll(30);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(input.style.height).toBe('56px');
+    setScroll(100);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(input.style.height).toBe('100px');
+    setScroll(400);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(input.style.height).toBe('140px');
+
+    // 发送清空后按空内容重量（模拟浏览器：空 textarea scrollHeight 30 → 夹到下限 56）
+    setScroll(30);
+    input.value = '多行\n问题';
+    $('#ask-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await waitFor(() => calls.ask.length === 1);
+    expect(input.value).toBe('');
+    expect(input.style.height).toBe('56px');
+
+    // 新对话同样复位
+    setScroll(400);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    setScroll(30);
+    $('#ask-new-btn').click();
+    expect(input.style.height).toBe('56px');
+  });
+
+  it('URL 预填问题后按内容调整输入框高度', async () => {
+    const { api } = fakeAskApi({ models: [MODEL] });
+    askView.mountAsk('q=%E5%88%86%E6%9E%90%E9%BB%84%E9%87%91', { api, document, window, quotes });
+    const input = $('#ask-input');
+    expect(input.value).toBe('分析黄金');
+    // jsdom 无高度：降级为不设内联高度而不是报错
+    expect(input.style.height).toBe('');
+  });
+
+  it('空输入按 ArrowUp 回填本会话上一条提问；有内容时不劫持光标', async () => {
+    const session = {
+      id: 's1', title: '黄金分析', updatedAt: Date.now(),
+      messages: [
+        { id: 'x1', role: 'user', content: '第一问' },
+        { id: 'x2', role: 'assistant', content: '答一', toolTrace: [], modelLabel: 'gpt-test' },
+        { id: 'x3', role: 'user', content: '第二问' },
+        { id: 'x4', role: 'assistant', content: '答二', toolTrace: [], modelLabel: 'gpt-test' },
+      ],
+    };
+    const { api } = fakeAskApi({ models: [MODEL], sessions: [{ id: 's1', title: '黄金分析', updatedAt: Date.now() }], sessionDetail: session });
+    askView.mountAsk('', { api, document, window, quotes });
+    await waitFor(() => $('#ask-history [data-session-id="s1"]'));
+    $('#ask-history [data-session-id="s1"]').click();
+    await waitFor(() => $('#ask-messages').textContent.includes('第二问'));
+
+    const input = $('#ask-input');
+    const arrowUp = () => new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true });
+    const ev = arrowUp();
+    input.dispatchEvent(ev);
+    expect(input.value).toBe('第二问');
+    expect(ev.defaultPrevented).toBe(true);
+    expect(input.selectionStart).toBe('第二问'.length);
+
+    // 有内容时 ArrowUp 保持原生光标移动
+    const ev2 = arrowUp();
+    input.dispatchEvent(ev2);
+    expect(ev2.defaultPrevented).toBe(false);
+    expect(input.value).toBe('第二问');
+
+    // 新会话没有历史提问：不报错也不改值
+    $('#ask-new-btn').click();
+    const ev3 = arrowUp();
+    input.dispatchEvent(ev3);
+    expect(input.value).toBe('');
+    expect(ev3.defaultPrevented).toBe(false);
+  });
+
+  it('视图内按 / 聚焦输入框；输入控件/弹窗内不劫持；卸载后监听全部注销', async () => {
+    const { api } = fakeAskApi({ models: [MODEL] });
+    askView.mountAsk('', { api, document, window, quotes });
+    await waitFor(() => $('#ask-model-select option[value="m1"]'));
+    const input = $('#ask-input');
+    input.blur();
+
+    const slash = () => new KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true });
+    const ev = slash();
+    document.body.dispatchEvent(ev);
+    expect(document.activeElement).toBe(input);
+    expect(ev.defaultPrevented).toBe(true);
+
+    // 焦点在输入控件里：/ 是正常字符
+    input.blur();
+    const filter = $('#ask-history-filter');
+    const evInFilter = slash();
+    filter.dispatchEvent(evInFilter);
+    expect(evInFilter.defaultPrevented).toBe(false);
+    expect(document.activeElement).not.toBe(input);
+
+    // 弹窗打开时不抢焦点
+    $('#ask-models-btn').click();
+    await waitFor(() => document.querySelector('dialog.ask-models-dialog'));
+    input.blur();
+    const evDialog = slash();
+    document.body.dispatchEvent(evDialog);
+    expect(evDialog.defaultPrevented).toBe(false);
+    expect(document.activeElement).not.toBe(input);
+    document.querySelector('dialog.ask-models-dialog [data-dialog-act="close"]')?.click();
+    input.blur();
+    const evAfterDialog = slash();
+    document.body.dispatchEvent(evAfterDialog);
+    expect(evAfterDialog.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(input);
+    input.blur();
+
+    // 带修饰键不触发
+    const evMeta = new KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true, metaKey: true });
+    document.body.dispatchEvent(evMeta);
+    expect(evMeta.defaultPrevented).toBe(false);
+
+    // 卸载后 doc 监听全部清理
+    askView.unmountAsk();
+    input.blur?.();
+    document.body.focus();
+    const evAfter = slash();
+    document.body.dispatchEvent(evAfter);
+    expect(evAfter.defaultPrevented).toBe(false);
+  });
+
   it('点击「模型配置」打开原生 dialog', async () => {
     const { api } = fakeAskApi({ models: [MODEL] });
     askView.mountAsk('', { api, document, window, quotes });

@@ -264,6 +264,7 @@ export function mountAsk(arg = '', {
     modelId: '',
     sessions: [],
     sessionId: null,
+    sessionFilter: '',
     messages: [],
     assetId: '',
     quotes: Array.isArray(quotes) ? quotes : (store.quotes ?? []),
@@ -308,6 +309,9 @@ export function mountAsk(arg = '', {
         <div class="ask-history-head">
           <span>历史会话</span>
         </div>
+        <div class="ask-history-search" id="ask-history-search" hidden>
+          <input id="ask-history-filter" class="ask-history-filter" type="search" placeholder="筛选历史会话" aria-label="筛选历史会话">
+        </div>
         <ul class="ask-history-list" id="ask-history-list"></ul>
       </aside>
       <div class="ask-main">
@@ -328,6 +332,8 @@ export function mountAsk(arg = '', {
     newBtn: askEl.querySelector('#ask-new-btn'),
     body: askEl.querySelector('.ask-body'),
     history: askEl.querySelector('#ask-history'),
+    historySearch: askEl.querySelector('#ask-history-search'),
+    historyFilter: askEl.querySelector('#ask-history-filter'),
     historyList: askEl.querySelector('#ask-history-list'),
     messages: askEl.querySelector('#ask-messages'),
     form: askEl.querySelector('#ask-form'),
@@ -336,13 +342,6 @@ export function mountAsk(arg = '', {
     graphPopover: askEl.querySelector('#ask-graph-popover'),
   };
   state.refs = refs;
-
-  const parsed = parseAskHashQuery(arg);
-  state.assetId = parsed.assetId;
-  if (parsed.question) {
-    refs.input.value = parsed.question;
-    refs.input.focus();
-  }
 
   const on = (el, type, handler) => {
     el.addEventListener(type, handler);
@@ -396,6 +395,10 @@ export function mountAsk(arg = '', {
   };
 
   const renderSessions = () => {
+    // 渐进披露：会话少的新用户不需要筛选框；有筛选词时即使删到 <4 条也保持可见。
+    // 只切 hidden、只重绘 ul —— 不碰 input 节点本身，输入拼音/关键字不丢焦点。
+    const filterText = state.sessionFilter.trim();
+    refs.historySearch.hidden = !(state.sessions.length >= 4 || Boolean(filterText));
     if (state.sessionsLoading) {
       setMarkup(doc, refs.historyList, html`<li class="ask-history-empty">正在读取…</li>`);
       return;
@@ -411,7 +414,15 @@ export function mountAsk(arg = '', {
       setMarkup(doc, refs.historyList, html`<li class="ask-history-empty">暂无历史会话</li>`);
       return;
     }
-    setMarkup(doc, refs.historyList, html`${state.sessions.map((s) => html`<li class="ask-history-item${s.id === state.sessionId ? ' is-active' : ''}">
+    const needle = filterText.toLowerCase();
+    const shown = needle
+      ? state.sessions.filter((s) => String(s.title || '未命名会话').toLowerCase().includes(needle))
+      : state.sessions;
+    if (!shown.length) {
+      setMarkup(doc, refs.historyList, html`<li class="ask-history-empty">没有匹配「${filterText}」的会话</li>`);
+      return;
+    }
+    setMarkup(doc, refs.historyList, html`${shown.map((s) => html`<li class="ask-history-item${s.id === state.sessionId ? ' is-active' : ''}">
       <button type="button" class="ask-history-open" data-session-id="${s.id}">
         <span class="ask-history-title">${s.title || '未命名会话'}</span>
         <span class="ask-history-time">${sessionTime(s)}</span>
@@ -419,6 +430,23 @@ export function mountAsk(arg = '', {
       <button type="button" class="ask-history-del" data-session-delete="${s.id}" aria-label="删除会话 ${s.title || '未命名会话'}">${iconHtml('close', 14)}</button>
     </li>`)}`);
   };
+
+  // 输入框随内容增高：先复位再量 scrollHeight，夹在 56..140px。
+  // jsdom / 隐藏容器里 scrollHeight 为 0：清掉内联高度即可，不硬造数值。
+  const syncInputHeight = () => {
+    refs.input.style.height = '';
+    const h = refs.input.scrollHeight;
+    if (!h) return;
+    refs.input.style.height = `${Math.min(140, Math.max(56, h))}px`;
+  };
+
+  const parsed = parseAskHashQuery(arg);
+  state.assetId = parsed.assetId;
+  if (parsed.question) {
+    refs.input.value = parsed.question;
+    syncInputHeight();
+    refs.input.focus();
+  }
 
   const hideActiveChartTip = () => {
     const fig = state.activeChartFig;
@@ -700,6 +728,7 @@ export function mountAsk(arg = '', {
     scrollToBottom();
 
     refs.input.value = '';
+    syncInputHeight();
     state.streaming = true;
     updateSendButton();
 
@@ -768,6 +797,7 @@ export function mountAsk(arg = '', {
     state.sessionId = null;
     state.messages = [];
     refs.input.value = '';
+    syncInputHeight();
     renderMessages();
     renderSessions();
     refs.input.focus();
@@ -882,7 +912,21 @@ export function mountAsk(arg = '', {
     submitQuestion();
   });
 
+  on(refs.input, 'input', syncInputHeight);
+
   on(refs.input, 'keydown', (event) => {
+    // 空输入按 ArrowUp 回填上一条提问（终端习惯）；有内容时不劫持多行光标移动
+    if (event.key === 'ArrowUp' && !refs.input.value) {
+      const lastUser = [...state.messages].reverse().find((m) => m.role === 'user');
+      if (lastUser?.content) {
+        event.preventDefault();
+        refs.input.value = lastUser.content;
+        syncInputHeight();
+        const end = refs.input.value.length;
+        refs.input.setSelectionRange?.(end, end);
+      }
+      return;
+    }
     if (event.key !== 'Enter' || event.shiftKey) return;
     if (event.isComposing || event.keyCode === 229) return;
     event.preventDefault();
@@ -1008,6 +1052,16 @@ export function mountAsk(arg = '', {
   });
 
   on(doc, 'keydown', (event) => {
+    // 「/」快速聚焦提问框：只在问财视图可见、焦点不在输入控件/弹窗时生效
+    if (event.key === '/' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      const t = event.target;
+      const typing = t?.closest?.('input, textarea, select') || t?.isContentEditable;
+      if (!askEl.hidden && !typing && !state.graphOpen && !doc.querySelector('dialog[open]')) {
+        event.preventDefault();
+        refs.input.focus();
+      }
+      return;
+    }
     if (event.key !== 'Escape') return;
     if (state.graphOpen) {
       event.preventDefault();
@@ -1025,6 +1079,11 @@ export function mountAsk(arg = '', {
     if (refs.graphPopover.contains(target)) return;
     if (target?.closest?.('[data-graph-node]') === state.graphTriggerEl) return;
     closeGraphPopover({ restoreFocus: false });
+  });
+
+  on(refs.historyFilter, 'input', () => {
+    state.sessionFilter = refs.historyFilter.value;
+    renderSessions();
   });
 
   on(refs.history, 'click', (event) => {

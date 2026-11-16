@@ -488,6 +488,27 @@ async function main() {
       `n=${evContrast.value?.count} min=${evContrast.value?.minCr} worst=${evContrast.value?.worst?.scheme}:${evContrast.value?.worst?.sel}`,
     );
 
+    // 快讯「问AI」直达：每条快讯都带链接，点击预填问题跳到 #/ask，再返回事件中心
+    await waitForCondition(() => cdp.evaluate(`Boolean(document.querySelector('#events .event .ev-ask-link'))`), { timeoutMs: 15000 });
+    const evAskHref = await cdp.evaluate(`(() => {
+      const links = [...document.querySelectorAll('#events .event')].map((ev) => ev.querySelector('.ev-ask-link')?.getAttribute('href') ?? '');
+      return { total: document.querySelectorAll('#events .event').length, withLink: links.filter((h) => h.startsWith('#/ask?q=')).length };
+    })()`);
+    await cdp.evaluate(`document.querySelector('#events .event .ev-ask-link')?.click()`);
+    await waitForCondition(
+      () => cdp.evaluate(`Boolean(document.querySelector('#ask:not([hidden]) #ask-input') && document.getElementById('ask-input').value.includes('解读快讯影响'))`),
+      { timeoutMs: 5000 },
+    );
+    const evAskJump = await cdp.evaluate(`({ hash: location.hash, val: document.getElementById('ask-input')?.value ?? '' })`);
+    record(
+      (evAskHref.value?.total ?? 0) > 0 && evAskHref.value?.withLink === evAskHref.value?.total
+      && String(evAskJump.value?.hash ?? '').startsWith('#/ask?q=') && String(evAskJump.value?.val ?? '').includes('解读快讯影响'),
+      '事件中心每条快讯带「问AI」直达并预填问题跳转 #/ask',
+      `links=${evAskHref.value?.withLink}/${evAskHref.value?.total} hash=${String(evAskJump.value?.hash ?? '').slice(0, 20)}`,
+    );
+    await cdp.send('Page.navigate', { url: `${base}/#/events` });
+    await waitForCondition(() => cdp.evaluate(`Boolean(document.querySelector('#today-focus-slot .tf-card'))`), { timeoutMs: 15000 });
+
     /* ---------------- 详情：解释卡 ---------------- */
     await cdp.send('Page.navigate', { url: `${base}/#/d/gold-intl` });
     await waitForCondition(
@@ -632,6 +653,25 @@ async function main() {
     record(m.hasTodayOverview && (m.impactCardCount ?? 0) >= 4 && m.statsCollapsed === true, '关联分析顶部展示通俗联动全景，专业统计四表默认折叠', `impacts=${m.impactCardCount} statsCollapsed=${m.statsCollapsed}`);
     record((m.dark?.bodyCr ?? 0) >= 7 && (m.light?.bodyCr ?? 0) >= 7, '深/浅色正文对比度达到 AAA', `dark=${m.dark?.bodyCr} light=${m.light?.bodyCr}`);
     record((m.dark?.mutedCr ?? 0) >= 4.5 && (m.light?.mutedCr ?? 0) >= 4.5, '深/浅色图谱卡片次级文案满足 AA (>=4.5)', `dark=${m.dark?.mutedCr} light=${m.light?.mutedCr}`);
+
+    // 问财直达：默认概括问题 → 点联动卡片换对后 href 跟着选中组合走（带 asset 参数）
+    const macroAsk1 = await cdp.evaluate(`(() => {
+      const a = document.getElementById('macro-ask-link');
+      return { present: Boolean(a && a.closest('.macro-status')), href: a?.getAttribute('href') ?? '' };
+    })()`);
+    await cdp.evaluate(`document.querySelector('#macro .macro-impact-card[data-impact-pair]')?.click()`);
+    const macroAsk2 = await cdp.evaluate(`(() => {
+      const a = document.getElementById('macro-ask-link');
+      const card = document.querySelector('#macro .macro-impact-card.is-selected');
+      return { href: a?.getAttribute('href') ?? '', pair: card?.dataset?.impactPair ?? '' };
+    })()`);
+    const macroAskQ = decodeURIComponent(String(macroAsk2.value?.href ?? ''));
+    record(
+      macroAsk1.value?.present && String(macroAsk1.value?.href ?? '').startsWith('#/ask?q=')
+      && macroAsk2.value?.href !== macroAsk1.value?.href && macroAskQ.includes('相关性数据') && !macroAskQ.includes('undefined'),
+      '关联分析问财直达链接随选中交易对动态更新',
+      `before=${String(macroAsk1.value?.href ?? '').slice(0, 24)} pair=${macroAsk2.value?.pair} after=${macroAskQ.slice(0, 60)}`,
+    );
 
     /* ---------------- 交互：隔夜复盘、命令面板 <dialog>、预警面板 ---------------- */
     await cdp.send('Page.navigate', { url: `${base}/` });
@@ -984,7 +1024,33 @@ async function main() {
       `cp=${cpDeferred.value?.shownAfterClose} al=${alDeferred.value?.shownAfterClose} cmd=${cmdSelectDeferred.value?.shownAfterClose} esc=${escDeferred.value?.shownAfterClose ? 'true' : JSON.stringify(escDeferred.value)} share=${shareDeferred.value?.shownAfterClose}`,
     );
 
+    // 隔夜复盘问财直达：点 .briefing-ask 收起浮层并带问题跳 #/ask（模型未配，仅验证预填）
+    await cdp.evaluate(`document.getElementById('briefing-btn')?.click()`);
+    await waitForCondition(() => cdp.evaluate(`Boolean(document.querySelector('#briefing-panel .briefing-ask'))`), { timeoutMs: 5000 });
+    const brAskHref = await cdp.evaluate(`document.querySelector('#briefing-panel .briefing-ask')?.getAttribute('href') ?? ''`);
+    await cdp.evaluate(`document.querySelector('#briefing-panel .briefing-ask')?.click()`);
+    await waitForCondition(
+      () => cdp.evaluate(`Boolean(document.querySelector('#ask:not([hidden]) #ask-input') && document.getElementById('ask-input').value.includes('隔夜'))`),
+      { timeoutMs: 5000 },
+    );
+    const brAskJump = await cdp.evaluate(`(() => ({
+      panelGone: !document.getElementById('briefing-panel'),
+      expanded: document.getElementById('briefing-btn')?.getAttribute('aria-expanded'),
+      hash: location.hash,
+      val: document.getElementById('ask-input')?.value ?? '',
+    }))()`);
+    record(
+      String(brAskHref.value ?? '').startsWith('#/ask?q=') && brAskJump.value?.panelGone === true
+      && brAskJump.value?.expanded === 'false' && String(brAskJump.value?.hash ?? '').startsWith('#/ask?q=')
+      && String(brAskJump.value?.val ?? '').includes('隔夜'),
+      '隔夜复盘「用 AI 解读隔夜波动」收起面板并预填跳转 #/ask',
+      `panelGone=${brAskJump.value?.panelGone} hash=${String(brAskJump.value?.hash ?? '').slice(0, 20)}`,
+    );
+
     /* ---------------- AI 问财（#/ask）端到端闭环与布局对比度 ---------------- */
+    // 回到干净 #/ask：隔夜直达带来的预填问题不应残留到空态配置流程
+    await cdp.send('Page.navigate', { url: `${base}/#/ask` });
+    await waitForCondition(() => cdp.evaluate(`document.readyState === 'complete'`), { timeoutMs: 10000 });
     await cdp.evaluate(`document.querySelector('a[data-nav-hash="#/ask"]')?.click()`);
     await waitForCondition(
       () => cdp.evaluate(`Boolean(document.querySelector('#ask:not([hidden]) #ask-empty [data-ask-act="configure"]'))`),
@@ -1099,6 +1165,46 @@ async function main() {
       as.traceCollapsedByDefault === true && as.traceSummary.includes('1') && (as.traceItems ?? 0) >= 1 && as.traceErrors === 0 && as.hasH3 && as.hasTable && as.hasChartSvg && as.hasCopyBtn && as.followupCount === 2 && !as.leakedFollowupsFence && as.linkHref === '#/d/gold-intl' && (as.sessionCount ?? 0) >= 1,
       'SSE 流式提问、工具取数轨迹、复制按钮、推荐追问与内嵌图表及会话历史全部闭环',
       JSON.stringify(as),
+    );
+
+    // 渐进式会话筛选：>=4 条历史才出现搜索框；筛选只重绘列表，输入焦点不丢
+    const filterHiddenEarly = await cdp.evaluate(`document.getElementById('ask-history-search')?.hidden ?? null`);
+    const sessionQuestions = ['黄金第二问', '原油怎么看', '美债利率影响'];
+    for (let i = 0; i < sessionQuestions.length; i += 1) {
+      await cdp.evaluate(`(() => {
+        document.getElementById('ask-new-btn')?.click();
+        const inp = document.getElementById('ask-input');
+        inp.value = ${JSON.stringify(sessionQuestions)}[${i}];
+        document.getElementById('ask-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      })()`);
+      const want = i + 2; // 首问 1 条 + 已发 i+1 条
+      await waitForCondition(
+        () => cdp.evaluate(`document.querySelectorAll('#ask-history-list .ask-history-item').length >= ${want} && document.getElementById('ask-send')?.textContent === '发送'`),
+        { timeoutMs: 20000 },
+      );
+    }
+    await waitForCondition(() => cdp.evaluate(`document.getElementById('ask-history-search')?.hidden === false`), { timeoutMs: 5000 });
+    const askFilterRes = await cdp.evaluate(`(() => {
+      const filter = document.getElementById('ask-history-filter');
+      filter.focus();
+      filter.value = '黄金';
+      filter.dispatchEvent(new Event('input', { bubbles: true }));
+      const matched = [...document.querySelectorAll('#ask-history-list .ask-history-title')].map((n) => n.textContent);
+      const focusKept = document.activeElement === filter;
+      filter.value = '不存在的关键词';
+      filter.dispatchEvent(new Event('input', { bubbles: true }));
+      const noMatch = document.getElementById('ask-history-list').textContent.includes('没有匹配「不存在的关键词」的会话');
+      filter.value = '';
+      filter.dispatchEvent(new Event('input', { bubbles: true }));
+      const restored = document.querySelectorAll('#ask-history-list .ask-history-item').length;
+      return { matched, focusKept, noMatch, restored };
+    })()`);
+    const af = askFilterRes.value ?? {};
+    record(
+      filterHiddenEarly.value === true && (af.matched ?? []).length >= 1 && af.matched.every((t) => t.includes('黄金'))
+      && af.focusKept === true && af.noMatch === true && (af.restored ?? 0) >= 4,
+      '历史会话达到 4 条才显示筛选框；筛选保焦点、无匹配提示、清空恢复全量',
+      `earlyHidden=${filterHiddenEarly.value} matched=${JSON.stringify(af.matched)} focus=${af.focusKept} restored=${af.restored}`,
     );
 
     // 悬停 K 线柱触发十字线与 .md-chart-tip，点击传导图节点弹出 #ask-graph-popover（含追问与详情跳转）
@@ -1389,7 +1495,7 @@ async function main() {
       for (const theme of ['dark', 'light']) {
         document.documentElement.setAttribute('data-theme', theme);
         const fallback = theme === 'light' ? [244, 245, 247] : [12, 13, 16];
-        for (const sel of ['#ask-send', '#ask-models-btn', '.ask-trace > summary', '.ask-answer p', '.ask-answer th', '.ask-answer a', '.ask-history-time', '.ask-copy-btn', '.ask-followup-chip', '.md-chart-tip-title', '#ask-graph-popover .ask-graph-popover-btn']) {
+        for (const sel of ['#ask-send', '#ask-models-btn', '.ask-trace > summary', '.ask-answer p', '.ask-answer th', '.ask-answer a', '.ask-history-time', '#ask-history-filter', '.ask-copy-btn', '.ask-followup-chip', '.md-chart-tip-title', '#ask-graph-popover .ask-graph-popover-btn']) {
           const el = document.querySelector('#ask ' + sel);
           if (!el) continue;
           const fg = parseRgba(getComputedStyle(el).color);
@@ -1404,8 +1510,8 @@ async function main() {
       return { count: results.length, minCr, worst: results.find((r) => r.cr === minCr) ?? null };
     })()`);
     record(
-      (askContrast.value?.count ?? 0) >= 20 && (askContrast.value?.minCr ?? 0) >= 4.5,
-      'AI 问财深/浅色主题按钮、复制、追问、图表浮层与 Popover 对比度满足 AA (>=4.5)',
+      (askContrast.value?.count ?? 0) >= 22 && (askContrast.value?.minCr ?? 0) >= 4.5,
+      'AI 问财深/浅色主题按钮、复制、追问、筛选框、图表浮层与 Popover 对比度满足 AA (>=4.5)',
       `n=${askContrast.value?.count} min=${askContrast.value?.minCr} worst=${askContrast.value?.worst?.theme}:${askContrast.value?.worst?.sel}`,
     );
 

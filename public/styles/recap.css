@@ -144,6 +144,25 @@
   line-height: 1.6;
 }
 
+.briefing-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.briefing-ask {
+  font-size: 12px;
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.briefing-ask:hover,
+.briefing-ask:focus-visible {
+  text-decoration: underline;
+}
+
 @media (max-width: 520px) {
   .briefing-panel {
     top: 56px;

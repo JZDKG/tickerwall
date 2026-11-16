@@ -334,6 +334,27 @@ describe('events：日历与单条渲染', () => {
     expect(agg).not.toContain('ev-link');
   });
 
+  it('eventItemHTML：每条快讯都带「问AI」直达链接，问题取中文译题并截断 80 字', () => {
+    const html = String(events.eventItemHTML(EV()));
+    expect(html).toContain('class="ev-ask-link"');
+    expect(html).toContain(`href="#/ask?q=${encodeURIComponent('结合关联行情与近期事件，解读快讯影响：美联储宣布降息')}"`);
+
+    // 中文译文优先于英文原题
+    const zh = String(events.eventItemHTML(EV({ zh: ' 美联储降息 25 个基点 ', title: 'Fed cuts rates' })));
+    expect(zh).toContain(`q=${encodeURIComponent('结合关联行情与近期事件，解读快讯影响：美联储降息 25 个基点')}`);
+    expect(zh).not.toContain(encodeURIComponent('Fed cuts rates'));
+
+    // 超过 80 字截断
+    const long = 'x'.repeat(120);
+    const cut = String(events.eventItemHTML(EV({ title: long, zh: '' })));
+    expect(cut).toContain(`q=${encodeURIComponent(`结合关联行情与近期事件，解读快讯影响：${'x'.repeat(80)}`)}`);
+
+    // 无原文链接的事件同样有「问AI」；链接不依赖 ev.url
+    const noUrl = String(events.eventItemHTML(EV({ url: 'javascript:alert(1)' })));
+    expect(noUrl).not.toContain('ev-link');
+    expect(noUrl).toContain('ev-ask-link');
+  });
+
   it('NEW 标记来自 store.events.newIds', () => {
     store.events = { newIds: new Set(['e1']) };
     expect(String(events.eventItemHTML(EV()))).toContain('ev-new');

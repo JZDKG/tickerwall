@@ -304,6 +304,17 @@
   text-decoration: underline;
 }
 
+.ev-ask-link {
+  color: var(--accent);
+  text-decoration: none;
+  margin-left: 2px;
+}
+
+.ev-ask-link:hover,
+.ev-ask-link:focus-visible {
+  text-decoration: underline;
+}
+
 @media (max-width: 880px) {
   .cal-item {
     grid-template-columns: 62px 52px 1fr;
