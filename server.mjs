@@ -35,6 +35,7 @@ import { getTodayFocus } from './src/server/services/today-focus.service.js';
 import { startCollector } from './src/server/jobs/collector.js';
 import { createSseHub } from './src/server/realtime/sse-hub.js';
 import { createAlertsService } from './src/server/services/alerts.service.js';
+import { createAiService } from './src/server/services/ai.service.js';
 import { buildDefaultJobs, recoverPendingJobs } from './src/server/jobs/index.js';
 import { installShutdown } from './src/server/lifecycle.js';
 import { createLogger, withRequestLog } from './src/server/observability/log.js';
@@ -45,6 +46,8 @@ const logger = createLogger();
 const sseHub = createSseHub({ getLatestQuotes: () => quotesCache.data ?? null });
 /** P3-T2：四维预警服务与 SSE 共用同一个 hub，命中即广播 alert 帧 */
 const alertsService = createAlertsService({ sseHub });
+/** AI 问财：只读工具集默认接现有服务；预警工具复用同一个 alertsService */
+const aiService = createAiService({ alertsService });
 
 /* 不发 Access-Control-Allow-Origin：前端同源，不需要 CORS；一旦为 `*`，
    任何网页都能跨域读本机 API（HOST=0.0.0.0 时更糟）。跨域需求走反向代理。 */
@@ -70,6 +73,7 @@ const handle = createApp({
   jobs: () => collector?.status?.() ?? [],
   sseHub,
   alertsService,
+  aiService,
 });
 
 /**

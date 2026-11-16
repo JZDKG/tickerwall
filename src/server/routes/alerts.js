@@ -9,31 +9,10 @@
  * ================================================================== */
 
 import { sendJson } from '../http.js';
+import { readJsonBody } from './body.js';
 
-const MAX_BODY_BYTES = 64 * 1024;
-
-/** 读请求体：支持「已解析对象」与「可读流」两种形态 */
-export async function readJsonBody(req) {
-  if (req?.body != null && typeof req.body === 'object') return req.body;
-  if (typeof req?.body === 'string') {
-    if (!req.body.trim()) return {};
-    return JSON.parse(req.body);
-  }
-  // 生产里 req 是 IncomingMessage（async iterable）；单测/轻量调用可能只给一个
-  // 普通对象且没有 body。没有可迭代流就当空体，别把「没带 body」变成 500。
-  if (typeof req?.[Symbol.asyncIterator] !== 'function') return {};
-  const chunks = [];
-  let size = 0;
-  for await (const chunk of req) {
-    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    size += buf.length;
-    if (size > MAX_BODY_BYTES) throw new Error('body too large');
-    chunks.push(buf);
-  }
-  const text = Buffer.concat(chunks).toString('utf8').trim();
-  if (!text) return {};
-  return JSON.parse(text);
-}
+// 历史契约：alerts 路由一直从这里导出 readJsonBody，拆到 body.js 后继续转发。
+export { readJsonBody };
 
 /**
  * @param {import('node:http').IncomingMessage} req

@@ -16,11 +16,14 @@ import { handleExplanationRoutes } from './routes.js';
 import { COMPARISON_WINDOWS } from './services/comparison.service.js';
 import { handleSystemRoutes } from './routes/system.js';
 import { handleAlertsRoutes } from './routes/alerts.js';
+import { handleAiRoutes } from './routes/ai.js';
 
 /** 允许 POST 的路径前缀：只有维护端点会写 */
 export const WRITE_PATHS = '/api/maintenance/';
 /** P3-T2：预警规则 CRUD 也需要 POST，但必须是精确路径，不是前缀 */
 export const ALERTS_PATH = '/api/alerts';
+/** AI 问财的三个写端点：模型配置、会话、SSE 问答（精确路径，避免放大写面） */
+export const AI_POST_PATHS = new Set(['/api/ai/models', '/api/ai/sessions', '/api/ai/ask']);
 
 /**
  * 造一个 handle(req, res)。
@@ -61,7 +64,10 @@ export function createApp(deps) {
     // 例外只到维护端点前缀，别的路径仍然只读。
     const methodAllowed =
       req.method === 'GET' || req.method === 'HEAD'
-      || (req.method === 'POST' && (url.pathname.startsWith(WRITE_PATHS) || url.pathname === ALERTS_PATH));
+      || (req.method === 'POST'
+        && (url.pathname.startsWith(WRITE_PATHS)
+          || url.pathname === ALERTS_PATH
+          || AI_POST_PATHS.has(url.pathname)));
     if (!methodAllowed) {
       res.writeHead(405, { Allow: 'GET, HEAD' });
       return res.end();
@@ -82,6 +88,10 @@ export function createApp(deps) {
       // Phase 3 / P3-T2：预警规则 CRUD 与手动评估（GET/POST 都在 routes/alerts.js）
       if (url.pathname === ALERTS_PATH) {
         return await handleAlertsRoutes(req, res, { service: deps.alertsService ?? null });
+      }
+      // AI 问财：模型/会话/SSE 问答；未装配 aiService 时路由内部返回 503
+      if (url.pathname === '/api/ai' || url.pathname.startsWith('/api/ai/')) {
+        return await handleAiRoutes(req, res, { service: deps.aiService ?? null, url });
       }
       if (url.pathname === '/api/briefing') {
         return sendJson(res, 200, await deps.buildBriefing());
