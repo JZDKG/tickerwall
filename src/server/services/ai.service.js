@@ -29,6 +29,7 @@ import {
 import { readDshLlmConfig } from '../providers/llm.js';
 import { streamChatCompletion, testModelConnection, isToolUnsupportedError } from '../providers/ai-client.js';
 import { INSTRUMENTS, DETAIL_ONLY_INSTRUMENTS, findInstrument } from '../providers/instruments.js';
+import { aShareSymbol, fetchTencentBatchQuotes, fetchTencentKline } from '../providers/a-share.js';
 import { createAiToolRegistry } from './ai-tools.service.js';
 
 const MAX_TOOL_ROUNDS = 6;
@@ -175,6 +176,8 @@ export function createAiService(deps = {}) {
   const streamChat = deps.streamChat ?? streamChatCompletion;
   const testConnection = deps.testConnection ?? testModelConnection;
   const readEnvConfig = deps.readEnvConfig ?? readDshLlmConfig;
+  const fetchAShareQuotes = deps.fetchAShareQuotes ?? fetchTencentBatchQuotes;
+  const fetchAShareKline = deps.fetchAShareKline ?? fetchTencentKline;
   const now = deps.now ?? (() => Date.now());
 
   function envConfig() {
@@ -382,6 +385,78 @@ export function createAiService(deps = {}) {
 
   function removeSession(id) {
     return store.deleteAiSession(id);
+  }
+
+  /* ---------------------------------------------------------------- *
+   * A 股原位快览（Milestone B）：只读、带短缓存的行情 + 日 K 预览。
+   *
+   * 诚实口径与工具信封一致：报价与 K 线各自失败各自透出，
+   * 只有两路全失败才 502；北交所没有腾讯日 K 是「确实没有」，
+   * 返回报价 + klineError，不伪造、不清空。
+   * ---------------------------------------------------------------- */
+  const STOCK_PREVIEW_TTL_MS = 15_000;
+  const stockPreviewCache = new Map();
+
+  /** 腾讯 sessionTime 形如 20261116150003（北京时间）；不合法就退回 null，由调用方兜底 */
+  const sessionAsOf = (v) => {
+    const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})$/.exec(String(v ?? ''));
+    return m ? `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}+08:00` : null;
+  };
+
+  async function getStockPreview(rawCode) {
+    const input = strOf(rawCode);
+    // aShareSymbol 会剥掉非数字字符（12.3456 → 123456），入口先卡形状再归一
+    const shaped = /^(?:(?:sh|sz|bj)?\d{6})(?:\.(?:sh|sz|bj))?$/i.test(input);
+    let sym;
+    try {
+      sym = shaped ? aShareSymbol(input.replace(/\.(?:sh|sz|bj)$/i, '')) : null;
+    } catch {
+      sym = null;
+    }
+    if (!sym) {
+      throw serviceError(`不是合法的 A 股代码：${input || '(空)'}`, { statusCode: 400, code: 'INVALID_STOCK_CODE' });
+    }
+
+    const cached = stockPreviewCache.get(sym);
+    if (cached && now() - cached.at < STOCK_PREVIEW_TTL_MS) return cached.payload;
+
+    const [quoteRes, klineRes] = await Promise.allSettled([
+      fetchAShareQuotes([sym]),
+      fetchAShareKline({ code: sym, period: 'day', adjust: 'qfq', count: 30 }),
+    ]);
+    const quote = quoteRes.status === 'fulfilled' ? quoteRes.value?.[sym] ?? null : null;
+    const kline = klineRes.status === 'fulfilled' ? klineRes.value : null;
+    if (!quote && !kline) {
+      const reason = [quoteRes, klineRes]
+        .filter((r) => r.status === 'rejected')
+        .map((r) => String(r.reason?.message ?? r.reason))
+        .join('；');
+      throw serviceError(`行情与日 K 上游都失败：${reason}`, { statusCode: 502, code: 'UPSTREAM_FAILED' });
+    }
+
+    const bars = (kline?.rows ?? []).map((r) => ({
+      date: r.datetime,
+      open: r.open,
+      high: r.high,
+      low: r.low,
+      close: r.close,
+      volume: r.volume,
+    }));
+    const klineError = kline ? null : String(klineRes.reason?.message ?? '无日 K 数据');
+    const stale = Boolean(quote?.isStale);
+    const payload = {
+      ok: true,
+      code: sym,
+      source: 'tencent',
+      asOf: sessionAsOf(quote?.sessionTime) ?? bars.at(-1)?.date ?? new Date(now()).toISOString(),
+      stale,
+      staleReason: quote?.staleReason ?? (quote ? null : String(quoteRes.reason?.message ?? '未取到实时行情')),
+      quote: quote ?? null,
+      bars,
+      klineError,
+    };
+    stockPreviewCache.set(sym, { at: now(), payload });
+    return payload;
   }
 
   async function ask({ sessionId = null, modelId = null, question, context = null, signal = null } = {}, emit = () => {}) {
@@ -600,6 +675,7 @@ export function createAiService(deps = {}) {
     getSession,
     createSession,
     removeSession,
+    getStockPreview,
     ask,
   };
 }

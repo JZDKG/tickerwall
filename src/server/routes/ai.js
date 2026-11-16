@@ -195,6 +195,15 @@ export async function handleAiRoutes(req, res, { service = null, url } = {}) {
       await handleSessions(req, res, service, url);
       return;
     }
+    if (pathname === '/api/ai/stock') {
+      const code = (url.searchParams.get('code') ?? '').trim();
+      if (!code) {
+        badRequest(res, '缺少 code');
+        return;
+      }
+      sendJson(res, 200, await service.getStockPreview(code));
+      return;
+    }
     if (pathname === '/api/ai/ask' && req.method === 'POST') {
       await handleAsk(req, res, service);
       return;

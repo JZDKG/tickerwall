@@ -28,37 +28,61 @@ export function safeMarkdownHref(url) {
 }
 
 /* ------------------------------------------------------------------ *
- * 行内：代码 / 加粗 / 链接
+ * 行内：代码 / 加粗 / 链接 / A 股代码原位快览
  *
  * 正则按「代码 → 加粗 → 链接」的优先级从左到右扫描；每一段文字都作为
  * 普通字符串插进 html``，由它统一转义。链接文字里禁止再嵌套链接
  * （嵌套 <a> 是非法 HTML），但加粗与代码仍可生效。
+ *
+ * A 股代码只识别独立出现的合法号段（前后都不能挨着数字/字母/./:/-/%），
+ * 严防日期 20261116、时间、百分比与小数被误当成代码；行内代码与链接
+ * 文字里的数字不转换（作者显式包裹的内容保持原样）。
  * ------------------------------------------------------------------ */
 const INLINE_RE = /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|(\[([^\]\n]+)\]\(([^)\s]+)\))/g;
 
+const STOCK_CODE_RE =
+  /(?<![0-9A-Za-z.:-])((?:sh|sz|bj)?(?:60[0135]\d{3}|68[89]\d{3}|00[0123]\d{3}|30[012]\d{3}|43\d{4}|8[378]\d{4}|920\d{3})(?:\.(?:SH|SZ|BJ))?)(?![0-9A-Za-z.%:-])/gi;
+
+/** 纯文本片段 → 文本 + 快览按钮混排数组（文本仍是裸字符串，由外层 html`` 转义） */
+function stockRefParts(text) {
+  const src = String(text);
+  const parts = [];
+  let last = 0;
+  for (const match of src.matchAll(STOCK_CODE_RE)) {
+    if (match.index > last) parts.push(src.slice(last, match.index));
+    const rawCode = match[1];
+    const norm = rawCode.replace(/\.(?:SH|SZ|BJ)$/i, '').toLowerCase();
+    parts.push(html`<button type="button" class="md-stock-ref" data-stock-code="${norm}">${rawCode}</button>`);
+    last = match.index + rawCode.length;
+  }
+  if (last < src.length) parts.push(src.slice(last));
+  return parts;
+}
+
 function linkHTML(href, label) {
-  const text = renderInline(label);
+  const text = renderInline(label, { stockRefs: false });
   if (href.startsWith('#')) return html`<a href="${href}">${text}</a>`;
   return html`<a href="${href}" target="_blank" rel="noopener noreferrer">${text}</a>`;
 }
 
-function renderInline(text) {
+function renderInline(text, { stockRefs = true } = {}) {
+  const plain = (s) => (stockRefs ? stockRefParts(s) : [s]);
   const src = String(text);
   const parts = [];
   let last = 0;
   for (const match of src.matchAll(INLINE_RE)) {
-    if (match.index > last) parts.push(src.slice(last, match.index));
+    if (match.index > last) parts.push(...plain(src.slice(last, match.index)));
     if (match[1]) {
       parts.push(html`<code>${match[1].slice(1, -1)}</code>`);
     } else if (match[2]) {
       parts.push(html`<strong>${renderInline(match[2].slice(2, -2))}</strong>`);
     } else {
       const href = safeMarkdownHref(match[5]);
-      parts.push(href ? linkHTML(href, match[4]) : match[4]);
+      parts.push(href ? linkHTML(href, match[4]) : plain(match[4]));
     }
     last = match.index + match[0].length;
   }
-  if (last < src.length) parts.push(src.slice(last));
+  if (last < src.length) parts.push(...plain(src.slice(last)));
   return parts;
 }
 

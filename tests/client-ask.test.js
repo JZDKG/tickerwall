@@ -2120,3 +2120,387 @@ describe('Milestone A 工作区交互：复制、追问、图表十字线与节�
 function $$(sel) {
   return Array.from(document.querySelectorAll(sel));
 }
+
+/* ------------------------------------------------------------------ *
+ * Milestone B —— A 股代码原位快览
+ * ------------------------------------------------------------------ */
+
+describe('markdownToSafeHtml：A 股代码原位识别', () => {
+  const btn = (norm, raw) => `<button type="button" class="md-stock-ref" data-stock-code="${norm}">${raw}</button>`;
+
+  it('独立出现的合法号段转快览按钮：主板/创业板/科创板/北交所', () => {
+    const out = asText(markdownToSafeHtml('贵州茅台 600519，比亚迪 002148，宁德 300750，中芯 688981，万通 920001'));
+    for (const code of ['600519', '002148', '300750', '688981', '920001']) {
+      expect(out).toContain(btn(code, code));
+    }
+  });
+
+  it('前缀与 .SH/.SZ/.BJ 后缀归一：显示原文，data-stock-code 是规范代码', () => {
+    const out = asText(markdownToSafeHtml('600519.SH sh600519 SZ002148 002148.sz bj920001 920001.BJ'));
+    expect(out).toContain(btn('600519', '600519.SH'));
+    expect(out).toContain(btn('sh600519', 'sh600519'));
+    expect(out).toContain(btn('sz002148', 'SZ002148'));
+    expect(out).toContain(btn('002148', '002148.sz'));
+    expect(out).toContain(btn('bj920001', 'bj920001'));
+    expect(out).toContain(btn('920001', '920001.BJ'));
+  });
+
+  it('北交所老号段 43xxxx / 83xxxx / 87xxxx / 88xxxx 识别', () => {
+    const out = asText(markdownToSafeHtml('430047 830799 873169 833171'));
+    for (const code of ['430047', '830799', '873169', '833171']) {
+      expect(out).toContain(btn(code, code));
+    }
+  });
+
+  it('反误匹配：日期、时间、百分比、小数、更长数字串、非法号段都不转', () => {
+    const out = asText(markdownToSafeHtml('日期 20261116 时间 15:00:03 涨幅 10.06% 小数 12.3456 长串 1600519 范围 600519-2026 编号A600519 废码 600219x 200519 900901 999999'));
+    expect(out).not.toContain('md-stock-ref');
+  });
+
+  it('行内代码与链接里的代码保持原样，不二次转换', () => {
+    const out = asText(markdownToSafeHtml('代码 `600519`，链接 [600519](https://example.com/x) 与 [看 600519 行情](#/d/gold-intl)'));
+    expect(out).toContain('<code>600519</code>');
+    expect(out).toContain('>600519</a>');
+    expect(out).toContain('看 600519 行情</a>');
+    expect(out).not.toContain('md-stock-ref');
+  });
+
+  it('加粗与表格单元格里的代码也能识别，且不破坏转义', () => {
+    const bold = asText(markdownToSafeHtml('**重点 600519**'));
+    expect(bold).toContain('<strong>');
+    expect(bold).toContain(btn('600519', '600519'));
+
+    const table = asText(markdownToSafeHtml('| 标的 | 代码 |\n| --- | --- |\n| 茅台 | 600519 |'));
+    expect(table).toContain(btn('600519', '600519'));
+
+    const evil = asText(markdownToSafeHtml('600519 <img src=x onerror=alert(1)>'));
+    expect(evil).toContain('&lt;img');
+    expect(evil).not.toContain('<img');
+  });
+});
+
+let askStock = null;
+beforeAll(async () => {
+  askStock = await import('../src/client/views/ask-stock.js');
+});
+
+const STOCK_PREVIEW = {
+  ok: true,
+  code: 'sh600519',
+  source: 'tencent',
+  asOf: '2026-11-16T15:00:03+08:00',
+  stale: false,
+  staleReason: null,
+  quote: {
+    symbol: 'sh600519',
+    name: '贵州茅台',
+    price: 1520.5,
+    prevClose: 1500,
+    open: 1505,
+    change: 20.5,
+    changePct: 1.3667,
+    high: 1530,
+    low: 1501,
+    turnoverPct: 0.31,
+    peTtm: 22.4,
+    pb: 8.1,
+    mcapYi: 19099,
+    sessionTime: '20261116150003',
+  },
+  bars: Array.from({ length: 30 }, (_, i) => ({
+    date: `2026-10-${String((i % 20) + 1).padStart(2, '0')}`,
+    open: 1480 + i,
+    high: 1500 + i,
+    low: 1470 + i,
+    close: 1490 + i,
+    volume: 25000 + i,
+  })),
+  klineError: null,
+};
+
+function fakeStockApi(preview = STOCK_PREVIEW, { failTimes = 0 } = {}) {
+  const calls = [];
+  let failures = failTimes;
+  const api = {
+    async get(path) {
+      calls.push(path);
+      if (failures > 0) {
+        failures -= 1;
+        throw new Error('HTTP 502');
+      }
+      return { data: preview, status: 200, fetchedAt: 0 };
+    },
+  };
+  return { api, calls };
+}
+
+describe('stockDialogHTML：Loading / Error / Ready 与诚实口径', () => {
+  it('Loading 态只有进度说明', () => {
+    const out = asText(askStock.stockDialogHTML({ code: '600519', loading: true }));
+    expect(out).toContain('正在读取 600519 行情与日 K…');
+    expect(out).toContain('role="status"');
+    expect(out).not.toContain('ask-stock-metrics');
+    expect(out).not.toContain('ask-stock-warn');
+  });
+
+  it('Error 态给原因与重试', () => {
+    const out = asText(askStock.stockDialogHTML({ code: '600519', loading: false, loadError: 'HTTP 502' }));
+    expect(out).toContain('加载失败：HTTP 502');
+    expect(out).toContain('data-dialog-act="reload"');
+  });
+
+  it('Ready 态：名称/代码/涨跌配色/指标网格/30 日 K 线/追问主操作，正常态无警告行', () => {
+    const out = asText(askStock.stockDialogHTML({ code: '600519', loading: false, data: STOCK_PREVIEW }));
+    expect(out).toContain('贵州茅台');
+    expect(out).toContain('sh600519');
+    expect(out).toContain('1,520.50');
+    expect(out).toContain('+1.37%');
+    expect(out).toContain('is-up');
+    expect(out).toContain('2026-11-16T15:00:03+08:00');
+    expect(out).toContain('腾讯');
+    for (const label of ['今开', '昨收', '最高', '最低', '换手率', 'PE(TTM)', 'PB', '总市值']) {
+      expect(out).toContain(label);
+    }
+    expect(out).toContain('19,099 亿');
+    expect(out).toContain('近 30 日 K 线（前复权）');
+    expect(out).toContain('md-chart-kline');
+    expect(out).toContain('追问 贵州茅台 主力资金流与近期走势');
+    expect(out).not.toContain('ask-stock-warn');
+  });
+
+  it('下跌用 is-down，null 指标不渲染', () => {
+    const data = {
+      ...STOCK_PREVIEW,
+      quote: { ...STOCK_PREVIEW.quote, changePct: -2.5, peTtm: null, pb: null, mcapYi: null },
+    };
+    const out = asText(askStock.stockDialogHTML({ code: '600519', loading: false, data }));
+    expect(out).toContain('is-down');
+    expect(out).not.toContain('PE(TTM)');
+    expect(out).not.toContain('总市值');
+    expect(out).toContain('换手率');
+  });
+
+  it('stale 与 klineError 只在真发生时出现警告行', () => {
+    const staleData = {
+      ...STOCK_PREVIEW,
+      stale: true,
+      staleReason: '成交量为 0（停牌 / 未开盘 / 废码），报价非当日真实成交',
+    };
+    const out = asText(askStock.stockDialogHTML({ code: '600519', loading: false, data: staleData }));
+    expect(out).toContain('ask-stock-warn');
+    expect(out).toContain('成交量为 0');
+
+    const bjData = { ...STOCK_PREVIEW, quote: null, bars: [], klineError: '腾讯 K 线不支持北交所', staleReason: '未取到实时行情' };
+    const bjOut = asText(askStock.stockDialogHTML({ code: 'bj920001', loading: false, data: bjData }));
+    expect(bjOut).toContain('腾讯 K 线不支持北交所');
+    expect(bjOut).toContain('未取到实时行情');
+    expect(bjOut).not.toContain('md-chart-kline');
+  });
+
+  it('无日 K 且无 klineError 时给空态说明，不造数', () => {
+    const data = { ...STOCK_PREVIEW, bars: [], klineError: null };
+    const out = asText(askStock.stockDialogHTML({ code: '600519', loading: false, data }));
+    expect(out).toContain('暂无日 K 数据');
+    expect(out).not.toContain('md-chart-kline');
+  });
+});
+
+describe('openStockPreviewDialog：加载、重试、追问与关闭清理', () => {
+  afterEach(() => {
+    document.querySelectorAll('dialog').forEach((d) => d.remove());
+  });
+
+  it('打开即 Loading，随后 Ready 展示 30 根 K 线与指标', async () => {
+    const { api, calls } = fakeStockApi();
+    const close = askStock.openStockPreviewDialog({ code: '600519', api, document });
+    const dialog = document.querySelector('dialog.ask-stock-dialog');
+    expect(dialog).toBeTruthy();
+    expect(dialog.textContent).toContain('正在读取 600519');
+    await flush();
+    expect(calls).toEqual(['api/ai/stock?code=600519']);
+    expect(dialog.textContent).toContain('贵州茅台');
+    expect(dialog.querySelectorAll('.md-kline-hit')).toHaveLength(30);
+    close();
+    expect(document.querySelector('dialog.ask-stock-dialog')).toBeNull();
+  });
+
+  it('失败显示原因，重试成功后恢复 Ready', async () => {
+    const { api, calls } = fakeStockApi(STOCK_PREVIEW, { failTimes: 1 });
+    askStock.openStockPreviewDialog({ code: 'sh600519', api, document });
+    await flush();
+    const dialog = document.querySelector('dialog.ask-stock-dialog');
+    expect(dialog.textContent).toContain('加载失败：HTTP 502');
+    dialog.querySelector('[data-dialog-act="reload"]').click();
+    await flush();
+    expect(calls).toHaveLength(2);
+    expect(dialog.textContent).toContain('贵州茅台');
+  });
+
+  it('追问：先关弹窗再回调 prompt；关闭按钮同样摘除 DOM', async () => {
+    const prompts = [];
+    const { api } = fakeStockApi();
+    askStock.openStockPreviewDialog({ code: '600519', api, document, onFollowup: (p) => prompts.push(p) });
+    await flush();
+    let dialog = document.querySelector('dialog.ask-stock-dialog');
+    dialog.querySelector('[data-dialog-act="followup"]').click();
+    expect(document.querySelector('dialog.ask-stock-dialog')).toBeNull();
+    expect(prompts).toEqual(['贵州茅台 主力资金流与近期走势']);
+
+    askStock.openStockPreviewDialog({ code: '600519', api, document });
+    await flush();
+    dialog = document.querySelector('dialog.ask-stock-dialog');
+    dialog.querySelector('[data-dialog-act="close"]').click();
+    expect(document.querySelector('dialog.ask-stock-dialog')).toBeNull();
+  });
+
+  it('原生 close 事件（Esc）摘除弹窗并把焦点归还给触发按钮', async () => {
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    document.body.appendChild(trigger);
+    trigger.focus();
+    const { api } = fakeStockApi();
+    askStock.openStockPreviewDialog({ code: '600519', api, document, triggerEl: trigger });
+    await flush();
+    const dialog = document.querySelector('dialog.ask-stock-dialog');
+    dialog.dispatchEvent(new Event('close'));
+    await flush();
+    expect(document.querySelector('dialog.ask-stock-dialog')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    trigger.remove();
+  });
+
+  it('关闭后迟到的响应不再渲染；重复 close 幂等；非法入参返回空操作', async () => {
+    let resolveGet = null;
+    const api = { get: () => new Promise((r) => { resolveGet = r; }) };
+    const close = askStock.openStockPreviewDialog({ code: '600519', api, document });
+    close();
+    close();
+    resolveGet({ data: STOCK_PREVIEW, status: 200, fetchedAt: 0 });
+    await flush();
+    expect(document.querySelector('dialog.ask-stock-dialog')).toBeNull();
+
+    const { api: okApi } = fakeStockApi();
+    expect(askStock.openStockPreviewDialog({ code: '', api: okApi, document })).toBeTypeOf('function');
+    expect(askStock.openStockPreviewDialog({ code: '600519', api: null, document })).toBeTypeOf('function');
+    expect(document.querySelector('dialog.ask-stock-dialog')).toBeNull();
+  });
+
+  it('加载中重复点重试不会并发打上游', async () => {
+    let resolveGet = null;
+    const calls = [];
+    const api = { get: (p) => { calls.push(p); return new Promise((r) => { resolveGet = r; }); } };
+    askStock.openStockPreviewDialog({ code: '600519', api, document });
+    const dialog = document.querySelector('dialog.ask-stock-dialog');
+    dialog.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(calls).toHaveLength(1);
+    resolveGet({ data: { ...STOCK_PREVIEW, quote: null, bars: [], klineError: 'x' }, status: 200, fetchedAt: 0 });
+    await flush();
+    expect(dialog.textContent).toContain('x');
+  });
+});
+
+describe('mountAsk：A 股原位快览完整链路', () => {
+  afterEach(() => {
+    askView.unmountAsk();
+    document.querySelectorAll('dialog').forEach((d) => d.remove());
+  });
+
+  function stockAwareApi({ onAsk = null } = {}) {
+    const base = fakeAskApi({ models: [MODEL], onAsk });
+    const stockCalls = [];
+    const innerGet = base.api.get;
+    base.api.get = async (path) => {
+      if (path.startsWith('api/ai/stock')) {
+        stockCalls.push(path);
+        return { data: STOCK_PREVIEW, status: 200, fetchedAt: 0 };
+      }
+      return innerGet(path);
+    };
+    return { ...base, stockCalls };
+  }
+
+  const answerWithCode = () => sseResponse([
+    { type: 'session', data: { session: { id: 's-b', title: '茅台' } } },
+    { type: 'delta', data: { text: '贵州茅台 600519 基本面稳健。' } },
+    { type: 'done', data: { sessionId: 's-b', message: { role: 'assistant', content: '贵州茅台 600519 基本面稳健。', toolTrace: [], modelLabel: 'gpt-test' } } },
+  ]);
+
+  async function mountWithAnswer(extra = {}) {
+    const apiBundle = stockAwareApi({ onAsk: () => answerWithCode(), ...extra });
+    askView.mountAsk('', { api: apiBundle.api, document, window, quotes: [] });
+    const askEl = document.getElementById('ask');
+    await waitFor(() => askEl.querySelector('#ask-model-select option[value="m1"]'));
+    const input = askEl.querySelector('#ask-input');
+    input.value = '茅台怎么样';
+    askEl.querySelector('#ask-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    const ref = await waitFor(() => askEl.querySelector('.md-stock-ref'));
+    return { askEl, ref, ...apiBundle };
+  }
+
+  it('点击正文代码按钮打开快览弹窗，追问先关弹窗再发起新一轮请求', async () => {
+    const { askEl, ref, stockCalls, calls } = await mountWithAnswer();
+    expect(ref.dataset.stockCode).toBe('600519');
+    ref.click();
+    const dialog = await waitFor(() => document.querySelector('dialog.ask-stock-dialog'));
+    await waitFor(() => dialog.textContent.includes('贵州茅台'));
+    expect(stockCalls).toEqual(['api/ai/stock?code=600519']);
+    expect(dialog.querySelectorAll('.md-kline-hit')).toHaveLength(30);
+
+    dialog.querySelector('[data-dialog-act="followup"]').click();
+    expect(document.querySelector('dialog.ask-stock-dialog')).toBeNull();
+    await waitFor(() => calls.ask.length === 2);
+    expect(calls.ask[1].body.question).toBe('贵州茅台 主力资金流与近期走势');
+    expect(askEl.textContent).toContain('贵州茅台 主力资金流与近期走势');
+  });
+
+  it('重复点击不同代码只保留一个弹窗；发起新请求与 unmount 都会关掉它', async () => {
+    const { askEl, ref } = await mountWithAnswer();
+    ref.click();
+    await waitFor(() => document.querySelector('dialog.ask-stock-dialog'));
+    ref.click();
+    expect(document.querySelectorAll('dialog.ask-stock-dialog')).toHaveLength(1);
+
+    const input = askEl.querySelector('#ask-input');
+    input.value = '再看看别的';
+    askEl.querySelector('#ask-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    expect(document.querySelector('dialog.ask-stock-dialog')).toBeNull();
+
+    const ref2 = await waitFor(() => {
+      const refs = askEl.querySelectorAll('.md-stock-ref');
+      return refs.length >= 2 ? refs[refs.length - 1] : null;
+    });
+    ref2.click();
+    await waitFor(() => document.querySelector('dialog.ask-stock-dialog'));
+    askView.unmountAsk();
+    expect(document.querySelector('dialog.ask-stock-dialog')).toBeNull();
+  });
+
+  it('打开模型配置会先关掉快览弹窗', async () => {
+    const { askEl, ref } = await mountWithAnswer();
+    ref.click();
+    await waitFor(() => document.querySelector('dialog.ask-stock-dialog'));
+    askEl.querySelector('#ask-models-btn').click();
+    expect(document.querySelector('dialog.ask-stock-dialog')).toBeNull();
+    expect(document.querySelector('dialog.ask-models-dialog')).toBeTruthy();
+  });
+});
+
+describe('mountAsk：流式结束后 is-streaming 类同步摘除（真实浏览器回归发现的残留）', () => {
+  afterEach(() => {
+    askView.unmountAsk();
+    document.querySelectorAll('dialog').forEach((d) => d.remove());
+  });
+
+  it('done 事件后最后一条 assistant 不再带 is-streaming', async () => {
+    const { api } = fakeAskApi({ models: [MODEL] });
+    askView.mountAsk('', { api, document, window, quotes: [] });
+    const askEl = document.getElementById('ask');
+    await waitFor(() => askEl.querySelector('#ask-model-select option[value="m1"]'));
+    const input = askEl.querySelector('#ask-input');
+    input.value = '金价怎么看';
+    askEl.querySelector('#ask-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await waitFor(() => askEl.querySelector('.ask-copy-btn'));
+    const article = askEl.querySelector('.ask-msg.is-assistant');
+    expect(article.classList.contains('is-streaming')).toBe(false);
+  });
+});

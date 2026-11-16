@@ -91,6 +91,18 @@ function makeService(overrides = {}) {
     getSession: vi.fn((id) => (id === 's1' ? session : null)),
     createSession: vi.fn(() => session),
     removeSession: vi.fn((id) => id === 's1'),
+    getStockPreview: vi.fn(async (code) => ({
+      ok: true,
+      code: 'sh600519',
+      source: 'tencent',
+      asOf: '2026-11-16T15:00:03+08:00',
+      stale: false,
+      staleReason: null,
+      quote: { symbol: 'sh600519', name: '贵州茅台', price: 1520.5 },
+      bars: [],
+      klineError: null,
+      requested: code,
+    })),
     ask: vi.fn(async (input, emit) => {
       emit({ type: 'session', session });
       emit({ type: 'delta', text: '答案' });
@@ -401,5 +413,55 @@ describe('AI 路由：方法与降级', () => {
     const { res, json } = await call(makeApp(), '/api/ai/unknown');
     expect(res.statusCode).toBe(404);
     expect(json().error).toContain('未知的 AI 接口');
+  });
+});
+
+describe('AI 路由：A 股快览', () => {
+  it('GET /api/ai/stock?code=600519 返回 200 与预览载荷', async () => {
+    const service = makeService();
+    const { res, json } = await call(makeApp(service), '/api/ai/stock?code=600519');
+    expect(res.statusCode).toBe(200);
+    expect(service.getStockPreview).toHaveBeenCalledWith('600519');
+    expect(json()).toMatchObject({ ok: true, code: 'sh600519', source: 'tencent', stale: false });
+  });
+
+  it('缺少 code / 空白 code 返回 400', async () => {
+    const service = makeService();
+    const app = makeApp(service);
+    const missing = await call(app, '/api/ai/stock');
+    expect(missing.res.statusCode).toBe(400);
+    expect(missing.json()).toMatchObject({ ok: false });
+    const blank = await call(app, '/api/ai/stock?code=%20%20');
+    expect(blank.res.statusCode).toBe(400);
+    expect(service.getStockPreview).not.toHaveBeenCalled();
+  });
+
+  it('POST /api/ai/stock 被 app 405 拦截，服务不被触达', async () => {
+    const service = makeService();
+    const { res } = await postJson(makeApp(service), '/api/ai/stock', { code: '600519' });
+    expect(res.statusCode).toBe(405);
+    expect(service.getStockPreview).not.toHaveBeenCalled();
+  });
+
+  it('服务抛 400/502 结构化错误按原状态码透出', async () => {
+    const badCode = Object.assign(new Error('不是合法的 A 股代码：bad'), { statusCode: 400, code: 'INVALID_STOCK_CODE' });
+    const service = makeService({
+      getStockPreview: vi.fn(async () => {
+        throw badCode;
+      }),
+    });
+    const { res, json } = await call(makeApp(service), '/api/ai/stock?code=bad');
+    expect(res.statusCode).toBe(400);
+    expect(json()).toMatchObject({ ok: false, code: 'INVALID_STOCK_CODE' });
+
+    const upstream = Object.assign(new Error('行情与日 K 上游都失败：超时'), { statusCode: 502, code: 'UPSTREAM_FAILED' });
+    const svc502 = makeService({
+      getStockPreview: vi.fn(async () => {
+        throw upstream;
+      }),
+    });
+    const fail = await call(makeApp(svc502), '/api/ai/stock?code=600519');
+    expect(fail.res.statusCode).toBe(502);
+    expect(fail.json()).toMatchObject({ ok: false, code: 'UPSTREAM_FAILED' });
   });
 });

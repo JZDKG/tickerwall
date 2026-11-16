@@ -25,6 +25,7 @@ import {
 } from '../shared/ask-assist.js';
 import { markdownToSafeHtml, safeMarkdownHref } from '../shared/markdown.js';
 import { openModelsDialog } from './ask-models.js';
+import { openStockPreviewDialog } from './ask-stock.js';
 
 const STATIC_PROMPTS = [
   '为什么今天国际金价和国内金价不同步？',
@@ -280,6 +281,7 @@ export function mountAsk(arg = '', {
     sessionsLoading: true,
     sessionsError: '',
     configClose: null,
+    stockClose: null,
     activeChartFig: null,
     activeChartHit: null,
     graphOpen: false,
@@ -570,6 +572,8 @@ export function mountAsk(arg = '', {
   const paintAll = (msg) => {
     if (!msg?.el?.isConnected) return;
     const isLast = state.messages[state.messages.length - 1] === msg;
+    // article 元素本身不重建，流式态结束时必须同步 class，否则 is-streaming 残留
+    msg.el.classList.toggle('is-streaming', Boolean(msg.streaming));
     setMarkup(doc, msg.el, answerBodyHTML(msg, { isLast }));
   };
 
@@ -669,6 +673,7 @@ export function mountAsk(arg = '', {
 
     hideActiveChartTip();
     closeGraphPopover();
+    closeStockPreview();
     const priorMarkup = state.messages.map((m, idx) => (m.role === 'user'
       ? userMessageHTML(m)
       : renderAskAnswerHTML(m, { isLast: false, msgIdx: idx })));
@@ -742,7 +747,13 @@ export function mountAsk(arg = '', {
     if (state.controller && !state.controller.signal.aborted) state.controller.abort();
   };
 
+  const closeStockPreview = () => {
+    state.stockClose?.();
+    state.stockClose = null;
+  };
+
   const openConfig = () => {
+    closeStockPreview();
     if (state.configClose) state.configClose();
     state.configClose = openModelsDialog({
       api: state.api,
@@ -898,6 +909,18 @@ export function mountAsk(arg = '', {
     const followup = event.target?.closest?.('[data-followup]');
     if (followup) {
       submitQuestion(followup.dataset.followup);
+      return;
+    }
+    const stockRef = event.target?.closest?.('.md-stock-ref');
+    if (stockRef) {
+      closeStockPreview();
+      state.stockClose = openStockPreviewDialog({
+        code: stockRef.dataset.stockCode,
+        triggerEl: stockRef,
+        api: state.api,
+        document: doc,
+        onFollowup: (prompt) => submitQuestion(prompt),
+      });
       return;
     }
     const copyBtn = event.target?.closest?.('[data-ask-copy]');
@@ -1057,6 +1080,8 @@ export function unmountAsk() {
     state.unsubscribeQuotes?.();
     state.unsubscribeQuotes = null;
     state.configClose?.();
+    state.stockClose?.();
+    state.stockClose = null;
   }
   if (askEl) {
     askEl.replaceChildren();

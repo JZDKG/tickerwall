@@ -143,7 +143,7 @@ function makeStream(scripts) {
   return fn;
 }
 
-function makeService({ db = makeDb(), tools = makeTools(), streamChat, testConnection, readEnvConfig, now } = {}) {
+function makeService({ db = makeDb(), tools = makeTools(), streamChat, testConnection, readEnvConfig, now, fetchAShareQuotes, fetchAShareKline } = {}) {
   return createAiService({
     db,
     tools,
@@ -151,6 +151,8 @@ function makeService({ db = makeDb(), tools = makeTools(), streamChat, testConne
     testConnection: testConnection ?? vi.fn(async (config) => ({ ok: true, latencyMs: 5, model: config.model, reply: 'pong' })),
     readEnvConfig: readEnvConfig ?? vi.fn(() => ({ baseURL: '', apiKey: '', model: '', source: 'env' })),
     now: now ?? (() => Date.parse(BJD)),
+    fetchAShareQuotes,
+    fetchAShareKline,
   });
 }
 
@@ -545,5 +547,181 @@ describe('ask：ReAct JSON 降级', () => {
     ]);
     const svc = makeService({ streamChat });
     await expect(svc.ask({ question: '反复取数' }, () => {})).rejects.toThrow('summary failed');
+  });
+});
+
+describe('getStockPreview：A 股原位快览', () => {
+  const quote = (overrides = {}) => ({
+    symbol: 'sh600519',
+    name: '贵州茅台',
+    price: 1520.5,
+    prevClose: 1500,
+    open: 1505,
+    change: 20.5,
+    changePct: 1.3667,
+    high: 1530,
+    low: 1501,
+    turnoverPct: 0.31,
+    peTtm: 22.4,
+    pb: 8.1,
+    mcapYi: 19099,
+    sessionTime: '20261116150003',
+    isStale: false,
+    staleReason: null,
+    ...overrides,
+  });
+  const kline = (n = 3) => ({
+    rows: Array.from({ length: n }, (_, i) => ({
+      datetime: `2026-11-${String(12 + i).padStart(2, '0')}`,
+      open: 1500 + i,
+      high: 1530 + i,
+      low: 1495 + i,
+      close: 1510 + i,
+      volume: 30000 + i,
+    })),
+    period: 'day',
+    adjust: 'qfq',
+    code: 'sh600519',
+    host: 'web.ifzq.gtimg.cn',
+  });
+
+  it('正常合并：报价 + 30 日前复权日 K，透出 source/asOf', async () => {
+    const fetchAShareQuotes = vi.fn(async (codes) => ({ [codes[0]]: quote() }));
+    const fetchAShareKline = vi.fn(async () => kline());
+    const svc = makeService({ fetchAShareQuotes, fetchAShareKline });
+    const res = await svc.getStockPreview('600519');
+    expect(fetchAShareQuotes).toHaveBeenCalledWith(['sh600519']);
+    expect(fetchAShareKline).toHaveBeenCalledWith({ code: 'sh600519', period: 'day', adjust: 'qfq', count: 30 });
+    expect(res).toMatchObject({
+      ok: true,
+      code: 'sh600519',
+      source: 'tencent',
+      asOf: '2026-11-16T15:00:03+08:00',
+      stale: false,
+      staleReason: null,
+      klineError: null,
+    });
+    expect(res.quote.name).toBe('贵州茅台');
+    expect(res.bars).toHaveLength(3);
+    expect(res.bars[0]).toEqual({ date: '2026-11-12', open: 1500, high: 1530, low: 1495, close: 1510, volume: 30000 });
+  });
+
+  it('带前缀 / 后缀代码归一到同一标的并命中缓存', async () => {
+    const fetchAShareQuotes = vi.fn(async (codes) => ({ [codes[0]]: quote() }));
+    const fetchAShareKline = vi.fn(async () => kline());
+    const svc = makeService({ fetchAShareQuotes, fetchAShareKline });
+    await svc.getStockPreview('600519.SH');
+    const again = await svc.getStockPreview('sh600519');
+    expect(fetchAShareQuotes).toHaveBeenCalledTimes(1);
+    expect(fetchAShareKline).toHaveBeenCalledTimes(1);
+    expect(again.code).toBe('sh600519');
+  });
+
+  it('15s 缓存：过期后重新打上游，now 可控', async () => {
+    let t = Date.parse(BJD);
+    const fetchAShareQuotes = vi.fn(async (codes) => ({ [codes[0]]: quote() }));
+    const fetchAShareKline = vi.fn(async () => kline());
+    const svc = makeService({ fetchAShareQuotes, fetchAShareKline, now: () => t });
+    await svc.getStockPreview('600519');
+    t += 14_999;
+    await svc.getStockPreview('600519');
+    expect(fetchAShareQuotes).toHaveBeenCalledTimes(1);
+    t += 1;
+    await svc.getStockPreview('600519');
+    expect(fetchAShareQuotes).toHaveBeenCalledTimes(2);
+  });
+
+  it('非法代码 400 INVALID_STOCK_CODE：空、位数不对、混入小数', async () => {
+    const fetchAShareQuotes = vi.fn();
+    const fetchAShareKline = vi.fn();
+    const svc = makeService({ fetchAShareQuotes, fetchAShareKline });
+    for (const bad of ['', '  ', '12345', '1234567', 'bad', '12.3456', 'sh60051', null, undefined]) {
+      await expect(svc.getStockPreview(bad)).rejects.toMatchObject({ statusCode: 400, code: 'INVALID_STOCK_CODE' });
+    }
+    expect(fetchAShareQuotes).not.toHaveBeenCalled();
+    expect(fetchAShareKline).not.toHaveBeenCalled();
+  });
+
+  it('北交所降级：只有报价、K 线失败，照常返回并透出 klineError', async () => {
+    const fetchAShareQuotes = vi.fn(async (codes) => ({
+      [codes[0]]: quote({ symbol: 'bj920001', name: '万通液压', sessionTime: '20261116150003' }),
+    }));
+    const fetchAShareKline = vi.fn(async () => {
+      throw new Error('腾讯 K 线不支持北交所');
+    });
+    const svc = makeService({ fetchAShareQuotes, fetchAShareKline });
+    const res = await svc.getStockPreview('920001');
+    expect(res.code).toBe('bj920001');
+    expect(res.quote.name).toBe('万通液压');
+    expect(res.bars).toEqual([]);
+    expect(res.klineError).toBe('腾讯 K 线不支持北交所');
+    expect(res.stale).toBe(false);
+  });
+
+  it('isStale 透传：停牌报价带 staleReason，不伪造成新鲜', async () => {
+    const fetchAShareQuotes = vi.fn(async (codes) => ({
+      [codes[0]]: quote({ isStale: true, staleReason: '成交量为 0（停牌 / 未开盘 / 废码），报价非当日真实成交' }),
+    }));
+    const svc = makeService({ fetchAShareQuotes, fetchAShareKline: vi.fn(async () => kline()) });
+    const res = await svc.getStockPreview('600519');
+    expect(res.stale).toBe(true);
+    expect(res.staleReason).toContain('成交量为 0');
+    expect(res.bars).toHaveLength(3);
+  });
+
+  it('只有 K 线成功：quote 为 null，staleReason 说明行情缺失，asOf 退回最后一根日 K', async () => {
+    const fetchAShareQuotes = vi.fn(async () => {
+      throw new Error('腾讯行情超时');
+    });
+    const svc = makeService({ fetchAShareQuotes, fetchAShareKline: vi.fn(async () => kline()) });
+    const res = await svc.getStockPreview('600519');
+    expect(res.quote).toBeNull();
+    expect(res.stale).toBe(false);
+    expect(res.staleReason).toBe('腾讯行情超时');
+    expect(res.asOf).toBe('2026-11-14');
+    expect(res.klineError).toBeNull();
+  });
+
+  it('行情返回空 map 视为缺失，两路都没有数据时 502 UPSTREAM_FAILED', async () => {
+    const emptyQuotes = vi.fn(async () => ({}));
+    const svc = makeService({
+      fetchAShareQuotes: emptyQuotes,
+      fetchAShareKline: vi.fn(async () => {
+        throw new Error('腾讯 K 线三个入口都失败');
+      }),
+    });
+    await expect(svc.getStockPreview('600519')).rejects.toMatchObject({ statusCode: 502, code: 'UPSTREAM_FAILED' });
+
+    const bothFail = makeService({
+      fetchAShareQuotes: vi.fn(async () => {
+        throw new Error('行情网络错误');
+      }),
+      fetchAShareKline: vi.fn(async () => {
+        throw new Error('K 线网络错误');
+      }),
+    });
+    await expect(bothFail.getStockPreview('600519')).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'UPSTREAM_FAILED',
+      message: expect.stringContaining('行情网络错误'),
+    });
+  });
+
+  it('失败不进缓存：502 之后重试会再次打上游', async () => {
+    let fail = true;
+    const fetchAShareQuotes = vi.fn(async (codes) => {
+      if (fail) throw new Error('行情网络错误');
+      return { [codes[0]]: quote() };
+    });
+    const fetchAShareKline = vi.fn(async () => {
+      if (fail) throw new Error('K 线网络错误');
+      return kline();
+    });
+    const svc = makeService({ fetchAShareQuotes, fetchAShareKline });
+    await expect(svc.getStockPreview('600519')).rejects.toMatchObject({ statusCode: 502 });
+    fail = false;
+    const res = await svc.getStockPreview('600519');
+    expect(res.ok).toBe(true);
+    expect(fetchAShareQuotes).toHaveBeenCalledTimes(2);
   });
 });

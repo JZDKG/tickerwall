@@ -56,17 +56,25 @@ async function waitFor(url, { tries = 60, gap = 250 } = {}) {
   return false;
 }
 
-/** 最小 CDP 客户端（只用 Runtime/Page/Emulation 三个域） */
+/** 最小 CDP 客户端（Runtime/Page/Emulation + 可选 Fetch 离线拦截） */
 async function connect(wsUrl) {
   const ws = new WebSocket(wsUrl);
   let nextId = 0;
   const pending = new Map();
   const exceptions = [];
   const consoleErrors = [];
+  // Fetch.requestPaused 的应答器：返回 { status, headers, body } 即离线回放，返回 null 放行
+  let fetchResponder = null;
   await new Promise((resolve, reject) => {
     ws.addEventListener('open', resolve, { once: true });
     ws.addEventListener('error', reject, { once: true });
   });
+  const send = (method, params = {}) =>
+    new Promise((resolve) => {
+      const id = ++nextId;
+      pending.set(id, { resolve });
+      ws.send(JSON.stringify({ id, method, params }));
+    });
   ws.addEventListener('message', (ev) => {
     const msg = JSON.parse(ev.data);
     if (msg.id && pending.has(msg.id)) {
@@ -80,19 +88,30 @@ async function connect(wsUrl) {
     if (msg.method === 'Runtime.consoleAPICalled' && msg.params?.type === 'error') {
       consoleErrors.push((msg.params.args ?? []).map((a) => a.value ?? a.description).join(' '));
     }
+    if (msg.method === 'Fetch.requestPaused') {
+      const { requestId, request } = msg.params;
+      const reply = fetchResponder?.(request?.url ?? '') ?? null;
+      if (reply) {
+        send('Fetch.fulfillRequest', {
+          requestId,
+          responseCode: reply.status ?? 200,
+          responseHeaders: reply.headers ?? [{ name: 'Content-Type', value: 'application/json; charset=utf-8' }],
+          body: Buffer.from(reply.body ?? '').toString('base64'),
+        });
+      } else {
+        send('Fetch.continueRequest', { requestId });
+      }
+    }
   });
-  const send = (method, params = {}) =>
-    new Promise((resolve) => {
-      const id = ++nextId;
-      pending.set(id, { resolve });
-      ws.send(JSON.stringify({ id, method, params }));
-    });
   const evaluate = async (expression) => {
     const out = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
     if (out.result?.exceptionDetails) return { error: out.result.exceptionDetails.text ?? 'eval failed' };
     return { value: out.result?.result?.value ?? null };
   };
-  return { ws, send, evaluate, exceptions, consoleErrors };
+  const setFetchResponder = (fn) => {
+    fetchResponder = fn;
+  };
+  return { ws, send, evaluate, exceptions, consoleErrors, setFetchResponder };
 }
 
 /**
@@ -193,7 +212,7 @@ async function startMockLlmServer() {
 
       for (const piece of [
         '### 行情速览\n\n',
-        '已读取看板实时行情，详情见 [国际金价](#/d/gold-intl)。\n\n',
+        '已读取看板实时行情，详情见 [国际金价](#/d/gold-intl)。A 股方面可关注贵州茅台 600519 的近期走势。\n\n',
         '| 项目 | 说明 |\n| --- | --- |\n| 数据口径 | 看板本地快照 |\n\n',
         '```kline\n{"title":"国际金价日K","unit":"美元/盎司","data":[{"date":"11-12","open":2610,"high":2628,"low":2605,"close":2622},{"date":"11-13","open":2622,"high":2640,"low":2618,"close":2635},{"date":"11-14","open":2635,"high":2645,"low":2625,"close":2642}]}\n```\n\n',
         '```chart\n{"type":"graph","title":"测试传导链路","nodes":[{"id":"n1","label":"美债收益率","detail":"实际利率上行","tone":"warn"},{"id":"n2","label":"国际金价","detail":"避险与贴现博弈","tone":"accent"}],"edges":[{"from":"n1","to":"n2","label":"贴现压力"}]}\n```\n\n',
@@ -1107,6 +1126,229 @@ async function main() {
       JSON.stringify(ci),
     );
 
+    /* ---------------- A 股原位快览：Fetch 离线拦截 + 真实 400 校验 ---------------- */
+    // 构造 30 日前复权日 K 快照（零外网访问）：CDP Fetch 域只拦 */api/ai/stock*，其余放行
+    const stockSnapshot = {
+      ok: true,
+      code: 'sh600519',
+      source: 'tencent',
+      asOf: '2026-11-16T15:00:03+08:00',
+      stale: false,
+      staleReason: null,
+      quote: {
+        symbol: 'sh600519', name: '贵州茅台', price: 1520.5, prevClose: 1500, open: 1505,
+        change: 20.5, changePct: 1.3667, high: 1530, low: 1501,
+        turnoverPct: 0.31, peTtm: 22.4, pb: 8.1, mcapYi: 19099, sessionTime: '20261116150003',
+      },
+      bars: Array.from({ length: 30 }, (_, i) => ({
+        date: `2026-10-${String(i + 1).padStart(2, '0')}`,
+        open: 1480 + i, high: 1502 + i, low: 1470 + i, close: 1490 + i, volume: 25000 + i,
+      })),
+      klineError: null,
+    };
+    const stockIntercepted = [];
+    cdp.setFetchResponder((url) => {
+      if (!url.includes('/api/ai/stock')) return null;
+      stockIntercepted.push(url);
+      return { status: 200, body: JSON.stringify(stockSnapshot) };
+    });
+    await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*/api/ai/stock*' }] });
+
+    // 先经拦截路径发一条 code=bad：确认拦截生效；再停拦截发真实请求校验服务端 400
+    const stockRefExists = await waitForCondition(
+      () => cdp.evaluate(`Boolean(document.querySelector('#ask-messages .md-stock-ref[data-stock-code="600519"]'))`),
+      { timeoutMs: 8000 },
+    );
+    await cdp.evaluate(`(() => {
+      const ref = document.querySelector('#ask-messages .md-stock-ref[data-stock-code="600519"]');
+      ref?.focus();
+      ref?.click();
+    })()`);
+    await waitForCondition(
+      () => cdp.evaluate(`Boolean(document.querySelector('dialog.ask-stock-dialog[open] .md-chart-kline'))`),
+      { timeoutMs: 8000 },
+    );
+    const stockDlg = await cdp.evaluate(`(() => {
+      const dlg = document.querySelector('dialog.ask-stock-dialog');
+      return {
+        isModal: dlg?.matches(':modal') ?? false,
+        name: dlg?.querySelector('#ask-stock-title')?.textContent ?? '',
+        code: dlg?.querySelector('.ask-stock-code')?.textContent ?? '',
+        price: dlg?.querySelector('.ask-stock-price')?.textContent ?? '',
+        chg: dlg?.querySelector('.ask-stock-chg')?.textContent ?? '',
+        upClass: dlg?.querySelector('.ask-stock-price')?.classList.contains('is-up') ?? false,
+        meta: dlg?.querySelector('.ask-stock-meta')?.textContent ?? '',
+        metricCount: dlg?.querySelectorAll('.ask-stock-metric').length ?? 0,
+        klineBars: dlg?.querySelectorAll('.md-kline-hit').length ?? 0,
+        klineTitle: dlg?.querySelector('.md-chart-kline figcaption')?.textContent ?? '',
+        hasSvg: Boolean(dlg?.querySelector('svg.md-chart-svg')),
+        warnVisible: Boolean(dlg?.querySelector('.ask-stock-warn')),
+        followupText: dlg?.querySelector('[data-dialog-act="followup"]')?.textContent ?? '',
+      };
+    })()`);
+    const sd = stockDlg.value ?? {};
+    record(
+      stockRefExists?.value === true && sd.isModal === true && sd.name === '贵州茅台' && sd.code === 'sh600519'
+      && sd.price.includes('1,520.50') && sd.chg.includes('+1.37%') && sd.upClass
+      && sd.meta.includes('2026-11-16') && sd.meta.includes('腾讯')
+      && sd.metricCount === 8 && sd.klineBars === 30 && sd.hasSvg && sd.klineTitle.includes('近 30 日 K 线（前复权）')
+      && !sd.warnVisible && sd.followupText.includes('追问 贵州茅台 主力资金流与近期走势')
+      && stockIntercepted.some((u) => u.includes('code=600519')),
+      'A 股代码按钮打开快览弹窗：报价/指标/30 日 K 线 SVG 完整，正常态无警告（Fetch 离线快照）',
+      JSON.stringify(sd),
+    );
+
+    // 弹窗内正文/按钮/元数据深浅主题对比度 AA
+    const stockContrast = await cdp.evaluate(`(() => {
+      const parseRgba = (str) => {
+        const m = String(str ?? '').match(/rgba?\\(\\s*([\\d.]+)\\s*,\\s*([\\d.]+)\\s*,\\s*([\\d.]+)(?:\\s*,\\s*([\\d.]+))?\\s*\\)/i);
+        return m ? [Number(m[1]), Number(m[2]), Number(m[3]), m[4] === undefined ? 1 : Number(m[4])] : null;
+      };
+      const blendOver = (fg, bg) => {
+        const a = fg[3];
+        return [fg[0] * a + bg[0] * (1 - a), fg[1] * a + bg[1] * (1 - a), fg[2] * a + bg[2] * (1 - a)];
+      };
+      const lum = ([r, g, b]) => {
+        const f = (c) => { const s = c / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; };
+        return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+      };
+      const cr = (fg, bg) => {
+        const l1 = lum(fg); const l2 = lum(bg);
+        return Number(((Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05)).toFixed(2));
+      };
+      const effectiveBg = (el, fallback) => {
+        const layers = [];
+        for (let cur = el; cur && cur.nodeType === 1; cur = cur.parentElement) {
+          const bg = parseRgba(getComputedStyle(cur).backgroundColor);
+          if (bg && bg[3] > 0) layers.push(bg);
+        }
+        let base = fallback;
+        for (let i = layers.length - 1; i >= 0; i -= 1) base = blendOver(layers[i], base);
+        return base;
+      };
+      const prevTheme = document.documentElement.getAttribute('data-theme');
+      const results = [];
+      for (const theme of ['dark', 'light']) {
+        document.documentElement.setAttribute('data-theme', theme);
+        const fallback = theme === 'light' ? [244, 245, 247] : [12, 13, 16];
+        const targets = [
+          ['ref', document.querySelector('#ask-messages .md-stock-ref')],
+          ['title', document.querySelector('dialog.ask-stock-dialog #ask-stock-title')],
+          ['code', document.querySelector('dialog.ask-stock-dialog .ask-stock-code')],
+          ['meta', document.querySelector('dialog.ask-stock-dialog .ask-stock-meta')],
+          ['price', document.querySelector('dialog.ask-stock-dialog .ask-stock-price')],
+          ['chg', document.querySelector('dialog.ask-stock-dialog .ask-stock-chg')],
+          ['metric-label', document.querySelector('dialog.ask-stock-dialog .ask-stock-metric-label')],
+          ['metric-value', document.querySelector('dialog.ask-stock-dialog .ask-stock-metric-value')],
+        ];
+        for (const [sel, el] of targets) {
+          if (!el) continue;
+          const fg = parseRgba(getComputedStyle(el).color);
+          const bg = effectiveBg(el, fallback);
+          if (fg) results.push({ theme, sel, cr: cr(fg, bg) });
+        }
+      }
+      if (prevTheme) document.documentElement.setAttribute('data-theme', prevTheme);
+      else document.documentElement.removeAttribute('data-theme');
+      const minCr = results.reduce((m, r) => Math.min(m, r.cr), Infinity);
+      return { count: results.length, minCr, worst: results.find((r) => r.cr === minCr) ?? null };
+    })()`);
+    record(
+      (stockContrast.value?.count ?? 0) >= 14 && (stockContrast.value?.minCr ?? 0) >= 4.5,
+      'A 股代码按钮与快览弹窗深/浅色对比度满足 AA (>=4.5)',
+      `n=${stockContrast.value?.count} min=${stockContrast.value?.minCr} worst=${stockContrast.value?.worst?.theme}:${stockContrast.value?.worst?.sel}`,
+    );
+
+    // 390px 窄屏：弹窗与页面无横向溢出
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    const stockMobile = await cdp.evaluate(`(() => {
+      const dlg = document.querySelector('dialog.ask-stock-dialog');
+      const rect = dlg?.getBoundingClientRect();
+      return {
+        scrollWidth: document.documentElement.scrollWidth,
+        innerWidth: window.innerWidth,
+        dlgWidth: Math.round(rect?.width ?? 0),
+        dlgRight: Math.round(rect?.right ?? 0),
+        metricCols: getComputedStyle(dlg.querySelector('.ask-stock-metrics')).gridTemplateColumns.split(' ').length,
+      };
+    })()`);
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 800, deviceScaleFactor: 1, mobile: false });
+    const smv = stockMobile.value ?? {};
+    record(
+      (smv.scrollWidth ?? 9999) <= (smv.innerWidth ?? 0) && (smv.dlgWidth ?? 9999) <= 390 && (smv.dlgRight ?? 9999) <= 390 && smv.metricCols === 2,
+      '快览弹窗 390px 无横向溢出且指标网格降为两列',
+      JSON.stringify(smv),
+    );
+
+    // Esc 关闭：DOM 摘除 + 焦点归还到原代码按钮
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+    await waitForCondition(() => cdp.evaluate(`!document.querySelector('dialog.ask-stock-dialog')`), { timeoutMs: 3000 });
+    const stockEsc = await cdp.evaluate(`(() => ({
+      gone: !document.querySelector('dialog.ask-stock-dialog'),
+      focusIsRef: document.activeElement?.classList?.contains('md-stock-ref') ?? false,
+      focusCode: document.activeElement?.dataset?.stockCode ?? '',
+    }))()`);
+    record(
+      stockEsc.value?.gone && stockEsc.value?.focusIsRef && stockEsc.value?.focusCode === '600519',
+      '快览弹窗 Esc 关闭后焦点归还至原代码按钮',
+      JSON.stringify(stockEsc.value),
+    );
+
+    // 停掉拦截：向真实服务端发 code=bad 校验 400 契约（本机回环，非外网）
+    await cdp.send('Fetch.disable');
+    cdp.setFetchResponder(null);
+    const stockBad = await cdp.evaluate(`(async () => {
+      const res = await fetch('/api/ai/stock?code=bad');
+      const body = await res.json().catch(() => null);
+      return { status: res.status, ok: body?.ok ?? null, code: body?.code ?? null };
+    })()`);
+    record(
+      stockBad.value?.status === 400 && stockBad.value?.ok === false && stockBad.value?.code === 'INVALID_STOCK_CODE',
+      '真实服务端 GET /api/ai/stock?code=bad 返回 400 INVALID_STOCK_CODE',
+      JSON.stringify(stockBad.value),
+    );
+
+    // 追问主操作：先关弹窗，再发起真实 SSE 新一轮请求（走本地假网关，零外网）
+    // 重开走真实路由会打腾讯上游：重新短暂启用拦截保持零外网
+    cdp.setFetchResponder((url) => (url.includes('/api/ai/stock') ? { status: 200, body: JSON.stringify(stockSnapshot) } : null));
+    await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*/api/ai/stock*' }] });
+    await cdp.evaluate(`(() => {
+      const ref = document.querySelector('#ask-messages .md-stock-ref[data-stock-code="600519"]');
+      ref?.focus();
+      ref?.click();
+    })()`);
+    await waitForCondition(
+      () => cdp.evaluate(`Boolean(document.querySelector('dialog.ask-stock-dialog .md-chart-kline'))`),
+      { timeoutMs: 8000 },
+    );
+    await cdp.evaluate(`document.querySelector('dialog.ask-stock-dialog [data-dialog-act="followup"]')?.click()`);
+    // 弹窗摘除可能落在 close 事件兜底任务里，轮询而不是点完立即断言
+    const followupGone = await waitForCondition(
+      () => cdp.evaluate(`!document.querySelector('dialog.ask-stock-dialog')`),
+      { timeoutMs: 3000 },
+    );
+    await waitForCondition(
+      () => cdp.evaluate(`document.querySelectorAll('#ask-messages .ask-msg.is-assistant:not(.is-streaming) .ask-copy-btn').length >= 2`),
+      { timeoutMs: 15000 },
+    );
+    const stockFollowup = await cdp.evaluate(`(() => {
+      const users = [...document.querySelectorAll('#ask-messages .ask-msg.is-user')];
+      return {
+        lastUser: users.at(-1)?.textContent?.trim() ?? '',
+        userCount: users.length,
+        doneAssistants: document.querySelectorAll('#ask-messages .ask-msg.is-assistant:not(.is-streaming) .ask-copy-btn').length,
+      };
+    })()`);
+    await cdp.send('Fetch.disable');
+    cdp.setFetchResponder(null);
+    record(
+      followupGone.value === true && stockFollowup.value?.lastUser === '贵州茅台 主力资金流与近期走势'
+      && (stockFollowup.value?.doneAssistants ?? 0) >= 2,
+      '快览弹窗追问先关闭再发起新一轮 SSE 对话',
+      `gone=${followupGone.value} ${JSON.stringify(stockFollowup.value)}`,
+    );
+
     // 深/浅色主题真实渲染对比度 >= 4.5:1（#ask + 新增复制/追问/图表浮层/Popover 一并测）
     const askContrast = await cdp.evaluate(`(() => {
       const parseRgba = (str) => {
@@ -1138,6 +1380,11 @@ async function main() {
       const prevTheme = document.documentElement.getAttribute('data-theme');
       const trace = document.querySelector('#ask-messages details.ask-trace');
       if (trace) trace.open = true;
+      // 追问轮结束后浮层/Popover 已按 Esc 关闭，重新唤起再测（关闭态元素不可见，量不到真实配色）
+      const tipHit = document.querySelector('#ask-messages .md-kline-hit');
+      tipHit?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      const graphNode = document.querySelector('#ask-messages .md-graph-node[data-asset-id="gold-intl"]');
+      graphNode?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       const results = [];
       for (const theme of ['dark', 'light']) {
         document.documentElement.setAttribute('data-theme', theme);
