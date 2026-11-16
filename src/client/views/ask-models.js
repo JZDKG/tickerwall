@@ -6,6 +6,7 @@
  * ================================================================== */
 
 import { html } from '../shared/format.js';
+import { iconHtml } from '../shared/icons.js';
 import { openModalDialog } from '../shared/modal-dialog.js';
 
 const MODELS_PATH = 'api/ai/models';
@@ -151,7 +152,7 @@ function formHTML(state, draft, editing) {
       <input id="ask-model-api-key" name="apiKey" type="password" value="" autocomplete="new-password">
       ${editing
         ? html`<span class="ask-field-hint">留空保留原密钥（当前 ${keyText(editing)}）</span>`
-        : html`<span class="ask-field-hint">只保存在本机数据目录，不会回显。</span>`}
+        : html`<span class="ask-field-hint">只保存在本机数据目录，不会回显</span>`}
       ${fieldError(errors, 'apiKey')}
     </div>
 
@@ -165,7 +166,7 @@ function formHTML(state, draft, editing) {
       <summary>高级参数</summary>
       <div class="ask-advanced-body">
         <label class="ask-check" for="ask-model-tools">${toolsInput}<span>工具调用模式</span></label>
-        <p class="ask-field-hint">关闭后模型不能主动查询行情数据。</p>
+        <p class="ask-field-hint">关闭后模型不能主动查询行情数据</p>
 
         <div class="ask-field">
           <label for="ask-model-temperature">temperature</label>
@@ -206,7 +207,7 @@ export function modelsDialogHTML(state = {}) {
     ${models.map((m) => modelRowHTML(m, state))}
     ${envPreset ? envPresetRowHTML(envPreset, state) : ''}
   </ul>
-  ${!models.length && !envPreset ? html`<p class="ask-models-empty">尚未配置模型，在下方填写接入信息。</p>` : ''}`;
+  ${!models.length && !envPreset ? html`<p class="ask-models-empty">尚未配置模型，在下方填写接入信息</p>` : ''}`;
 
   const body = loading
     ? html`<p class="ask-loading" role="status">正在读取模型…</p>`
@@ -220,7 +221,7 @@ export function modelsDialogHTML(state = {}) {
   return html`<div class="ask-models">
     <header class="ask-models-head">
       <h2 id="ask-models-title">模型配置</h2>
-      <button type="button" class="ask-icon-btn" data-dialog-act="close" aria-label="关闭">×</button>
+      <button type="button" class="ask-icon-btn" data-dialog-act="close" aria-label="关闭">${iconHtml('close', 14)}</button>
     </header>
     <div class="ask-models-body">
       ${state.error ? html`<p class="ask-alert is-error" role="alert">${state.error}</p>` : ''}

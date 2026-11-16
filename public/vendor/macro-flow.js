@@ -26175,7 +26175,8 @@ var Qk = class {
 	check: "<path d=\"m5 12.5 4.5 4.5L19 7\"/>",
 	circle: "<circle cx=\"12\" cy=\"12\" r=\"5\"/>",
 	alert: "<path d=\"M12 3.5 21 19.5H3L12 3.5zM12 10v4M12 16.8h.01\"/>",
-	search: "<circle cx=\"11\" cy=\"11\" r=\"6.5\"/><path d=\"m16 16 4.5 4.5\"/>"
+	search: "<circle cx=\"11\" cy=\"11\" r=\"6.5\"/><path d=\"m16 16 4.5 4.5\"/>",
+	close: "<path d=\"M18 6 6 18M6 6l12 12\"/>"
 });
 function eA(e, t = 14, n = "") {
 	let r = $k[e];

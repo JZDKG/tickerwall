@@ -14,6 +14,7 @@ import { api as defaultApi } from '../shared/api.js';
 import { store } from '../shared/store.js';
 import { on as onBus } from '../shared/bus.js';
 import { html } from '../shared/format.js';
+import { iconHtml } from '../shared/icons.js';
 import { markdownToSafeHtml } from '../shared/markdown.js';
 import { openModelsDialog } from './ask-models.js';
 
@@ -274,7 +275,7 @@ export function mountAsk(arg = '', {
       <aside id="ask-history" class="ask-history" hidden aria-label="历史会话">
         <div class="ask-history-head">
           <span>历史会话</span>
-          <button type="button" class="ask-icon-btn" data-history-act="close" aria-label="收起历史会话">×</button>
+          <button type="button" class="ask-icon-btn" data-history-act="close" aria-label="收起历史会话">${iconHtml('close', 14)}</button>
         </div>
         <ul class="ask-history-list" id="ask-history-list"></ul>
       </aside>
@@ -282,7 +283,7 @@ export function mountAsk(arg = '', {
         <div id="ask-messages" class="ask-messages"></div>
         <form id="ask-form" class="ask-form">
           <label class="ask-sr-only" for="ask-input">提问</label>
-          <textarea id="ask-input" class="ask-input" rows="2" placeholder="问行情、查数据、看事件…"></textarea>
+          <textarea id="ask-input" class="ask-input" rows="2" placeholder="输入标的、指标或宏观事件，按 Enter 发送"></textarea>
           <button type="submit" class="ask-btn is-primary" id="ask-send">发送</button>
         </form>
       </div>
@@ -355,9 +356,9 @@ export function mountAsk(arg = '', {
     const hasModels = selectableModels(state).length > 0;
     const prompts = buildStarterPrompts(state.quotes);
     setMarkup(doc, refs.messages, html`<div class="ask-empty" id="ask-empty">
-      <p class="ask-empty-line">问行情、查数据、看事件，回答会标注取数来源。</p>
+      <p class="ask-empty-line">${hasModels ? '常用研判与实时查询' : '尚未配置接入模型'}</p>
       ${hasModels
-        ? html`<div class="ask-starters">${prompts.map((p) => html`<button type="button" class="ask-chip" data-starter="${p}">${p}</button>`)}</div>`
+        ? html`<div class="ask-starters">${prompts.map((p) => html`<button type="button" class="ask-chip" data-starter="${p}"><span>${p}</span>${iconHtml('arrow-right', 13, 'ask-chip-ico')}</button>`)}</div>`
         : html`<button type="button" class="ask-btn is-primary" data-ask-act="configure">配置接入模型</button>`}
     </div>`);
   };
@@ -383,7 +384,7 @@ export function mountAsk(arg = '', {
         <span class="ask-history-title">${s.title || '未命名会话'}</span>
         <span class="ask-history-time">${sessionTime(s)}</span>
       </button>
-      <button type="button" class="ask-history-del" data-session-delete="${s.id}" aria-label="删除会话 ${s.title || '未命名会话'}">×</button>
+      <button type="button" class="ask-history-del" data-session-delete="${s.id}" aria-label="删除会话 ${s.title || '未命名会话'}">${iconHtml('close', 14)}</button>
     </li>`)}`);
   };
 

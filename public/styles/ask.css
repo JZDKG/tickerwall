@@ -1,14 +1,16 @@
 /* ================================================================== *
- * ask.css — AI 问财（#/ask）
+ * ask.css — AI 问财工作区（#/ask）
  *
- * 信息密度按终端来：正文可读、工具条紧凑、取数轨迹默认折叠。
- * 颜色全部走 tokens.css，深浅色与配色方案切换时只换变量。
+ * 与全站（ae1e829）统一的专业数据终端质感：
+ *   · 哑光中性表面 + 2px 左侧语义边线，无气泡/紫蓝渐变/装饰光晕；
+ *   · 4px 间距基线 + 等宽数字（tabular-nums）对齐取数轨迹与表格；
+ *   · 颜色全部走 tokens.css 变量，深浅色与配色方案自动跟随。
  * ================================================================== */
 
 .ask-view {
-  width: min(1080px, 100%);
-  margin: 0 auto;
-  padding: 16px 20px 40px;
+  width: 100%;
+  margin: 0;
+  padding: 8px 0 32px;
 }
 
 .ask-view[hidden] {
@@ -17,7 +19,7 @@
 
 .ask-shell {
   display: flex;
-  min-height: calc(100vh - 150px);
+  min-height: calc(100vh - 156px);
   flex-direction: column;
 }
 
@@ -27,9 +29,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px 16px;
+  gap: 8px 16px;
   flex-wrap: wrap;
-  padding-bottom: 10px;
+  padding-bottom: 12px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -46,16 +48,16 @@
 }
 
 .ask-select {
-  height: 30px;
-  max-width: 230px;
+  height: 32px;
+  max-width: 240px;
   min-width: 0;
-  padding: 0 8px;
+  padding: 0 12px;
   color: var(--text);
   background: var(--bg-elev);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   font: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 
 .ask-select:disabled {
@@ -67,21 +69,24 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  min-height: 30px;
-  padding: 5px 10px;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 12px;
   color: var(--text);
-  background: transparent;
+  background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   font: inherit;
   font-size: 12.5px;
+  font-weight: 500;
   line-height: 1.2;
   white-space: nowrap;
   cursor: pointer;
+  transition: border-color var(--t-fast) var(--ease-out);
 }
 
 .ask-btn:hover {
+  background: var(--panel-2);
   border-color: var(--muted-2);
 }
 
@@ -99,15 +104,17 @@
   color: var(--bg);
   background: var(--accent);
   border-color: var(--accent);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .ask-btn.is-primary:hover {
-  filter: brightness(1.05);
+  background: color-mix(in srgb, var(--accent) 88%, var(--text) 12%);
+  border-color: color-mix(in srgb, var(--accent) 88%, var(--text) 12%);
 }
 
 .ask-btn.is-stop {
   color: var(--warn);
+  background: var(--warn-bg);
   border-color: var(--warn);
 }
 
@@ -128,17 +135,24 @@
 }
 
 .ask-icon-btn {
-  width: 24px;
-  height: 24px;
-  font-size: 16px;
-  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
   border-radius: var(--radius-xs);
+}
+
+.ask-icon-btn:hover {
+  color: var(--text);
+  background: var(--panel-2);
 }
 
 .ask-link-btn {
   color: var(--accent);
   font-size: 12px;
   text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 /* ---------- 主体与历史会话 ---------- */
@@ -146,21 +160,23 @@
 .ask-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 18px;
+  gap: 16px;
   margin-top: 12px;
   flex: 1;
   min-height: 0;
 }
 
 .ask-body.is-history-open {
-  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-columns: 240px minmax(0, 1fr);
 }
 
 .ask-history {
+  position: sticky;
+  top: 12px;
   align-self: start;
-  max-height: 62vh;
+  max-height: calc(100vh - 140px);
   overflow: auto;
-  padding: 8px;
+  padding: 12px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
@@ -175,16 +191,17 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 2px 4px 8px;
+  padding: 0 4px 8px;
   color: var(--muted);
-  font-size: 11px;
-  letter-spacing: 0.04em;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
 .ask-history-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -194,7 +211,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 6px;
+  padding: 12px 8px;
   color: var(--muted);
   font-size: 12px;
 }
@@ -202,7 +219,7 @@
 .ask-history-item {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   border-radius: var(--radius-xs);
 }
 
@@ -221,8 +238,8 @@
   flex: 1;
   min-width: 0;
   flex-direction: column;
-  gap: 2px;
-  padding: 6px 7px;
+  gap: 4px;
+  padding: 8px;
   color: var(--text);
   text-align: left;
   background: transparent;
@@ -240,21 +257,24 @@
 
 .ask-history-time {
   color: var(--muted-2);
+  font-family: var(--mono);
   font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 
 .ask-history-del {
   appearance: none;
   flex: none;
-  width: 24px;
-  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
   color: var(--muted);
   background: transparent;
   border: 0;
   border-radius: var(--radius-xs);
   font: inherit;
-  font-size: 15px;
-  line-height: 1;
   cursor: pointer;
 }
 
@@ -270,57 +290,79 @@
   flex-direction: column;
 }
 
-/* ---------- 消息区 ---------- */
+/* ---------- 消息区（同轴左对齐研报工作台） ---------- */
 
 .ask-messages {
   display: flex;
-  min-height: 340px;
-  max-height: 62vh;
+  min-height: 360px;
   flex: 1;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
   overflow-y: auto;
-  padding: 2px 2px 14px;
+  padding: 4px 0 16px;
 }
 
 .ask-empty {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 14px;
-  padding: 34px 4px;
+  gap: 12px;
+  padding: 16px 0;
 }
 
 .ask-empty-line {
   margin: 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
 .ask-starters {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 8px;
+  width: 100%;
+  max-width: 760px;
 }
 
 .ask-chip {
   appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
   max-width: 100%;
-  padding: 7px 11px;
+  padding: 10px 12px;
   color: var(--text);
   text-align: left;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-left: 2px solid var(--line);
+  border-radius: var(--radius-sm);
   font: inherit;
-  font-size: 12.5px;
-  line-height: 1.35;
+  font-size: 13px;
+  line-height: 1.4;
   cursor: pointer;
+  transition: border-color var(--t-fast) var(--ease-out);
 }
 
 .ask-chip:hover {
   background: var(--panel-2);
   border-color: var(--muted-2);
+  border-left-color: var(--accent);
+}
+
+.ask-chip-ico {
+  flex: none;
+  color: var(--muted-2);
+  transition: transform var(--t-fast) var(--ease-out);
+}
+
+.ask-chip:hover .ask-chip-ico {
+  color: var(--accent);
+  transform: translateX(2px);
 }
 
 .ask-msg {
@@ -328,12 +370,13 @@
 }
 
 .ask-msg.is-user {
-  align-self: flex-end;
-  max-width: 82%;
-  padding: 7px 11px;
+  align-self: stretch;
+  max-width: 100%;
+  padding: 8px 12px;
   background: var(--panel-2);
   border: 1px solid var(--line);
-  border-radius: var(--radius-md);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius-sm);
 }
 
 .ask-msg.is-user p {
@@ -341,13 +384,23 @@
   overflow-wrap: anywhere;
   white-space: pre-wrap;
   font-size: 13.5px;
-  line-height: 1.55;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.ask-msg.is-assistant {
+  padding: 12px 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
 }
 
 .ask-progress {
-  margin: 0 0 6px;
+  margin: 0 0 8px;
   color: var(--muted);
+  font-family: var(--mono);
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 .ask-error {
@@ -379,40 +432,47 @@
 .ask-answer p,
 .ask-answer ul,
 .ask-answer ol,
-.ask-answer blockquote,
+.ask-answer blockquote {
+  max-width: 78ch;
+  margin: 8px 0;
+}
+
 .ask-answer pre,
 .ask-answer .md-table-wrap {
-  margin: 0.62em 0;
+  margin: 12px 0;
 }
 
 .ask-answer h2,
 .ask-answer h3,
 .ask-answer h4 {
-  margin: 1.1em 0 0.45em;
+  margin: 16px 0 8px;
   line-height: 1.35;
 }
 
 .ask-answer h2 {
-  font-size: 17px;
+  font-size: 16px;
+  font-weight: 600;
 }
 
 .ask-answer h3 {
-  font-size: 15px;
+  font-size: 14.5px;
+  font-weight: 600;
 }
 
 .ask-answer h4 {
   color: var(--muted);
   font-size: 13px;
-  letter-spacing: 0.02em;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
 .ask-answer ul,
 .ask-answer ol {
-  padding-left: 1.45em;
+  padding-left: 20px;
 }
 
 .ask-answer li + li {
-  margin-top: 0.2em;
+  margin-top: 4px;
 }
 
 .ask-answer blockquote {
@@ -433,8 +493,8 @@
 .ask-answer pre {
   max-width: 100%;
   overflow-x: auto;
-  padding: 10px 12px;
-  background: var(--panel);
+  padding: 12px;
+  background: var(--bg-elev);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   line-height: 1.5;
@@ -482,7 +542,7 @@
 
 .md-table th,
 .md-table td {
-  padding: 5px 9px;
+  padding: 6px 12px;
   border-bottom: 1px solid var(--divider);
   text-align: left;
   vertical-align: top;
@@ -490,7 +550,9 @@
 
 .md-table th {
   color: var(--muted);
-  font-weight: 600;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--line);
+  font-weight: 500;
   white-space: nowrap;
 }
 
@@ -511,8 +573,8 @@
 /* ---------- L2 取数轨迹 ---------- */
 
 .ask-trace {
-  margin-top: 10px;
-  padding-top: 7px;
+  margin-top: 12px;
+  padding-top: 8px;
   color: var(--muted);
   border-top: 1px solid var(--divider);
   font-size: 12px;
@@ -521,7 +583,9 @@
 .ask-trace > summary {
   cursor: pointer;
   color: var(--muted);
+  font-family: var(--mono);
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
   user-select: none;
 }
 
@@ -539,30 +603,34 @@
 }
 
 .ask-trace-item {
-  padding: 6px 8px;
-  background: var(--panel);
+  padding: 8px 12px;
+  background: var(--bg-elev);
   border: 1px solid var(--divider);
+  border-left: 2px solid var(--accent);
   border-radius: var(--radius-xs);
 }
 
 .ask-trace-item.is-error {
   border-color: var(--warn);
+  border-left-color: var(--warn);
 }
 
 .ask-trace-head {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
 .ask-trace-status {
   color: var(--muted-2);
+  font-family: var(--mono);
   font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 
 .ask-trace-stale {
-  padding: 0 5px;
+  padding: 0 6px;
   color: var(--warn);
   background: var(--warn-bg);
   border-radius: var(--radius-xs);
@@ -581,7 +649,9 @@
 .ask-trace-args,
 .ask-trace-meta {
   color: var(--muted-2);
+  font-family: var(--mono);
   font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
 }
 
 .ask-trace-error {
@@ -596,7 +666,7 @@
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  padding: 10px 0 2px;
+  padding: 12px 0 4px;
   background: var(--bg);
   border-top: 1px solid var(--line);
 }
@@ -605,7 +675,7 @@
   flex: 1;
   min-width: 0;
   max-height: 180px;
-  padding: 8px 10px;
+  padding: 8px 12px;
   color: var(--text);
   background: var(--bg-elev);
   border: 1px solid var(--line);
@@ -658,26 +728,27 @@ dialog.ask-models-dialog::backdrop {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px 16px 10px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--divider);
 }
 
 .ask-models-head h2 {
   margin: 0;
   font-size: 15px;
+  font-weight: 600;
 }
 
 .ask-models-body {
   max-height: calc(82vh - 58px);
   overflow-y: auto;
-  padding: 12px 16px 18px;
+  padding: 16px;
 }
 
 .ask-model-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin: 0 0 14px;
+  gap: 8px;
+  margin: 0 0 16px;
   padding: 0;
   list-style: none;
 }
@@ -685,16 +756,17 @@ dialog.ask-models-dialog::backdrop {
 .ask-model-item {
   display: flex;
   align-items: center;
-  gap: 8px 10px;
+  gap: 8px 12px;
   flex-wrap: wrap;
-  padding: 8px 10px;
+  padding: 8px 12px;
   background: var(--panel);
   border: 1px solid var(--divider);
   border-radius: var(--radius-sm);
 }
 
 .ask-model-item.is-current {
-  border-color: var(--accent);
+  border-color: var(--line);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .ask-model-main {
@@ -708,38 +780,42 @@ dialog.ask-models-dialog::backdrop {
 .ask-model-name {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-wrap: wrap;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .ask-model-default {
-  padding: 0 5px;
+  padding: 1px 6px;
   color: var(--accent);
   background: var(--panel-2);
   border-radius: var(--radius-xs);
   font-size: 10.5px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .ask-model-meta {
   overflow-wrap: anywhere;
   color: var(--muted);
+  font-family: var(--mono);
   font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
   line-height: 1.45;
 }
 
 .ask-model-key {
   overflow-wrap: anywhere;
   color: var(--muted-2);
+  font-family: var(--mono);
   font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
 }
 
 .ask-model-actions {
   display: flex;
   align-items: center;
-  gap: 4px 10px;
+  gap: 4px 12px;
   flex-wrap: wrap;
 }
 
@@ -757,7 +833,7 @@ dialog.ask-models-dialog::backdrop {
 }
 
 .ask-env-badge {
-  padding: 0 5px;
+  padding: 0 6px;
   color: var(--muted-2);
   border: 1px solid var(--line);
   border-radius: var(--radius-xs);
@@ -766,13 +842,13 @@ dialog.ask-models-dialog::backdrop {
 
 .ask-models-empty,
 .ask-loading {
-  margin: 0 0 14px;
+  margin: 0 0 12px;
   color: var(--muted);
   font-size: 12.5px;
 }
 
 .ask-load-error {
-  margin: 0 0 14px;
+  margin: 0 0 12px;
   color: var(--warn);
   font-size: 12.5px;
   line-height: 1.5;
@@ -784,7 +860,7 @@ dialog.ask-models-dialog::backdrop {
 
 .ask-alert,
 .ask-notice {
-  margin: 0 0 10px;
+  margin: 0 0 12px;
   font-size: 12px;
   line-height: 1.45;
 }
@@ -800,8 +876,8 @@ dialog.ask-models-dialog::backdrop {
 .ask-model-form {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding-top: 12px;
+  gap: 12px;
+  padding-top: 16px;
   border-top: 1px solid var(--divider);
 }
 
@@ -815,7 +891,7 @@ dialog.ask-models-dialog::backdrop {
 .ask-form-head h3 {
   margin: 0;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .ask-field {
@@ -836,7 +912,7 @@ dialog.ask-models-dialog::backdrop {
   width: 100%;
   min-width: 0;
   height: 32px;
-  padding: 0 9px;
+  padding: 0 12px;
   color: var(--text);
   background: var(--bg);
   border: 1px solid var(--line);
@@ -858,7 +934,7 @@ dialog.ask-models-dialog::backdrop {
 .ask-field-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: 12px;
 }
 
 .ask-field-hint {
@@ -875,7 +951,7 @@ dialog.ask-models-dialog::backdrop {
 }
 
 .ask-advanced {
-  padding: 8px 10px;
+  padding: 8px 12px;
   background: var(--panel);
   border: 1px solid var(--divider);
   border-radius: var(--radius-sm);
@@ -895,14 +971,14 @@ dialog.ask-models-dialog::backdrop {
 .ask-advanced-body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding-top: 10px;
+  gap: 12px;
+  padding-top: 12px;
 }
 
 .ask-check {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   color: var(--text);
   font-size: 12.5px;
 }
@@ -918,12 +994,14 @@ dialog.ask-models-dialog::backdrop {
   justify-content: flex-end;
   gap: 8px;
   flex-wrap: wrap;
-  padding-top: 2px;
+  padding-top: 4px;
 }
 
 .ask-form-actions .ask-test-result {
   margin: 0 auto 0 0;
+  font-family: var(--mono);
   font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
 }
 
 .ask-test-result.is-ok {
@@ -943,11 +1021,15 @@ dialog.ask-models-dialog::backdrop {
 
   .ask-messages {
     min-height: 44vh;
-    max-height: none;
+  }
+
+  .ask-starters {
+    grid-template-columns: 1fr;
   }
 
   .ask-history {
     position: fixed;
+    top: auto;
     right: 12px;
     bottom: 160px;
     left: 12px;
@@ -964,7 +1046,7 @@ dialog.ask-models-dialog::backdrop {
 
 @media (max-width: 520px) {
   .ask-view {
-    padding: 10px 12px 24px;
+    padding: 8px 0 24px;
   }
 
   .ask-toolbar {
@@ -972,23 +1054,23 @@ dialog.ask-models-dialog::backdrop {
   }
 
   .ask-select {
-    max-width: 150px;
+    max-width: 152px;
   }
 
   .ask-btn {
-    padding: 5px 8px;
+    padding: 4px 8px;
   }
 
   .ask-messages {
     min-height: 48vh;
   }
 
-  .ask-msg.is-user {
-    max-width: 92%;
+  .ask-msg.is-assistant {
+    padding: 12px;
   }
 
   .ask-form {
-    gap: 6px;
+    gap: 8px;
   }
 
   .ask-model-item {
@@ -999,7 +1081,9 @@ dialog.ask-models-dialog::backdrop {
 @media (prefers-reduced-motion: reduce) {
   .ask-btn,
   .ask-chip,
-  .ask-history-item {
+  .ask-chip-ico,
+  .ask-history-item,
+  .ask-icon-btn {
     transition: none;
   }
 }
