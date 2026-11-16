@@ -84,6 +84,52 @@ export async function fetchRaw(
   }
 }
 
+/**
+ * 与 fetchRaw 同一套超时 / 头部约定，但返回原始 Response。
+ *
+ * 为什么单独留一个：LLM 网关要读 SSE 流，fetchRaw 会把 body 一次性吃掉；
+ * 而错误处理、超时文案、UA 策略又必须和别的上游完全一致，所以复用同一个
+ * 可注入 fetcher，只是把「解码文本」这一步交给调用方。
+ *
+ * 注意：超时只覆盖到响应头返回为止。流式 body 的读取由调用方通过 signal
+ * 控制（LLM 可能长时间持续输出，不能沿用 8 秒的整体超时）。
+ */
+export async function fetchResponse(
+  url,
+  { headers = {}, method = 'GET', body = null, timeoutMs = null, omitUa = false, signal = null } = {},
+) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS);
+  // 用 AbortSignal.any 合成流信号：响应头返回后 timer 清除，但外部 signal
+  // 在流式读取期间依然保持对底层 fetch 请求的取消能力。
+  const reqSignal = signal ? AbortSignal.any([ctrl.signal, signal]) : ctrl.signal;
+  try {
+    const res = await fetcher(url, {
+      method,
+      ...(body != null ? { body } : {}),
+      headers: { ...(omitUa ? {} : { 'User-Agent': UA }), Accept: '*/*', ...headers },
+      signal: reqSignal,
+      redirect: 'follow',
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      const err = new Error(`HTTP ${res.status}${detail ? `: ${detail.slice(0, 160)}` : ''}`);
+      // 调用方（如 isToolUnsupportedError）需要状态码判断，但仍按普通 Error 抛出
+      err.status = res.status;
+      err.body = detail;
+      throw err;
+    }
+    return res;
+  } catch (err) {
+    if (err?.name === 'AbortError' || signal?.aborted) {
+      throw new Error(signal?.aborted ? '请求已取消' : '请求超时');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** 取出 var hq_str_xxx="a,b,c"; 里的字段数组；不是这个形状返回 null */
 export function splitSina(text) {
   const m = /="([\s\S]*)"/.exec(text ?? '');

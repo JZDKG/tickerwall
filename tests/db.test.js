@@ -93,13 +93,22 @@ describe('sqlite：连接与建表', () => {
   const STORAGE_TABLES = ['intraday_ring', 'llm_headline_cache'];
   /** 迁移 v5（Phase 3 / P3-T2）：四维预警引擎的规则与触发台账 */
   const ALERT_TABLES = ['alert_rules', 'alert_events'];
+  /** 迁移 v7：AI 问财的模型配置、会话与消息 */
+  const AI_TABLES = ['ai_messages', 'ai_models', 'ai_sessions'];
 
-  it('老表仍在，解释相关的 7 张表、运维表、Phase 1 存储表与预警表都由版本化迁移建出', () => {
+  it('老表仍在，解释相关的 7 张表、运维表、Phase 1 存储表、预警表与 AI 问财表都由版本化迁移建出', () => {
     const names = getDb()
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
       .all()
       .map((r) => r.name);
-    const expected = [...LEGACY_TABLES, ...EXPLANATION_TABLES, ...MAINTENANCE_TABLES, ...STORAGE_TABLES, ...ALERT_TABLES];
+    const expected = [
+      ...LEGACY_TABLES,
+      ...EXPLANATION_TABLES,
+      ...MAINTENANCE_TABLES,
+      ...STORAGE_TABLES,
+      ...ALERT_TABLES,
+      ...AI_TABLES,
+    ];
     for (const t of expected) expect(names).toContain(t);
     expect(names).toEqual(expected.sort());
   });
@@ -384,7 +393,7 @@ describe('data/ 文件 I/O', () => {
 
 describe('分层：db/ 不能反向依赖上层', () => {
   it('db/ 之下不 import providers / services / domain', () => {
-    const files = ['sqlite.js', 'daily-cache.js', 'snapshots.js', 'files.js', 'index.js'];
+    const files = ['sqlite.js', 'daily-cache.js', 'snapshots.js', 'files.js', 'ai.js', 'index.js'];
     const bad = [];
     for (const f of files) {
       const code = readFileSync(path.join(REPO, 'src/server/db', f), 'utf8');

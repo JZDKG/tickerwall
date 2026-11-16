@@ -12,6 +12,7 @@ export {
   toNum,
   setFetcher,
   fetchRaw,
+  fetchResponse,
   splitSina,
   splitSinaPipe,
 } from './http.js';
@@ -78,4 +79,15 @@ export {
   fetchEmPool,
   fetchEmFundFlowMinute,
   fetchNorthbound,
+  parseTencentSmartbox,
+  searchAShareStock,
 } from './a-share.js';
+
+export {
+  normalizeOpenAiUrl,
+  normalizeAnthropicUrl,
+  isToolUnsupportedError,
+  streamChatCompletion,
+  collectChatCompletion,
+  testModelConnection,
+} from './ai-client.js';

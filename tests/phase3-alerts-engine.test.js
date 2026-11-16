@@ -2,7 +2,7 @@
  * Phase 3 / P3-T2：SQLite v5 四维智能预警引擎 + REST + SSE 告警推送
  *
  * 验收（规格书 §3.2）：
- *   · Migration v5 建 alert_rules / alert_events，v6 增加 alert_rules.mode（SCHEMA_VERSION = 6）；
+ *   · Migration v5 建 alert_rules / alert_events，v6 增加 alert_rules.mode（当前 SCHEMA_VERSION = 7）；
  *   · evaluateAlertRules 覆盖 price / change_pct / spread / divergence 四类
  *     条件与 cooldown_ms 冷却去重；
  *   · GET /api/alerts 与 POST /api/alerts（创建/更新/删除/手动评估）端到端；
@@ -27,16 +27,17 @@ import { startCollector } from '../src/server/jobs/collector.js';
 /* ------------------------------ 迁移 ------------------------------ */
 
 describe('Migration v5 / v6：预警表与 mode 持久化', () => {
-  it('SCHEMA_VERSION = 6，v5 为 alerts-engine 且末尾迁移为 alert-rule-mode', () => {
-    expect(SCHEMA_VERSION).toBe(6);
+  it('SCHEMA_VERSION = 7，v5/v6 不变，末尾迁移为 ai-ask-foundation', () => {
+    expect(SCHEMA_VERSION).toBe(7);
     expect(MIGRATIONS.find((m) => m.version === 5)).toMatchObject({ version: 5, name: 'alerts-engine' });
-    expect(MIGRATIONS[MIGRATIONS.length - 1]).toMatchObject({ version: 6, name: 'alert-rule-mode' });
+    expect(MIGRATIONS.find((m) => m.version === 6)).toMatchObject({ version: 6, name: 'alert-rule-mode' });
+    expect(MIGRATIONS[MIGRATIONS.length - 1]).toMatchObject({ version: 7, name: 'ai-ask-foundation' });
   });
 
   it('在空库上建出 alert_rules（含 mode）/ alert_events 及索引', () => {
     const db = new DatabaseSync(':memory:');
     const out = migrateDatabase(db);
-    expect(out.to).toBe(6);
+    expect(out.to).toBe(SCHEMA_VERSION);
     const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map((r) => r.name);
     expect(tables).toContain('alert_rules');
     expect(tables).toContain('alert_events');
@@ -95,7 +96,7 @@ describe('Migration v5 / v6：预警表与 mode 持久化', () => {
     const out = migrateDatabase(db);
     expect(out.from).toBe(5);
     expect(out.to).toBe(SCHEMA_VERSION);
-    expect(out.applied).toEqual(['alert-rule-mode']);
+    expect(out.applied).toEqual(['alert-rule-mode', 'ai-ask-foundation']);
 
     const v6Cols = db.prepare('PRAGMA table_info(alert_rules)').all().map((r) => r.name);
     expect(v6Cols).toContain('mode');

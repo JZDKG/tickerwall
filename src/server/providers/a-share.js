@@ -594,3 +594,48 @@ export async function fetchNorthbound() {
   const j = JSON.parse(txt);
   return { time: j.time ?? [], hgt: j.hgt ?? [], sgt: j.sgt ?? [] };
 }
+
+/** 腾讯 smartbox 用 \uXXXX 转义中文；先还原再按字段切分 */
+function decodeUnicodeEscapes(text) {
+  return text.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+}
+
+/**
+ * 解析腾讯 smartbox 搜索建议。
+ *
+ * 原始形状：v_hint="sh~600519~贵州茅台~gzmt~GP-A^sz~000001~..."
+ * 字段依次为 市场~代码~名称~拼音~类型，多条用 ^ 分隔；无结果时是 "N;"。
+ * 只保留沪深北 A 股（sh/sz/bj + 6 位数字），港股/美股/基金等一律跳过。
+ */
+export function parseTencentSmartbox(text, { limit = 10 } = {}) {
+  const max = Number.isFinite(Number(limit)) ? Math.max(0, Math.trunc(Number(limit))) : 10;
+  if (max === 0) return [];
+  const m = /v_hint="([\s\S]*)"/.exec(String(text ?? ''));
+  if (!m) return [];
+  const rows = [];
+  for (const item of decodeUnicodeEscapes(m[1]).split('^')) {
+    const parts = item.split('~');
+    if (parts.length < 5) continue;
+    const [market, code, name, pinyin, type] = parts;
+    if (!/^(sh|sz|bj)$/.test(market)) continue;
+    if (!/^\d{6}$/.test(code)) continue;
+    rows.push({ code, symbol: `${market}${code}`, name, pinyin, type, market });
+    if (rows.length >= max) break;
+  }
+  return rows;
+}
+
+/**
+ * A 股名称 / 代码 / 拼音联想搜索。
+ * 空查询直接返回空数组，不发请求（前端输入框清空时会频繁触发）。
+ */
+export async function searchAShareStock(query, { limit = 10, timeoutMs = 8000 } = {}) {
+  const q = String(query ?? '').trim();
+  if (!q) return [];
+  const url = `https://smartbox.gtimg.cn/s3/?v=2&q=${encodeURIComponent(q)}&t=gp`;
+  const text = await fetchRaw(url, {
+    timeoutMs,
+    headers: { Referer: 'https://gu.qq.com/' },
+  });
+  return parseTencentSmartbox(text, { limit });
+}

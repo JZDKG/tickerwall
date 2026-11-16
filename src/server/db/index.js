@@ -102,3 +102,19 @@ export {
 } from './files.js';
 
 export { saveLlmCache, loadLlmCache } from './llm-cache.js';
+
+export {
+  maskApiKey,
+  listAiModels,
+  getAiModel,
+  getAiModelSecret,
+  upsertAiModel,
+  deleteAiModel,
+  setDefaultAiModel,
+  createAiSession,
+  listAiSessions,
+  getAiSession,
+  touchAiSession,
+  deleteAiSession,
+  appendAiMessage,
+} from './ai.js';

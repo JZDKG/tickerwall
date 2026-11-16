@@ -275,6 +275,53 @@ export const MIGRATIONS = [
       }
     },
   },
+  {
+    version: 7,
+    name: 'ai-ask-foundation',
+    up(db) {
+      // 模型配置与会话记录。
+      // key 单独一列而不是塞进 kv：模型是用户可增删的实体，需要唯一默认、
+      // 按更新时间排序；会话消息还要靠外键级联删除，放 kv JSON 里做不稳。
+      db.exec(`CREATE TABLE IF NOT EXISTS ai_models (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        protocol TEXT NOT NULL,
+        base_url TEXT NOT NULL,
+        api_key TEXT NOT NULL DEFAULT '',
+        model TEXT NOT NULL,
+        supports_tools INTEGER NOT NULL DEFAULT 1,
+        temperature REAL,
+        max_tokens INTEGER,
+        is_default INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )`);
+
+      db.exec(`CREATE TABLE IF NOT EXISTS ai_sessions (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        model_id TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )`);
+
+      // 会话列表按最近活跃倒序；拨到索引里，避免会话多了以后每次全表排序。
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_ai_sessions_updated ON ai_sessions(updated_at DESC)`);
+
+      db.exec(`CREATE TABLE IF NOT EXISTS ai_messages (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL REFERENCES ai_sessions(id) ON DELETE CASCADE,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        tool_trace_json TEXT,
+        model_label TEXT,
+        created_at INTEGER NOT NULL
+      )`);
+
+      // 读会话时固定按时间升序回放，复合索引让「按会话 + 时间」一次走完。
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_ai_messages_session ON ai_messages(session_id, created_at ASC)`);
+    },
+  },
 ];
 
 /** 当前代码期望的 schema 版本 */
