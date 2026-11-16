@@ -650,6 +650,145 @@
   color: var(--warn);
 }
 
+/* ---------- 回答底栏（取数轨迹 + 一键复制）与追问建议 ---------- */
+
+.ask-msg-foot {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 16px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--divider);
+}
+
+.ask-msg-foot-left {
+  min-width: 0;
+  flex: 1 1 220px;
+}
+
+.ask-msg-foot .ask-trace {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.ask-copy-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+/* 仅对 border-color 做过渡：避免 data-theme 同步切换时文字/背景处于过渡中间帧导致对比度瞬时跌落 */
+.ask-copy-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 26px;
+  min-height: 26px;
+  padding: 3px 8px;
+  color: var(--muted);
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: border-color var(--t-fast) var(--ease-out);
+}
+
+.ask-copy-btn:hover {
+  color: var(--text);
+  background: var(--panel-2);
+  border-color: var(--muted-2);
+}
+
+.ask-copy-btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.ask-copy-btn[data-copied] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.ask-copy-btn[data-failed] {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+.ask-copy-ico {
+  flex: none;
+}
+
+.ask-copy-tip {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.2;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--t-fast) var(--ease-out);
+}
+
+.ask-copy-btn:is([data-copied], [data-failed]) + .ask-copy-tip {
+  opacity: 1;
+}
+
+.ask-copy-btn[data-failed] + .ask-copy-tip {
+  color: var(--warn);
+}
+
+.ask-followups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.ask-followup-chip {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  max-width: 100%;
+  padding: 5px 10px;
+  color: var(--text);
+  text-align: left;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius-xs);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.35;
+  cursor: pointer;
+  transition: border-color var(--t-fast) var(--ease-out);
+}
+
+.ask-followup-chip:hover {
+  background: var(--panel-2);
+  border-color: var(--muted-2);
+  border-left-color: var(--accent);
+}
+
+.ask-followup-chip:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.ask-followup-ico {
+  flex: none;
+  color: var(--muted);
+}
+
 /* ---------- 提问栏 ---------- */
 
 .ask-form {
@@ -1007,6 +1146,7 @@ dialog.ask-models-dialog::backdrop {
 /* ---------- AI 内嵌终端图表（K 线 / 关系图 / 条形图 / 折线图） ---------- */
 
 .md-chart {
+  position: relative;
   max-width: 100%;
   margin: 12px 0;
   padding: 12px;
@@ -1253,6 +1393,168 @@ dialog.ask-models-dialog::backdrop {
   color: var(--up);
 }
 
+.md-kline-hit,
+.md-line-hit {
+  cursor: crosshair;
+  outline: none;
+}
+
+.md-line-hit {
+  fill: transparent;
+}
+
+.md-kline-hit:focus-visible .md-kline-slot,
+.md-line-hit:focus-visible {
+  stroke: var(--focus-ring);
+  stroke-width: 1.5;
+  stroke-dasharray: 2 2;
+}
+
+.md-chart-crosshair {
+  stroke: var(--muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  pointer-events: none;
+}
+
+.md-chart-crosshair[hidden] {
+  display: none;
+}
+
+.md-chart-tip {
+  position: absolute;
+  top: 34px;
+  left: 8px;
+  z-index: 4;
+  max-width: calc(100% - 16px);
+  padding: 6px 8px;
+  color: var(--text);
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  pointer-events: none;
+}
+
+.md-chart-tip[hidden] {
+  display: none;
+}
+
+.md-chart-tip-title {
+  margin-bottom: 2px;
+  color: var(--muted);
+}
+
+.md-chart-tip-rows {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  color: var(--text);
+}
+
+.md-graph-node {
+  cursor: pointer;
+  outline: none;
+}
+
+.md-graph-node:hover .md-graph-box {
+  stroke: var(--accent);
+}
+
+.md-graph-node:focus-visible .md-graph-box {
+  stroke: var(--focus-ring);
+  stroke-width: 2;
+}
+
+.ask-graph-popover {
+  position: fixed;
+  inset: auto;
+  z-index: 30;
+  width: max-content;
+  min-width: 196px;
+  max-width: min(280px, calc(100vw - 24px));
+  margin: 0;
+  padding: 10px 12px;
+  color: var(--text);
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.ask-graph-popover[hidden] {
+  display: none;
+}
+
+.ask-graph-popover-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.ask-graph-popover-title {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ask-graph-popover-detail {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ask-graph-popover-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ask-graph-popover-btn,
+.ask-graph-popover-link {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 28px;
+  padding: 5px 8px;
+  color: var(--text);
+  text-align: left;
+  text-decoration: none;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.35;
+  cursor: pointer;
+  transition: border-color var(--t-fast) var(--ease-out);
+}
+
+.ask-graph-popover-link {
+  color: var(--accent);
+}
+
+.ask-graph-popover-btn:hover,
+.ask-graph-popover-link:hover {
+  background: var(--panel-2);
+  border-color: var(--accent);
+}
+
+.ask-graph-popover-btn:focus-visible,
+.ask-graph-popover-link:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
 /* ---------- 窄屏：历史会话上方堆叠，不挤压正文与输入 ---------- */
 
 @media (max-width: 820px) {
@@ -1311,12 +1613,22 @@ dialog.ask-models-dialog::backdrop {
   .ask-model-item {
     align-items: flex-start;
   }
+
+  .ask-followup-chip {
+    width: 100%;
+    justify-content: space-between;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .ask-btn,
   .ask-chip,
   .ask-chip-ico,
+  .ask-copy-btn,
+  .ask-copy-tip,
+  .ask-followup-chip,
+  .ask-graph-popover-btn,
+  .ask-graph-popover-link,
   .ask-history-item,
   .ask-icon-btn {
     transition: none;

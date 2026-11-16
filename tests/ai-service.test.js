@@ -353,6 +353,8 @@ describe('ask：原生 tools 循环', () => {
     expect(sys).toContain('2026-11-16');
     expect(sys).toContain('gold-intl');
     expect(sys).toContain('先查工具');
+    expect(sys).toContain('```followups');
+    expect(sys).toContain('最多 3 条');
     expect(streamChat.calls[0].opts.tools).toHaveLength(2);
   });
 

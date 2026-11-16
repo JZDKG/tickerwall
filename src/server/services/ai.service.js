@@ -314,6 +314,9 @@ export function createAiService(deps = {}) {
         tools.promptSummary(),
       );
     }
+    lines.push(
+      '延伸追问（可选）：完整分析回答结束时，可在文末附带一个 ```followups 代码块，内容为 JSON 字符串数组（如 ["追问1","追问2"]，最多 3 条、单条简短精炼），必须紧扣当前实数结论且仅限可用工具覆盖的能力范围；无把握时不输出。',
+    );
     return lines.filter(Boolean).join('\n');
   }
 

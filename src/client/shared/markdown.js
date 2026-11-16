@@ -14,6 +14,7 @@
  * ================================================================== */
 
 import { html, safeHref } from './format.js';
+import { extractFollowups } from './ask-assist.js';
 import { isChartFence, renderChartBlock } from './ask-charts.js';
 
 /** 站内链接只认这些路由，避免 `#/javascript:...` 这类伪路由混进来 */
@@ -182,7 +183,7 @@ function quoteHTML(lines, start) {
 }
 
 export function markdownToSafeHtml(text) {
-  const src = String(text ?? '').replace(/\r\n?/g, '\n');
+  const src = extractFollowups(String(text ?? '')).markdown;
   if (!src.trim()) return html``;
 
   const lines = src.split('\n');

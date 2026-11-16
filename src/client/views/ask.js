@@ -15,7 +15,15 @@ import { store } from '../shared/store.js';
 import { on as onBus } from '../shared/bus.js';
 import { html } from '../shared/format.js';
 import { iconHtml } from '../shared/icons.js';
-import { markdownToSafeHtml } from '../shared/markdown.js';
+import {
+  clearCopyFeedbackTimers,
+  copyIconHtml,
+  copyTextWithFeedback,
+  extractFollowups,
+  formatAnswerForCopy,
+  resolveFollowups,
+} from '../shared/ask-assist.js';
+import { markdownToSafeHtml, safeMarkdownHref } from '../shared/markdown.js';
 import { openModelsDialog } from './ask-models.js';
 
 const STATIC_PROMPTS = [
@@ -164,9 +172,10 @@ function traceHTML(msg) {
   </details>`;
 }
 
-function answerBodyHTML(msg = {}) {
+function answerBodyHTML(msg = {}, { isLast = false } = {}) {
   const streaming = Boolean(msg.streaming);
   const content = String(msg.content ?? '');
+  const stripped = extractFollowups(content).markdown.trim();
   const progress = streaming ? msg.progress || '正在生成…' : '';
   const emptyText = msg.stopped
     ? '已停止生成'
@@ -174,16 +183,33 @@ function answerBodyHTML(msg = {}) {
       ? '正在生成…'
       : '没有返回内容';
 
+  const trace = traceHTML(msg);
+  const canCopy = !streaming && Boolean(stripped);
+  const foot = canCopy
+    ? html`<div class="ask-msg-foot">
+      ${trace ? html`<div class="ask-msg-foot-left">${trace}</div>` : ''}
+      <div class="ask-copy-wrap">
+        <button type="button" class="ask-copy-btn" data-ask-copy="1" aria-label="复制回答">${copyIconHtml(14, 'ask-copy-ico')}<span>复制</span></button>
+        <span class="ask-copy-tip" role="status"></span>
+      </div>
+    </div>`
+    : trace;
+
+  const canFollowup = isLast && canCopy && !msg.error && !msg.stopped;
+  const followups = canFollowup ? resolveFollowups(content, msg.toolTrace) : [];
+
   return html`${progress ? html`<p class="ask-progress" role="status">${progress}</p>` : ''}
     ${msg.error ? html`<p class="ask-error" role="alert">回答失败：${msg.error}</p>` : ''}
-    <div class="ask-answer">${content ? markdownToSafeHtml(content) : html`<p class="ask-answer-placeholder">${emptyText}</p>`}</div>
-    ${msg.stopped && content ? html`<p class="ask-stopped">已停止生成</p>` : ''}
-    ${traceHTML(msg)}`;
+    <div class="ask-answer">${stripped ? markdownToSafeHtml(content) : html`<p class="ask-answer-placeholder">${emptyText}</p>`}</div>
+    ${msg.stopped && stripped ? html`<p class="ask-stopped">已停止生成</p>` : ''}
+    ${foot}
+    ${followups.length ? html`<div class="ask-followups" aria-label="继续追问">${followups.map((q) => html`<button type="button" class="ask-followup-chip" data-followup="${q}"><span>${q}</span>${iconHtml('arrow-right', 12, 'ask-followup-ico')}</button>`)}</div>` : ''}`;
 }
 
-export function renderAskAnswerHTML(msg = {}) {
-  return html`<article class="ask-msg is-assistant${msg.streaming ? ' is-streaming' : ''}" data-role="assistant">
-    ${answerBodyHTML(msg)}
+export function renderAskAnswerHTML(msg = {}, { isLast = false, msgIdx = null } = {}) {
+  const idxAttr = Number.isInteger(msgIdx) ? html` data-msg-idx="${msgIdx}"` : '';
+  return html`<article class="ask-msg is-assistant${msg.streaming ? ' is-streaming' : ''}" data-role="assistant"${idxAttr}>
+    ${answerBodyHTML(msg, { isLast })}
   </article>`;
 }
 
@@ -254,6 +280,11 @@ export function mountAsk(arg = '', {
     sessionsLoading: true,
     sessionsError: '',
     configClose: null,
+    activeChartFig: null,
+    activeChartHit: null,
+    graphOpen: false,
+    graphTriggerEl: null,
+    cleanupPopover: null,
   };
   active = state;
 
@@ -286,6 +317,7 @@ export function mountAsk(arg = '', {
         </form>
       </div>
     </div>
+    <div id="ask-graph-popover" class="ask-graph-popover" popover="auto" hidden></div>
   </div>`);
 
   const refs = {
@@ -299,6 +331,7 @@ export function mountAsk(arg = '', {
     form: askEl.querySelector('#ask-form'),
     input: askEl.querySelector('#ask-input'),
     send: askEl.querySelector('#ask-send'),
+    graphPopover: askEl.querySelector('#ask-graph-popover'),
   };
   state.refs = refs;
 
@@ -385,14 +418,138 @@ export function mountAsk(arg = '', {
     </li>`)}`);
   };
 
+  const hideActiveChartTip = () => {
+    const fig = state.activeChartFig;
+    if (fig) {
+      const tip = fig.querySelector('.md-chart-tip');
+      const cross = fig.querySelector('.md-chart-crosshair');
+      if (tip) tip.hidden = true;
+      if (cross) cross.setAttribute('hidden', '');
+    }
+    state.activeChartFig = null;
+    state.activeChartHit = null;
+  };
+
+  const showChartTip = (hitEl) => {
+    const fig = hitEl?.closest?.('.md-chart');
+    const tip = fig?.querySelector?.('.md-chart-tip');
+    if (!fig || !tip) return;
+    if (state.activeChartFig && state.activeChartFig !== fig) hideActiveChartTip();
+
+    const tipX = Number(hitEl.getAttribute('data-tip-x'));
+    const title = hitEl.getAttribute('data-tip-title') || '';
+    const rows = (hitEl.getAttribute('data-tip-rows') || '').split('|').filter(Boolean);
+    const cross = fig.querySelector('.md-chart-crosshair');
+    if (cross && Number.isFinite(tipX)) {
+      cross.setAttribute('x1', String(tipX));
+      cross.setAttribute('x2', String(tipX));
+      cross.removeAttribute('hidden');
+    }
+
+    setMarkup(doc, tip, html`<div class="md-chart-tip-title">${title}</div><div class="md-chart-tip-rows">${rows.map((r) => html`<span class="md-chart-tip-row">${r}</span>`)}</div>`);
+    const ratio = Number.isFinite(tipX) ? tipX / 640 : 0.5;
+    if (ratio < 0.28) {
+      tip.style.left = '8px';
+      tip.style.right = 'auto';
+      tip.style.transform = 'none';
+    } else if (ratio > 0.72) {
+      tip.style.left = 'auto';
+      tip.style.right = '8px';
+      tip.style.transform = 'none';
+    } else {
+      tip.style.left = `${(ratio * 100).toFixed(1)}%`;
+      tip.style.right = 'auto';
+      tip.style.transform = 'translateX(-50%)';
+    }
+    tip.hidden = false;
+    state.activeChartFig = fig;
+    state.activeChartHit = hitEl;
+  };
+
+  const closeGraphPopover = ({ restoreFocus = false } = {}) => {
+    const pop = refs.graphPopover;
+    if (!pop || (!state.graphOpen && pop.hidden)) return;
+    const trigger = state.graphTriggerEl;
+    state.graphOpen = false;
+    state.graphTriggerEl = null;
+    if (typeof pop.hidePopover === 'function') {
+      try {
+        pop.hidePopover();
+      } catch {
+        // ignore when already closed
+      }
+    }
+    pop.hidden = true;
+    if (restoreFocus && trigger?.isConnected) trigger.focus?.();
+  };
+  state.cleanupPopover = () => closeGraphPopover({ restoreFocus: false });
+
+  const openGraphPopover = (nodeEl) => {
+    const pop = refs.graphPopover;
+    if (!pop || !nodeEl) return;
+    if (state.graphOpen && state.graphTriggerEl === nodeEl) {
+      closeGraphPopover({ restoreFocus: true });
+      return;
+    }
+
+    const label = nodeEl.getAttribute('data-graph-label') || '';
+    const detail = nodeEl.getAttribute('data-graph-detail') || '';
+    const assetId = nodeEl.getAttribute('data-asset-id') || '';
+    const detailHref = assetId ? safeMarkdownHref(`#/d/${encodeURIComponent(assetId)}`) : '';
+    const followupQuestion = `围绕「${label}」深入分析传导逻辑与关键跟踪指标`;
+
+    setMarkup(doc, pop, html`<div class="ask-graph-popover-head">
+      <strong class="ask-graph-popover-title">${label}</strong>
+      ${detail ? html`<span class="ask-graph-popover-detail">${detail}</span>` : ''}
+    </div>
+    <div class="ask-graph-popover-actions">
+      <button type="button" class="ask-graph-popover-btn" data-graph-followup="${followupQuestion}"><span>围绕「${label}」深入追问</span>${iconHtml('arrow-right', 12, 'ask-followup-ico')}</button>
+      ${detailHref ? html`<a class="ask-graph-popover-link" href="${detailHref}">查看详情 ↗</a>` : ''}
+    </div>`);
+
+    const rect = typeof nodeEl.getBoundingClientRect === 'function'
+      ? nodeEl.getBoundingClientRect()
+      : { left: 16, bottom: 80, top: 40 };
+    const vw = Number(state.win?.innerWidth) || 1280;
+    const vh = Number(state.win?.innerHeight) || 800;
+    const popMaxW = Math.min(280, Math.max(196, vw - 24));
+    const rawLeft = Number(rect.left) || 12;
+    const clampedLeft = Math.max(12, Math.min(rawLeft, vw - popMaxW - 12));
+    const bottomEdge = Number(rect.bottom) || 80;
+    const topEdge = Number(rect.top) || 40;
+    const spaceBelow = vh - bottomEdge;
+    const top = spaceBelow < 140 && topEdge > 150
+      ? Math.max(12, topEdge - 124)
+      : Math.max(12, Math.min(bottomEdge + 6, vh - 140));
+
+    pop.style.maxWidth = `${popMaxW}px`;
+    pop.style.left = `${Math.round(clampedLeft)}px`;
+    pop.style.top = `${Math.round(top)}px`;
+
+    state.graphTriggerEl = nodeEl;
+    state.graphOpen = true;
+    pop.hidden = false;
+    if (typeof pop.showPopover === 'function') {
+      try {
+        pop.showPopover();
+      } catch {
+        // fallback uses hidden=false
+      }
+    }
+    pop.querySelector('button')?.focus?.();
+  };
+
   const renderMessages = () => {
+    hideActiveChartTip();
+    closeGraphPopover();
     if (!state.messages.length) {
       renderEmpty();
       return;
     }
-    setMarkup(doc, refs.messages, html`${state.messages.map((m) => (m.role === 'user'
+    const lastIdx = state.messages.length - 1;
+    setMarkup(doc, refs.messages, html`${state.messages.map((m, idx) => (m.role === 'user'
       ? userMessageHTML(m)
-      : renderAskAnswerHTML(m)))}`);
+      : renderAskAnswerHTML(m, { isLast: idx === lastIdx, msgIdx: idx })))}`);
     scrollToBottom();
   };
 
@@ -412,7 +569,8 @@ export function mountAsk(arg = '', {
 
   const paintAll = (msg) => {
     if (!msg?.el?.isConnected) return;
-    setMarkup(doc, msg.el, answerBodyHTML(msg));
+    const isLast = state.messages[state.messages.length - 1] === msg;
+    setMarkup(doc, msg.el, answerBodyHTML(msg, { isLast }));
   };
 
   const cancelPaint = () => {
@@ -509,7 +667,12 @@ export function mountAsk(arg = '', {
       return;
     }
 
-    setMarkup(doc, refs.messages, html``);
+    hideActiveChartTip();
+    closeGraphPopover();
+    const priorMarkup = state.messages.map((m, idx) => (m.role === 'user'
+      ? userMessageHTML(m)
+      : renderAskAnswerHTML(m, { isLast: false, msgIdx: idx })));
+    setMarkup(doc, refs.messages, html`${priorMarkup}`);
     const userMsg = { role: 'user', content: text };
     const assistant = {
       role: 'assistant',
@@ -520,12 +683,13 @@ export function mountAsk(arg = '', {
       progress: '正在准备…',
     };
     state.messages.push(userMsg, assistant);
+    const assistantIdx = state.messages.length - 1;
     state.pendingTools = new Map();
     state.completedTools = 0;
     state.currentMessage = assistant;
 
     refs.messages.append(nodeOf(doc, userMessageHTML(userMsg)));
-    const article = nodeOf(doc, renderAskAnswerHTML(assistant));
+    const article = nodeOf(doc, renderAskAnswerHTML(assistant, { isLast: true, msgIdx: assistantIdx }));
     assistant.el = article;
     refs.messages.append(article);
     scrollToBottom();
@@ -731,12 +895,113 @@ export function mountAsk(arg = '', {
       submitQuestion(starter.dataset.starter);
       return;
     }
+    const followup = event.target?.closest?.('[data-followup]');
+    if (followup) {
+      submitQuestion(followup.dataset.followup);
+      return;
+    }
+    const copyBtn = event.target?.closest?.('[data-ask-copy]');
+    if (copyBtn) {
+      const article = copyBtn.closest('[data-msg-idx]');
+      const idx = Number(article?.dataset?.msgIdx);
+      const msg = Number.isInteger(idx) ? state.messages[idx] : null;
+      if (msg) {
+        copyTextWithFeedback(copyBtn, formatAnswerForCopy(msg), {
+          tipEl: copyBtn.nextElementSibling,
+          navigatorObj: state.win?.navigator,
+          doc,
+          win: state.win,
+        });
+      }
+      return;
+    }
+    const graphNode = event.target?.closest?.('[data-graph-node]');
+    if (graphNode) {
+      openGraphPopover(graphNode);
+      return;
+    }
     const action = event.target?.closest?.('[data-ask-act]')?.dataset.askAct;
     if (action === 'configure') openConfig();
     if (action === 'retry-load') {
       loadModels();
       loadSessions();
     }
+  });
+
+  on(refs.messages, 'mouseover', (event) => {
+    const hit = event.target?.closest?.('[data-chart-tip]');
+    if (hit) showChartTip(hit);
+  });
+
+  on(refs.messages, 'mouseout', (event) => {
+    if (!state.activeChartFig) return;
+    const next = event.relatedTarget;
+    if (!next || !state.activeChartFig.contains(next)) {
+      hideActiveChartTip();
+    }
+  });
+
+  on(refs.messages, 'focusin', (event) => {
+    const hit = event.target?.closest?.('[data-chart-tip]');
+    if (hit) showChartTip(hit);
+  });
+
+  on(refs.messages, 'focusout', (event) => {
+    if (!state.activeChartFig) return;
+    const next = event.relatedTarget;
+    if (!next || !state.activeChartFig.contains(next)) {
+      hideActiveChartTip();
+    }
+  });
+
+  on(refs.messages, 'keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const node = event.target?.closest?.('[data-graph-node]');
+    if (!node) return;
+    event.preventDefault();
+    openGraphPopover(node);
+  });
+
+  on(refs.graphPopover, 'click', (event) => {
+    const followupBtn = event.target?.closest?.('[data-graph-followup]');
+    if (followupBtn) {
+      const q = followupBtn.dataset.graphFollowup;
+      closeGraphPopover({ restoreFocus: false });
+      submitQuestion(q);
+      return;
+    }
+    const detailLink = event.target?.closest?.('.ask-graph-popover-link');
+    if (detailLink) closeGraphPopover({ restoreFocus: false });
+  });
+
+  on(refs.graphPopover, 'toggle', (event) => {
+    if (event.newState === 'closed' && state.graphOpen) {
+      const trigger = state.graphTriggerEl;
+      state.graphOpen = false;
+      state.graphTriggerEl = null;
+      refs.graphPopover.hidden = true;
+      if (trigger?.isConnected) trigger.focus?.();
+    }
+  });
+
+  on(doc, 'keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    if (state.graphOpen) {
+      event.preventDefault();
+      closeGraphPopover({ restoreFocus: true });
+      return;
+    }
+    if (state.activeChartFig) {
+      hideActiveChartTip();
+    }
+  });
+
+  on(doc, 'click', (event) => {
+    if (!state.graphOpen) return;
+    const target = event.target;
+    if (refs.graphPopover.contains(target)) return;
+    if (target?.closest?.('[data-graph-node]') === state.graphTriggerEl) return;
+    closeGraphPopover({ restoreFocus: false });
   });
 
   on(refs.history, 'click', (event) => {
@@ -782,6 +1047,9 @@ export function unmountAsk() {
       state.win.clearTimeout(state.paintTimer);
       state.paintTimer = null;
     }
+    clearCopyFeedbackTimers(state.win);
+    state.cleanupPopover?.();
+    state.cleanupPopover = null;
     for (const [el, type, handler] of state.listeners) {
       el.removeEventListener?.(type, handler);
     }

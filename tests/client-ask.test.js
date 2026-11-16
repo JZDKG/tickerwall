@@ -10,6 +10,15 @@
 
 import { describe, it, expect, beforeEach, afterEach, beforeAll, vi } from 'vitest';
 import { safeMarkdownHref, markdownToSafeHtml } from '../src/client/shared/markdown.js';
+import { resolveGraphAssetId } from '../src/client/shared/ask-charts.js';
+import {
+  copyIconHtml,
+  extractFollowups,
+  resolveFollowups,
+  formatAnswerForCopy,
+  copyTextWithFeedback,
+  clearCopyFeedbackTimers,
+} from '../src/client/shared/ask-assist.js';
 
 const asText = (v) => String(v);
 
@@ -1510,6 +1519,601 @@ describe('mountAsk：工作区、流式渲染与生命周期', () => {
     askView.mountAsk('', { api, document, window, quotes });
     await waitFor(() => $('#ask-model-select option[value="m1"]'));
     expect($$('#ask-model-select')).toHaveLength(1);
+  });
+});
+
+describe('ask-assist：延伸追问提取、兜底生成与复制辅助', () => {
+  it('copyIconHtml 输出 24x24 1.5px 描边 copy 线性图标并支持尺寸与类名', () => {
+    const def = asText(copyIconHtml());
+    expect(def).toContain('viewBox="0 0 24 24"');
+    expect(def).toContain('stroke-width="1.5"');
+    expect(def).toContain('aria-hidden="true"');
+    expect(def).toContain('<rect x="9" y="9" width="13" height="13" rx="2"');
+    expect(def).toContain('M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1');
+    const custom = asText(copyIconHtml(16, 'ask-copy-ico'));
+    expect(custom).toContain('width="16" height="16"');
+    expect(custom).toContain('class="ui-ico ask-copy-ico"');
+    const fallbackSize = asText(copyIconHtml(0));
+    expect(fallbackSize).toContain('width="13" height="13"');
+  });
+
+  it('extractFollowups 识别并剥离闭合 JSON 数组，去重、过滤超长(>56)并限最多 3 条', () => {
+    const longItem = '追'.repeat(57);
+    const raw = [
+      '## 结论',
+      '黄金走强。',
+      '',
+      '```followups',
+      JSON.stringify(['  对比内外盘金价价差  ', '对比内外盘金价价差', '', 123, longItem, '查美债10Y联动', '检索近24小时宏观快讯', '第四条被截断']),
+      '```',
+    ].join('\n');
+    const res = extractFollowups(raw);
+    expect(res.markdown).toBe('## 结论\n黄金走强。');
+    expect(res.followups).toEqual([
+      '对比内外盘金价价差',
+      '查美债10Y联动',
+      '检索近24小时宏观快讯',
+    ]);
+  });
+
+  it('extractFollowups 兼容 Markdown 列表格式与空/非字符串输入，不误伤普通代码块', () => {
+    const listText = [
+      '正文内容',
+      '```js',
+      'const a = 1;',
+      '```',
+      '```followup',
+      '- 查昨涨停今日溢价',
+      '* 查主力资金流向',
+      '1. "查看近期日K走势"',
+      '```',
+    ].join('\n');
+    const res = extractFollowups(listText);
+    expect(res.markdown).toContain('```js\nconst a = 1;\n```');
+    expect(res.markdown).not.toContain('followup');
+    expect(res.followups).toEqual(['查昨涨停今日溢价', '查主力资金流向', '查看近期日K走势']);
+
+    expect(extractFollowups('')).toEqual({ markdown: '', followups: [] });
+    expect(extractFollowups(null)).toEqual({ markdown: '', followups: [] });
+    expect(extractFollowups('正文\n```followups\n   \n```')).toEqual({ markdown: '正文', followups: [] });
+    expect(extractFollowups('正文\n```followups\n{"k":"v"}\n```')).toEqual({ markdown: '正文', followups: ['{"k":"v"}'] });
+  });
+
+  it('extractFollowups 与 markdownToSafeHtml 剥离流式未闭合的 ```followups 块防闪烁', () => {
+    const streaming = '第一段结论\n\n```followups\n["半截追问';
+    const res = extractFollowups(streaming);
+    expect(res.markdown).toBe('第一段结论');
+    expect(res.followups).toEqual([]);
+
+    const htmlClosed = asText(markdownToSafeHtml('正文\n\n```followups\n["追问A"]\n```'));
+    expect(htmlClosed).toBe('<p>正文</p>');
+    const htmlStreaming = asText(markdownToSafeHtml(streaming));
+    expect(htmlStreaming).toBe('<p>第一段结论</p>');
+  });
+
+  it('resolveFollowups 优先采用模型显式 followups，缺失时基于成功 toolTrace 生成兜底追问', () => {
+    const explicit = resolveFollowups('结论\n```followups\n["自定义追问"]\n```', [
+      { tool: 'get_global_quotes', ok: true },
+    ]);
+    expect(explicit).toEqual(['自定义追问']);
+
+    expect(resolveFollowups('仅正文', [])).toEqual([]);
+    expect(resolveFollowups('仅正文', null)).toEqual([]);
+    expect(resolveFollowups('仅正文', [{ tool: 'get_global_quotes', ok: false }])).toEqual([]);
+
+    expect(resolveFollowups('涨停分析', [{ tool: 'get_a_share_pool', args: { kind: 'zt' }, ok: true }])[0]).toContain('昨');
+    expect(resolveFollowups('溢价分析', [{ tool: 'get_a_share_pool', args: { kind: 'yzt' }, ok: true }])[0]).toContain('涨停池');
+    expect(resolveFollowups('K线分析', [{ tool: 'get_a_share_kline', args: { code: '600519' }, ok: true }])[0]).toContain('600519');
+    expect(resolveFollowups('K线无参', [{ tool: 'get_a_share_kline', args: {}, ok: true }]).length).toBeGreaterThanOrEqual(2);
+    expect(resolveFollowups('报价', [{ tool: 'get_a_share_quotes', args: { codes: ['000001'] }, ok: true }])[0]).toContain('000001');
+    expect(resolveFollowups('报价无参', [{ tool: 'get_a_share_quotes', args: {}, ok: true }]).length).toBeGreaterThanOrEqual(2);
+    expect(resolveFollowups('资金流个股', [{ tool: 'get_a_share_fund_flow', args: { code: '300750' }, ok: true }])[0]).toContain('300750');
+    expect(resolveFollowups('资金流北向', [{ tool: 'get_a_share_fund_flow', args: {}, ok: true }]).length).toBeGreaterThanOrEqual(2);
+    expect(resolveFollowups('搜股', [{ tool: 'search_a_share', args: { query: '茅台' }, ok: true }]).length).toBeGreaterThanOrEqual(2);
+    expect(resolveFollowups('全球报价', [{ tool: 'get_global_quotes', ok: true }]).length).toBeGreaterThanOrEqual(2);
+    expect(resolveFollowups('详情有id', [{ tool: 'get_asset_detail', args: { id: 'gold-intl' }, ok: true }])[0]).toContain('gold-intl');
+    expect(resolveFollowups('详情无id', [{ tool: 'get_asset_detail', args: {}, ok: true }]).length).toBeGreaterThanOrEqual(2);
+    expect(resolveFollowups('黄金对比', [{ tool: 'get_gold_comparison', ok: true }]).length).toBeGreaterThanOrEqual(2);
+    expect(resolveFollowups('宏观相关', [{ tool: 'get_macro_correlations', ok: true }]).length).toBeGreaterThanOrEqual(2);
+    expect(resolveFollowups('解释卡', [{ tool: 'get_asset_explanation', ok: true }]).length).toBeGreaterThanOrEqual(2);
+    expect(resolveFollowups('快讯检索', [{ tool: 'search_events_and_news', ok: true }]).length).toBeGreaterThanOrEqual(2);
+    expect(resolveFollowups('宏观日历', [{ tool: 'get_macro_calendar_and_study', ok: true }]).length).toBeGreaterThanOrEqual(2);
+    expect(resolveFollowups('隔夜复盘', [{ tool: 'get_overnight_briefing_and_alerts', ok: true }]).length).toBeGreaterThanOrEqual(2);
+    expect(resolveFollowups('未知工具', [{ tool: 'custom_readonly_tool', ok: true }]).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('formatAnswerForCopy 剥离 followups 并附加精简数据来源脚注', () => {
+    expect(formatAnswerForCopy({ content: '   ' })).toBe('');
+    expect(formatAnswerForCopy({ content: '纯文本结论', toolTrace: [] })).toBe('纯文本结论');
+    expect(formatAnswerForCopy({ content: '无轨迹数组结论' })).toBe('无轨迹数组结论');
+    const md = formatAnswerForCopy({
+      content: '### 结论\n\n| 标的 | 现价 |\n| --- | --- |\n| 黄金 | 2650 |\n\n```followups\n["追问1"]\n```',
+      toolTrace: [
+        { tool: 'get_global_quotes', ok: true, source: 'sina', asOf: '2026-11-16T10:00:00+08:00' },
+        { tool: 'get_global_quotes', ok: true, source: 'sina', asOf: '2026-11-16T10:00:00+08:00' },
+        { tool: 'get_gold_comparison', ok: true, source: 'cnbc' },
+        { tool: 'get_asset_explanation', ok: true },
+        { tool: 'search_events_and_news', ok: false, error: 'timeout' },
+      ],
+    });
+    expect(md).not.toContain('followups');
+    expect(md).toContain('| 黄金 | 2650 |');
+    expect(md).toContain('> 数据来源：get_global_quotes(sina · 2026-11-16T10:00:00+08:00)；get_gold_comparison(cnbc)；get_asset_explanation');
+    expect(md).not.toContain('search_events_and_news');
+  });
+
+  it('copyTextWithFeedback 覆盖 Clipboard 成功、execCommand 降级、失败态、连续重播与定时器清理', async () => {
+    const btn = document.createElement('button');
+    const tip = document.createElement('span');
+    tip.setAttribute('role', 'status');
+    const timers = new Map();
+    let seq = 0;
+    const fakeWin = {
+      setTimeout: vi.fn((fn) => {
+        const id = ++seq;
+        timers.set(id, fn);
+        return id;
+      }),
+      clearTimeout: vi.fn((id) => {
+        timers.delete(id);
+      }),
+    };
+    const writeText = vi.fn().mockResolvedValue(undefined);
+
+    // 1) Clipboard 成功 + 不禁用按钮
+    const ok1 = await copyTextWithFeedback(btn, '内容1', {
+      tipEl: tip,
+      navigatorObj: { clipboard: { writeText } },
+      doc: document,
+      win: fakeWin,
+    });
+    expect(ok1).toBe(true);
+    expect(writeText).toHaveBeenCalledWith('内容1');
+    expect(btn.disabled).toBe(false);
+    expect(btn.hasAttribute('data-copied')).toBe(true);
+    expect(tip.textContent).toBe('已复制');
+
+    // 2) 连续相同文案追加   触发屏幕阅读器重播，并清掉上一个定时器
+    const ok2 = await copyTextWithFeedback(btn, '内容2', {
+      tipEl: tip,
+      navigatorObj: { clipboard: { writeText } },
+      doc: document,
+      win: fakeWin,
+    });
+    expect(ok2).toBe(true);
+    expect(fakeWin.clearTimeout).toHaveBeenCalledTimes(1);
+    expect(tip.textContent).toBe('已复制 ');
+
+    // 触发 2000ms 定时器自动复位
+    for (const fn of [...timers.values()]) fn();
+    timers.clear();
+    expect(btn.hasAttribute('data-copied')).toBe(false);
+    expect(tip.textContent).toBe('');
+
+    // 3) Clipboard 拒绝 → 降级 textarea + execCommand('copy') 成功
+    const execMock = vi.fn(() => true);
+    document.execCommand = execMock;
+    const ok3 = await copyTextWithFeedback(btn, '降级文本', {
+      tipEl: tip,
+      navigatorObj: { clipboard: { writeText: vi.fn().mockRejectedValue(new Error('denied')) } },
+      doc: document,
+      win: fakeWin,
+    });
+    expect(ok3).toBe(true);
+    expect(execMock).toHaveBeenCalledWith('copy');
+    expect(document.querySelectorAll('textarea')).toHaveLength(0);
+    expect(btn.hasAttribute('data-copied')).toBe(true);
+
+    // 4) 无 clipboard 且 execCommand 返回 false → data-failed 与 复制失败
+    document.execCommand = vi.fn(() => false);
+    const fail1 = await copyTextWithFeedback(btn, '失败文本', {
+      tipEl: tip,
+      navigatorObj: null,
+      doc: document,
+      win: fakeWin,
+    });
+    expect(fail1).toBe(false);
+    expect(btn.hasAttribute('data-copied')).toBe(false);
+    expect(btn.hasAttribute('data-failed')).toBe(true);
+    expect(tip.textContent).toBe('复制失败');
+
+    // 5) execCommand 抛异常 → 安全移除临时 textarea 并标记失败
+    document.execCommand = vi.fn(() => { throw new Error('blocked'); });
+    const fail2 = await copyTextWithFeedback(btn, '异常文本', {
+      tipEl: tip,
+      navigatorObj: {},
+      doc: document,
+      win: fakeWin,
+    });
+    expect(fail2).toBe(false);
+    expect(document.querySelectorAll('textarea')).toHaveLength(0);
+    expect(tip.textContent).toBe('复制失败 ');
+
+    // 6) 卸载清理所有挂起定时器
+    expect(timers.size).toBeGreaterThan(0);
+    clearCopyFeedbackTimers();
+    expect(timers.size).toBe(0);
+    delete document.execCommand;
+  });
+});
+
+describe('ask-charts：可交互 K 线、折线切片与传导节点标的映射', () => {
+  it('renderKline 输出十字准星、浮层容器与键盘可聚焦蜡烛热区（含开高低收涨幅）', () => {
+    const out = asText(markdownToSafeHtml([
+      '```chart',
+      JSON.stringify({
+        type: 'kline',
+        title: '黄金日K',
+        unit: 'USD',
+        data: [
+          { date: '11-14', open: 0, high: 10, low: 0, close: 0 },
+          { date: '11-15', open: 2600, high: 2640, low: 2590, close: 2630 },
+          { date: '11-16', open: 2630, high: 2665, low: 2620, close: 2656.3 },
+        ],
+      }),
+      '```',
+    ].join('\n')));
+    const wrap = document.createElement('div');
+    wrap.innerHTML = out;
+
+    const svg = wrap.querySelector('svg.md-chart-svg');
+    expect(svg.getAttribute('role')).toBe('group');
+    expect(wrap.querySelector('line.md-chart-crosshair')?.hasAttribute('hidden')).toBe(true);
+    expect(wrap.querySelector('.md-chart-tip')?.hasAttribute('hidden')).toBe(true);
+
+    const hits = wrap.querySelectorAll('g.md-kline-hit');
+    expect(hits).toHaveLength(3);
+    expect(hits[0].getAttribute('tabindex')).toBe('0');
+    expect(hits[0].dataset.chartTip).toBe('kline');
+    expect(hits[0].dataset.tipRows).toContain('涨幅 0.00%');
+    expect(hits[2].dataset.tipTitle).toBe('11-16');
+    expect(hits[2].dataset.tipRows).toContain('开 2630 USD');
+    expect(hits[2].dataset.tipRows).toContain('收 2656.3 USD');
+    expect(hits[2].dataset.tipRows).toContain('涨幅 +1.00%');
+    expect(Number(hits[2].dataset.tipX)).toBeGreaterThan(0);
+  });
+
+  it('renderLine 输出全高透明切片热区、十字准星与多序列数据行', () => {
+    const out = asText(markdownToSafeHtml([
+      '```chart',
+      JSON.stringify({
+        type: 'line',
+        title: '利差对比',
+        unit: '%',
+        series: [
+          { name: '美债10Y', data: [{ label: '11-14', value: 4.35 }, { label: '11-15', value: 4.42 }, { label: '11-16', value: 4.48 }] },
+          { name: '美债2Y', data: [{ label: '11-14', value: 4.2 }, { label: '11-15', value: 4.25 }] },
+        ],
+      }),
+      '```',
+    ].join('\n')));
+    const wrap = document.createElement('div');
+    wrap.innerHTML = out;
+
+    expect(wrap.querySelector('svg.md-chart-svg')?.getAttribute('role')).toBe('group');
+    expect(wrap.querySelector('line.md-chart-crosshair')?.hasAttribute('hidden')).toBe(true);
+    expect(wrap.querySelector('.md-chart-tip')?.hasAttribute('hidden')).toBe(true);
+
+    const slices = wrap.querySelectorAll('rect.md-line-hit');
+    expect(slices).toHaveLength(3);
+    expect(slices[1].getAttribute('tabindex')).toBe('0');
+    expect(slices[1].dataset.chartTip).toBe('line');
+    expect(slices[1].dataset.tipTitle).toBe('11-15');
+    expect(slices[1].dataset.tipRows).toBe('美债10Y 4.42 %|美债2Y 4.25 %');
+    // 第二序列少一个点时安全回退到末点，不越界崩溃
+    expect(slices[2].dataset.tipRows).toContain('美债10Y 4.48 %');
+  });
+
+  it('resolveGraphAssetId 与 renderGraph 映射站内标的 ID 并输出 role="button" 可交互节点', () => {
+    expect(resolveGraphAssetId('国际金价')).toBe('gold-intl');
+    expect(resolveGraphAssetId('国内金价（沪金）')).toBe('gold-cn');
+    expect(resolveGraphAssetId('美债收益率')).toBe('us10y');
+    expect(resolveGraphAssetId('布伦特原油')).toBe('brent');
+    expect(resolveGraphAssetId('WTI原油')).toBe('oil');
+    expect(resolveGraphAssetId('纳指波动率')).toBe('vxn');
+    expect(resolveGraphAssetId('纳指100')).toBe('ndx100');
+    expect(resolveGraphAssetId('sp500')).toBe('sp500');
+    expect(resolveGraphAssetId('未知概念节点', 'gold-intl')).toBe('gold-intl');
+    expect(resolveGraphAssetId('纯宏观叙事概念', 'n9')).toBe('');
+    expect(resolveGraphAssetId('', '')).toBe('');
+
+    const out = asText(markdownToSafeHtml([
+      '```chart',
+      JSON.stringify({
+        type: 'graph',
+        title: '传导图',
+        nodes: [
+          { id: 'n1', label: '美债收益率', detail: '+8bp 抬升', tone: 'warn' },
+          { id: 'n2', label: '实际利率预期', detail: '贴现率上行', tone: 'neutral' },
+          { id: 'n3', label: '国际金价', detail: '短线承压', tone: 'down' },
+        ],
+        edges: [
+          { from: 'n1', to: 'n2', label: '推升' },
+          { from: 'n2', to: 'n3', label: '压制' },
+        ],
+      }),
+      '```',
+    ].join('\n')));
+    const wrap = document.createElement('div');
+    wrap.innerHTML = out;
+
+    const nodes = wrap.querySelectorAll('g.md-graph-node');
+    expect(nodes).toHaveLength(3);
+    expect(nodes[0].getAttribute('role')).toBe('button');
+    expect(nodes[0].getAttribute('tabindex')).toBe('0');
+    expect(nodes[0].dataset.graphNode).toBe('n1');
+    expect(nodes[0].dataset.graphLabel).toBe('美债收益率');
+    expect(nodes[0].dataset.graphDetail).toBe('+8bp 抬升');
+    expect(nodes[0].dataset.assetId).toBe('us10y');
+    expect(nodes[1].dataset.assetId).toBe('');
+    expect(nodes[2].dataset.assetId).toBe('gold-intl');
+  });
+});
+
+describe('Milestone A 工作区交互：复制、追问、图表十字线与节点 Popover', () => {
+  let askEl;
+  beforeEach(() => {
+    askEl = document.getElementById('ask');
+  });
+  afterEach(() => {
+    askView.unmountAsk();
+  });
+  it('renderAskAnswerHTML 仅在完成且非空时渲染复制栏，仅在最后一条正常完成消息渲染追问建议', () => {
+    const streamingOut = asText(askView.renderAskAnswerHTML({
+      content: '生成中正文',
+      streaming: true,
+    }, { isLast: true }));
+    expect(streamingOut).not.toContain('ask-copy-btn');
+    expect(streamingOut).not.toContain('ask-followups');
+
+    const doneOut = asText(askView.renderAskAnswerHTML({
+      content: '**结论**\n```followups\n["查国际金价日线", "查近期宏观事件"]\n```',
+      toolTrace: [{ tool: 'get_global_quotes', ok: true, source: 'sina', asOf: '10:00' }],
+    }, { isLast: true }));
+    expect(doneOut).toContain('class="ask-msg-foot"');
+    expect(doneOut).toContain('class="ask-copy-btn"');
+    expect(doneOut).toContain('<svg');
+    expect(doneOut).toContain('class="ask-copy-tip" role="status"');
+    expect(doneOut).toContain('class="ask-followups"');
+    expect(doneOut).toContain('data-followup="查国际金价日线"');
+    expect(doneOut).not.toContain('followups\n');
+
+    const nonLastOut = asText(askView.renderAskAnswerHTML({
+      content: '**结论**\n```followups\n["查国际金价日线"]\n```',
+    }, { isLast: false }));
+    expect(nonLastOut).toContain('class="ask-copy-btn"');
+    expect(nonLastOut).not.toContain('class="ask-followups"');
+
+    const errOut = asText(askView.renderAskAnswerHTML({
+      content: '部分内容',
+      error: '网络中断',
+    }, { isLast: true }));
+    expect(errOut).not.toContain('class="ask-followups"');
+
+    const stoppedOut = asText(askView.renderAskAnswerHTML({
+      content: '部分内容',
+      stopped: true,
+    }, { isLast: true }));
+    expect(stoppedOut).not.toContain('class="ask-followups"');
+  });
+
+  it('点击复制按钮写入带来源引用的干净 Markdown，点击追问建议发起多轮对话且保留上下文', async () => {
+    const written = [];
+    Object.defineProperty(window.navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: async (txt) => {
+          written.push(txt);
+        },
+      },
+    });
+
+    let round = 0;
+    const { api, calls } = fakeAskApi({
+      models: [{ id: 'm1', name: 'DeepSeek', isDefault: true }],
+      onAsk: (body) => {
+        round += 1;
+        if (round === 1) {
+          const content = '第一轮结论\n```followups\n["继续查美债10年期走势"]\n```';
+          return sseResponse([
+            { type: 'session', data: { session: { id: 's-multi', title: body.question } } },
+            { type: 'tool_result', data: { id: 't1', tool: 'get_global_quotes', ok: true, source: 'sina', asOf: '10:30' } },
+            { type: 'delta', data: { text: content } },
+            {
+              type: 'done',
+              data: {
+                sessionId: 's-multi',
+                message: {
+                  role: 'assistant',
+                  content,
+                  toolTrace: [{ tool: 'get_global_quotes', ok: true, source: 'sina', asOf: '10:30' }],
+                  modelLabel: 'DeepSeek',
+                },
+              },
+            },
+          ]);
+        }
+        const content2 = '第二轮结论\n```followups\n["对比美元指数联动"]\n```';
+        return sseResponse([
+          { type: 'delta', data: { text: content2 } },
+          {
+            type: 'done',
+            data: {
+              sessionId: 's-multi',
+              message: { role: 'assistant', content: content2, toolTrace: [], modelLabel: 'DeepSeek' },
+            },
+          },
+        ]);
+      },
+    });
+
+    askView.mountAsk('', { api, document, window, quotes: [] });
+    await waitFor(() => askEl.querySelector('#ask-model-select option[value="m1"]'));
+
+    const input = askEl.querySelector('#ask-input');
+    input.value = '金价怎么看';
+    askEl.querySelector('#ask-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await waitFor(() => askEl.querySelector('.ask-copy-btn'));
+
+    const copyBtn = askEl.querySelector('.ask-copy-btn');
+    expect(copyBtn).toBeTruthy();
+    copyBtn.click();
+    await waitFor(() => copyBtn.hasAttribute('data-copied'));
+
+    expect(written).toHaveLength(1);
+    expect(written[0]).toContain('第一轮结论');
+    expect(written[0]).not.toContain('followups');
+    expect(written[0]).toContain('> 数据来源：get_global_quotes(sina · 10:30)');
+    expect(copyBtn.hasAttribute('data-copied')).toBe(true);
+    expect(copyBtn.disabled).toBe(false);
+    expect(askEl.querySelector('.ask-copy-tip')?.textContent).toBe('已复制');
+
+    const chip = askEl.querySelector('.ask-followup-chip');
+    expect(chip?.dataset.followup).toBe('继续查美债10年期走势');
+    chip.click();
+    await waitFor(() => askEl.querySelectorAll('.ask-copy-btn').length === 2);
+
+    expect(calls.ask).toHaveLength(2);
+    expect(calls.ask[1].body.question).toBe('继续查美债10年期走势');
+    const articles = askEl.querySelectorAll('.ask-msg');
+    expect(articles).toHaveLength(4);
+    expect(askEl.textContent).toContain('第一轮结论');
+    expect(askEl.textContent).toContain('第二轮结论');
+    const followupGroups = askEl.querySelectorAll('.ask-followups');
+    expect(followupGroups).toHaveLength(1);
+    expect(followupGroups[0].textContent).toContain('对比美元指数联动');
+  });
+
+  it('K 线/折线悬停与聚焦显示十字参考线与浮层，Esc 可关闭且不转移焦点；关系图节点支持点击/键盘菜单与追问闭环', async () => {
+    const chartReply = [
+      '综合图表分析：',
+      '```kline',
+      JSON.stringify({
+        title: '沪金日线',
+        unit: '元/克',
+        data: [
+          { date: '11-12', open: 600, high: 610, low: 598, close: 608 },
+          { date: '11-13', open: 608, high: 615, low: 605, close: 612 },
+          { date: '11-14', open: 612, high: 614, low: 602, close: 604 },
+          { date: '11-15', open: 604, high: 618, low: 603, close: 616 },
+        ],
+      }),
+      '```',
+      '```chart',
+      JSON.stringify({
+        type: 'line',
+        title: '溢价走势',
+        unit: '%',
+        series: [{ name: '沪金溢价', data: [{ date: '11-12', value: 1.1 }, { date: '11-13', value: 1.4 }, { date: '11-14', value: 0.9 }] }],
+      }),
+      '```',
+      '```graph',
+      JSON.stringify({
+        title: '黄金传导链',
+        nodes: [
+          { id: 'n1', label: '国际金价', detail: '+1.5%', tone: 'up' },
+          { id: 'n2', label: '实际利率预期', detail: '-8bp', tone: 'down' },
+        ],
+        edges: [{ from: 'n2', to: 'n1', label: '压制缓解' }],
+      }),
+      '```',
+    ].join('\n');
+
+    let askCount = 0;
+    const { api, calls } = fakeAskApi({
+      models: [{ id: 'm1', name: 'DeepSeek', isDefault: true }],
+      onAsk: () => {
+        askCount += 1;
+        return sseResponse([
+          { type: 'session', data: { session: { id: 's-chart', title: '图表测试' } } },
+          {
+            type: 'done',
+            data: {
+              sessionId: 's-chart',
+              message: {
+                role: 'assistant',
+                content: askCount === 1 ? chartReply : '节点追问回复',
+                toolTrace: [],
+                modelLabel: 'DeepSeek',
+              },
+            },
+          },
+        ]);
+      },
+    });
+
+    askView.mountAsk('', { api, document, window, quotes: [] });
+    await waitFor(() => askEl.querySelector('#ask-model-select option[value="m1"]'));
+
+    askEl.querySelector('#ask-input').value = '画图分析';
+    askEl.querySelector('#ask-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await waitFor(() => askEl.querySelector('.md-kline-hit'));
+
+    const klineHits = askEl.querySelectorAll('.md-kline-hit');
+    expect(klineHits.length).toBe(4);
+    const klineFig = askEl.querySelector('.md-chart-kline');
+    const klineTip = klineFig.querySelector('.md-chart-tip');
+    const klineCross = klineFig.querySelector('.md-chart-crosshair');
+
+    klineHits[0].dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    expect(klineTip.hidden).toBe(false);
+    expect(klineCross.hasAttribute('hidden')).toBe(false);
+    expect(klineTip.textContent).toContain('11-12');
+    expect(klineTip.textContent).toContain('开 600 元/克');
+
+    klineHits[3].focus();
+    klineHits[3].dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+    expect(klineTip.textContent).toContain('11-15');
+    expect(document.activeElement).toBe(klineHits[3]);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(klineTip.hidden).toBe(true);
+    expect(klineCross.hasAttribute('hidden')).toBe(true);
+    expect(document.activeElement).toBe(klineHits[3]);
+
+    const lineHit = askEl.querySelector('.md-line-hit');
+    const lineFig = askEl.querySelector('.md-chart-line');
+    const lineTip = lineFig.querySelector('.md-chart-tip');
+    lineHit.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    expect(lineTip.hidden).toBe(false);
+    expect(lineTip.textContent).toContain('沪金溢价 1.1 %');
+    lineHit.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: askEl.querySelector('#ask-form') }));
+    expect(lineTip.hidden).toBe(true);
+
+    const nodes = askEl.querySelectorAll('.md-graph-node');
+    expect(nodes.length).toBe(2);
+    nodes[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    const pop = askEl.querySelector('#ask-graph-popover');
+    expect(pop).toBeTruthy();
+    expect(pop.hidden).toBe(false);
+    expect(pop.textContent).toContain('国际金价');
+    expect(pop.textContent).toContain('+1.5%');
+    const detailLink = pop.querySelector('.ask-graph-popover-link');
+    expect(detailLink?.getAttribute('href')).toBe('#/d/gold-intl');
+
+    nodes[1].focus();
+    nodes[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    expect(pop.hidden).toBe(false);
+    expect(pop.textContent).toContain('实际利率预期');
+    expect(pop.querySelector('.ask-graph-popover-link')).toBeNull();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    expect(pop.hidden).toBe(true);
+    expect(document.activeElement).toBe(nodes[1]);
+
+    nodes[1].focus();
+    nodes[1].dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }));
+    expect(pop.hidden).toBe(false);
+    document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(pop.hidden).toBe(true);
+
+    nodes[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(pop.hidden).toBe(false);
+    const followupBtn = pop.querySelector('[data-graph-followup]');
+    followupBtn.click();
+    await waitFor(() => askEl.querySelectorAll('.ask-copy-btn').length === 2);
+    expect(pop.hidden).toBe(true);
+    expect(calls.ask).toHaveLength(2);
+    expect(calls.ask[1].body.question).toContain('国际金价');
   });
 });
 

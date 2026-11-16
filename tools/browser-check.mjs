@@ -195,7 +195,9 @@ async function startMockLlmServer() {
         '### 行情速览\n\n',
         '已读取看板实时行情，详情见 [国际金价](#/d/gold-intl)。\n\n',
         '| 项目 | 说明 |\n| --- | --- |\n| 数据口径 | 看板本地快照 |\n\n',
-        '```chart\n{"type":"graph","title":"测试传导链路","nodes":[{"id":"n1","label":"美债收益率","tone":"warn"},{"id":"n2","label":"国际金价","tone":"accent"}],"edges":[{"from":"n1","to":"n2","label":"贴现压力"}]}\n```\n',
+        '```kline\n{"title":"国际金价日K","unit":"美元/盎司","data":[{"date":"11-12","open":2610,"high":2628,"low":2605,"close":2622},{"date":"11-13","open":2622,"high":2640,"low":2618,"close":2635},{"date":"11-14","open":2635,"high":2645,"low":2625,"close":2642}]}\n```\n\n',
+        '```chart\n{"type":"graph","title":"测试传导链路","nodes":[{"id":"n1","label":"美债收益率","detail":"实际利率上行","tone":"warn"},{"id":"n2","label":"国际金价","detail":"避险与贴现博弈","tone":"accent"}],"edges":[{"from":"n1","to":"n2","label":"贴现压力"}]}\n```\n\n',
+        '```followups\n["对比沪金与国际金价内外盘价差","查美债10Y与黄金相关性"]\n```\n',
       ]) {
         sendChunk({ choices: [{ index: 0, delta: { content: piece } }] });
       }
@@ -1056,6 +1058,8 @@ async function main() {
       const trace = document.querySelector('#ask-messages details.ask-trace');
       const summaryText = trace?.querySelector('summary')?.textContent ?? '';
       const answer = document.querySelector('#ask-messages .ask-answer');
+      const copyBtn = document.querySelector('#ask-messages .ask-copy-btn');
+      const chips = [...document.querySelectorAll('#ask-messages .ask-followup-chip')].map((el) => el.textContent?.trim() ?? '');
       return {
         traceCollapsedByDefault: trace ? !trace.open : null,
         traceSummary: summaryText.trim(),
@@ -1064,18 +1068,46 @@ async function main() {
         hasH3: Boolean(answer?.querySelector('h3')),
         hasTable: Boolean(answer?.querySelector('table')),
         hasChartSvg: Boolean(answer?.querySelector('svg.md-chart-svg')),
+        hasCopyBtn: Boolean(copyBtn?.querySelector('svg')),
+        followupCount: chips.length,
+        leakedFollowupsFence: Boolean(answer?.textContent?.includes('followups')),
         linkHref: answer?.querySelector('a')?.getAttribute('href') ?? null,
         sessionCount: document.querySelectorAll('#ask-history-list .ask-history-item').length,
       };
     })()`);
     const as = askStreamRes.value ?? {};
     record(
-      as.traceCollapsedByDefault === true && as.traceSummary.includes('1') && (as.traceItems ?? 0) >= 1 && as.traceErrors === 0 && as.hasH3 && as.hasTable && as.hasChartSvg && as.linkHref === '#/d/gold-intl' && (as.sessionCount ?? 0) >= 1,
-      'SSE 流式提问、get_global_quotes 成功取数与轨迹折叠、安全 Markdown 与内嵌图表及会话历史全部闭环',
+      as.traceCollapsedByDefault === true && as.traceSummary.includes('1') && (as.traceItems ?? 0) >= 1 && as.traceErrors === 0 && as.hasH3 && as.hasTable && as.hasChartSvg && as.hasCopyBtn && as.followupCount === 2 && !as.leakedFollowupsFence && as.linkHref === '#/d/gold-intl' && (as.sessionCount ?? 0) >= 1,
+      'SSE 流式提问、工具取数轨迹、复制按钮、推荐追问与内嵌图表及会话历史全部闭环',
       JSON.stringify(as),
     );
 
-    // 深/浅色主题真实渲染对比度 >= 4.5:1（#ask + 模型弹窗打开态一并测）
+    // 悬停 K 线柱触发十字线与 .md-chart-tip，点击传导图节点弹出 #ask-graph-popover（含追问与详情跳转）
+    const chartInteract = await cdp.evaluate(`(() => {
+      const klineHit = document.querySelector('#ask-messages .md-kline-hit');
+      klineHit?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      const tip = document.querySelector('#ask-messages .md-chart-kline .md-chart-tip');
+      const cross = document.querySelector('#ask-messages .md-chart-kline .md-chart-crosshair');
+      const node = document.querySelector('#ask-messages .md-graph-node[data-asset-id="gold-intl"]');
+      node?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      const pop = document.getElementById('ask-graph-popover');
+      return {
+        tipVisible: Boolean(tip && !tip.hidden),
+        tipText: tip?.textContent ?? '',
+        crossVisible: Boolean(cross && !cross.hasAttribute('hidden')),
+        popOpen: Boolean(pop && (!pop.hidden || pop.matches?.(':popover-open'))),
+        popFollowup: Boolean(pop?.querySelector('[data-graph-followup]')),
+        popDetailHref: pop?.querySelector('.ask-graph-popover-link')?.getAttribute('href') ?? null,
+      };
+    })()`);
+    const ci = chartInteract.value ?? {};
+    record(
+      ci.tipVisible && ci.tipText.includes('收 2622') && ci.crossVisible && ci.popOpen && ci.popFollowup && ci.popDetailHref === '#/d/gold-intl',
+      'AI 回答内嵌 K 线悬停十字线浮层与传导图节点 Popover 菜单正常交互',
+      JSON.stringify(ci),
+    );
+
+    // 深/浅色主题真实渲染对比度 >= 4.5:1（#ask + 新增复制/追问/图表浮层/Popover 一并测）
     const askContrast = await cdp.evaluate(`(() => {
       const parseRgba = (str) => {
         const m = String(str ?? '').match(/rgba?\\(\\s*([\\d.]+)\\s*,\\s*([\\d.]+)\\s*,\\s*([\\d.]+)(?:\\s*,\\s*([\\d.]+))?\\s*\\)/i);
@@ -1110,7 +1142,7 @@ async function main() {
       for (const theme of ['dark', 'light']) {
         document.documentElement.setAttribute('data-theme', theme);
         const fallback = theme === 'light' ? [244, 245, 247] : [12, 13, 16];
-        for (const sel of ['#ask-send', '#ask-models-btn', '.ask-trace > summary', '.ask-answer p', '.ask-answer th', '.ask-answer a', '.ask-history-time']) {
+        for (const sel of ['#ask-send', '#ask-models-btn', '.ask-trace > summary', '.ask-answer p', '.ask-answer th', '.ask-answer a', '.ask-history-time', '.ask-copy-btn', '.ask-followup-chip', '.md-chart-tip-title', '#ask-graph-popover .ask-graph-popover-btn']) {
           const el = document.querySelector('#ask ' + sel);
           if (!el) continue;
           const fg = parseRgba(getComputedStyle(el).color);
@@ -1125,12 +1157,23 @@ async function main() {
       return { count: results.length, minCr, worst: results.find((r) => r.cr === minCr) ?? null };
     })()`);
     record(
-      (askContrast.value?.count ?? 0) >= 12 && (askContrast.value?.minCr ?? 0) >= 4.5,
-      'AI 问财深/浅色主题按钮、正文、表格与次级文案对比度满足 AA (>=4.5)',
+      (askContrast.value?.count ?? 0) >= 20 && (askContrast.value?.minCr ?? 0) >= 4.5,
+      'AI 问财深/浅色主题按钮、复制、追问、图表浮层与 Popover 对比度满足 AA (>=4.5)',
       `n=${askContrast.value?.count} min=${askContrast.value?.minCr} worst=${askContrast.value?.worst?.theme}:${askContrast.value?.worst?.sel}`,
     );
 
-    // 1920 / 1280 / 390 三档视口无横向溢出（390px 再额外打开历史与模型弹窗验证）
+    // 按 Esc 依次关闭节点 Popover 与图表浮层
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+    await waitForCondition(() => cdp.evaluate(`Boolean(document.getElementById('ask-graph-popover')?.hidden)`), { timeoutMs: 3000 });
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+    await waitForCondition(
+      () => cdp.evaluate(`Boolean(document.querySelector('#ask-messages .md-chart-kline .md-chart-tip')?.hidden)`),
+      { timeoutMs: 3000 },
+    );
+
+    // 1920 / 1280 / 390 三档视口无横向溢出（390px 再额外打开节点 Popover 与模型弹窗验证）
     const viewports = [
       { width: 1920, height: 1080, mobile: false },
       { width: 1280, height: 800, mobile: false },
@@ -1145,6 +1188,16 @@ async function main() {
       }))()`);
       vpResults.push({ ...vp, ...r.value, ok: (r.value?.scrollWidth ?? 9999) <= (r.value?.innerWidth ?? 0) });
     }
+    const mobilePopOverflow = await cdp.evaluate(`(() => {
+      document.querySelector('#ask-messages .md-graph-node[data-asset-id="gold-intl"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      const pop = document.getElementById('ask-graph-popover');
+      const rect = pop?.getBoundingClientRect();
+      const sw = document.documentElement.scrollWidth;
+      const iw = window.innerWidth;
+      pop?.hidePopover?.();
+      if (pop) pop.hidden = true;
+      return { scrollWidth: sw, innerWidth: iw, popRight: Math.round(rect?.right ?? 0) };
+    })()`);
     await cdp.evaluate(`document.getElementById('ask-models-btn')?.click()`);
     await waitForCondition(() => cdp.evaluate(`Boolean(document.querySelector('dialog.ask-models-dialog[open]'))`), { timeoutMs: 3000 });
     const mobileDlgOverflow = await cdp.evaluate(`(() => ({
@@ -1156,12 +1209,14 @@ async function main() {
     await waitForCondition(() => cdp.evaluate(`!document.querySelector('dialog.ask-models-dialog')`), { timeoutMs: 3000 });
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 800, deviceScaleFactor: 1, mobile: false });
     const vpAllOk = vpResults.every((v) => v.ok)
+      && (mobilePopOverflow.value?.scrollWidth ?? 9999) <= (mobilePopOverflow.value?.innerWidth ?? 0)
+      && (mobilePopOverflow.value?.popRight ?? 9999) <= 390
       && (mobileDlgOverflow.value?.scrollWidth ?? 9999) <= (mobileDlgOverflow.value?.innerWidth ?? 0)
       && (mobileDlgOverflow.value?.dlgWidth ?? 9999) <= 390;
     record(
       vpAllOk,
-      'AI 问财在 1920 / 1280 / 390（含手机端历史与模型弹窗）均无横向溢出',
-      `${vpResults.map((v) => `${v.width}:${v.scrollWidth}/${v.innerWidth}`).join(' ')} dlg@${mobileDlgOverflow.value?.dlgWidth}`,
+      'AI 问财在 1920 / 1280 / 390（含手机端节点 Popover、历史与模型弹窗）均无横向溢出',
+      `${vpResults.map((v) => `${v.width}:${v.scrollWidth}/${v.innerWidth}`).join(' ')} popRight@${mobilePopOverflow.value?.popRight} dlg@${mobileDlgOverflow.value?.dlgWidth}`,
     );
 
     // 详情页追问直达 + ⌘K 命令面板直达
